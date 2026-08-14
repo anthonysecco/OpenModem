@@ -159,5 +159,23 @@ Confirmed on an actual RM520N-GL (2026-08-14), not assumed:
   simplified).
 - LAN client list: confirm the dnsmasq lease file path on this firmware
   and write a collector for it (separate from `at_poller.sh`).
-- Frontend wiring: `www/*.html`'s status cards are still static
-  placeholders — they don't yet read `cgi-bin/state.sh`'s fields.
+- Band lock is currently read-only in the UI (shows the modem's current
+  `AT+QNWPREFCFG` preference) — writing a new preference isn't wired up.
+- Carrier scan, AT terminal, power actions, and TTL spoofing are all
+  marked "Not implemented yet" in the UI — no `cgi-bin` action script
+  exists for any of them yet.
+
+## Frontend wiring
+
+`www/app.js` has a generic `data-field="key"` binding system: any
+element with that attribute gets its `textContent` set from
+`cgi-bin/state.sh`'s JSON, through a small per-field formatter registry
+(`FORMATTERS` — dBm units, registration-status labels, active/inactive,
+band-list joining, `_polled_at` → "Xs/Xm ago") where one exists,
+otherwise the raw value, or "—" for null/missing. Adding a new bound
+field to a page is just adding `data-field="whatever_key"` to markup —
+no per-page JS needed unless it needs a new formatter. Verified against
+a live `cgi-bin/state.sh` response (Python-simulated the same formatting
+logic against real JSON — no real browser was available in the dev
+environment to check visually), and confirmed no `data-field` name
+diverges from what `at_poller.sh` actually produces.
