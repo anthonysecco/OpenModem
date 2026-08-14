@@ -33,6 +33,18 @@ goal).
   narrowing away from features that assume a working internet connection.
 - **GPS location** — QuecControl's `api_gps.sh`. Dropped.
 
+## UI/UX
+
+- Must render well on both mobile and desktop — responsive, not a
+  desktop-only admin panel.
+- Layout follows the modern router/modem admin pattern (GL.iNet-style):
+  fixed top bar with device identity + connection status, sidebar nav on
+  desktop that collapses to a bottom tab bar on mobile, card-grid content
+  area for status tiles per page.
+- Implemented in `www/style.css` / `www/app.js` as a shared shell (`.om-topbar`,
+  `.om-sidebar`, `.om-tabbar`, `.om-main`, `.om-cards`/`.om-card`) reused by
+  every page — no per-page layout reinvention, no framework, no build step.
+
 ## Open questions
 
 - Exact set of state fields polled per page (which AT queries feed

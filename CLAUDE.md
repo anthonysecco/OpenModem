@@ -79,6 +79,13 @@ web assets.
 - Config changes in `config/openmodem.conf` require a service restart to
   take effect; document this in the file itself (as already done) rather
   than adding hot-reload logic.
+- UI must be responsive (mobile and desktop) and follow the shared shell
+  pattern in `www/style.css`/`www/app.js` — top bar, sidebar nav on
+  desktop that collapses to a bottom tab bar on mobile, card-grid content
+  (`.om-topbar`, `.om-sidebar`, `.om-tabbar`, `.om-main`, `.om-cards`).
+  Modeled on modern router/modem admin UIs (GL.iNet-style). Reuse this
+  shell on every page rather than inventing a new layout per page — see
+  `SCOPE.md` for the full rationale.
 
 ## Development
 

@@ -1,4 +1,167 @@
+/* style.css — shared shell layout.
+   Router/modem admin UI pattern (GL.iNet-style): fixed sidebar nav on
+   desktop, bottom tab bar on mobile, top bar with device identity and
+   connection status, card-grid content area. */
+
+:root {
+  --bg: #f4f5f7;
+  --surface: #ffffff;
+  --border: #e2e4e9;
+  --text: #1c1f26;
+  --text-dim: #6b7280;
+  --accent: #2f6fed;
+  --bad: #d94848;
+  --nav-width: 220px;
+  --topbar-height: 56px;
+  --tabbar-height: 60px;
+}
+
+* { box-sizing: border-box; }
+
 body {
-  font-family: system-ui, sans-serif;
-  margin: 2rem;
+  margin: 0;
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  background: var(--bg);
+  color: var(--text);
+}
+
+/* ── Top bar ── */
+.om-topbar {
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  height: var(--topbar-height);
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 1rem;
+  z-index: 10;
+}
+
+.om-topbar .device-name { font-weight: 600; }
+
+#om-conn-status {
+  font-size: 0.85rem;
+  color: var(--text-dim);
+}
+#om-conn-status.bad { color: var(--bad); }
+
+/* ── Sidebar (desktop) ── */
+.om-sidebar {
+  display: none;
+}
+
+/* ── Bottom tab bar (mobile) ── */
+.om-tabbar {
+  position: fixed;
+  bottom: 0; left: 0; right: 0;
+  height: var(--tabbar-height);
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  display: flex;
+  z-index: 10;
+}
+
+.om-tabbar a,
+.om-sidebar a {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--text-dim);
+  text-decoration: none;
+  font-size: 0.8rem;
+}
+
+.om-tabbar a {
+  flex: 1;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.om-tabbar a.active,
+.om-sidebar a.active {
+  color: var(--accent);
+}
+
+.om-tabbar .icon,
+.om-sidebar .icon {
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  background: currentColor;
+  opacity: 0.25;
+}
+
+/* ── Main content ── */
+.om-main {
+  padding: calc(var(--topbar-height) + 1rem) 1rem calc(var(--tabbar-height) + 1rem);
+}
+
+.om-cards {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.75rem;
+}
+
+.om-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 1rem;
+}
+
+.om-card h2 {
+  margin: 0 0 0.5rem;
+  font-size: 0.9rem;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+/* ── Desktop layout ── */
+@media (min-width: 768px) {
+  .om-sidebar {
+    display: flex;
+    flex-direction: column;
+    position: fixed;
+    top: var(--topbar-height);
+    bottom: 0;
+    left: 0;
+    width: var(--nav-width);
+    background: var(--surface);
+    border-right: 1px solid var(--border);
+    padding: 1rem 0.5rem;
+    gap: 0.25rem;
+  }
+
+  .om-sidebar a {
+    padding: 0.6rem 0.75rem;
+    border-radius: 8px;
+  }
+
+  .om-sidebar a.active {
+    background: var(--bg);
+  }
+
+  .om-tabbar { display: none; }
+
+  .om-main {
+    margin-left: var(--nav-width);
+    padding: calc(var(--topbar-height) + 1.5rem) 1.5rem 1.5rem;
+  }
+
+  .om-cards {
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  }
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #14161a;
+    --surface: #1c1f26;
+    --border: #2a2e37;
+    --text: #e7e9ee;
+    --text-dim: #9199a8;
+  }
 }
