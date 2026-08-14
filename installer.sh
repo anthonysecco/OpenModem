@@ -33,6 +33,15 @@ echo ""
 # and removing them wasn't asked for.
 echo "[1/6] Removing existing installs (QuecControl, SimpleAdmin, OpenModem)..."
 
+# /lib/systemd/system lives on the root filesystem, which is read-only by
+# default (confirmed UBIFS on real hardware) — remount rw before touching
+# it. Stays rw through step 5's install, then gets remounted ro at the end
+# of that step. Note: /etc/systemd/system and /usrdata are on a separate,
+# always-writable volume, so this doesn't affect the /etc/systemd/system
+# rm's below.
+echo "  Remounting / as read-write..."
+mount -o remount,rw /
+
 for svc in \
     queccontrol-poller queccontrol-init queccontrol-broker queccontrol-httpd \
     quecmanager-broker quecmanager-httpd \
@@ -234,9 +243,7 @@ echo "  Service files created."
 # --- Install systemd services ---
 echo "[5/6] Installing systemd autostart..."
 
-echo "  Remounting / as read-write..."
-mount -o remount,rw /
-
+# Still read-write from step 1's remount.
 echo "  Installing service files to /lib/systemd/system/..."
 cp /tmp/openmodem-broker.service /lib/systemd/system/
 cp /tmp/openmodem-poller.service /lib/systemd/system/
@@ -299,9 +306,21 @@ echo ""
 echo "  Web UI: http://192.168.225.1:8080"
 echo ""
 
-sleep 2
+# httpd Requires=openmodem-broker.service, so it can flap in step with the
+# broker while at_broker.sh is still a stub — check a few times rather
+# than once so a mid-flap sample doesn't produce a false FAILED here.
+_web_ok=0
+i=0
+while [ "$i" -lt 5 ]; do
+    if netstat -tlnp 2>/dev/null | grep -q ":8080" || systemctl is-active --quiet openmodem-httpd.service; then
+        _web_ok=1
+        break
+    fi
+    sleep 1
+    i=$(( i + 1 ))
+done
 
-if netstat -tlnp 2>/dev/null | grep -q ":8080" || systemctl is-active --quiet openmodem-httpd.service; then
+if [ "$_web_ok" = "1" ]; then
     echo "  OK Web UI:  RUNNING"
 else
     echo "  FAIL Web UI: FAILED"
