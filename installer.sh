@@ -142,7 +142,7 @@ download() {
 FAIL=0
 
 echo "  Downloading bin scripts..."
-for script in at_broker.sh at_poller.sh; do
+for script in at_broker.sh at_command.sh at_poller.sh; do
     download "$REPO/bin/$script" "$INSTALL_DIR/bin/$script" || FAIL=1
 done
 

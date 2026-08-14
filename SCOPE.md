@@ -102,6 +102,24 @@ Confirmed on an actual RM520N-GL (2026-08-14), not assumed:
 - `/usrdata` (a separate UBI volume, `/dev/ubi2_0`) is always read-write
   and is where every third-party toolkit — SimpleAdmin, socat-at-bridge,
   Tailscale, simplefirewall, and now OpenModem — actually lives.
+- `installer.sh` had a real bug, found by running it against this device:
+  the `rm -f`s of prior `/lib/systemd/system/*` unit files ran before the
+  `mount -o remount,rw /`, so they silently failed (`systemctl stop`/
+  `disable` still worked, so nothing kept autostarting, but stale unit
+  files were left behind). Fixed by remounting rw at the start of cleanup
+  instead of at the start of install; re-running confirmed zero leftover
+  SimpleAdmin/socat-at-bridge files.
+- `at_broker.sh`'s core read technique (fixed ~100ms `cat <&3` windows
+  with terminal-line detection) round-trips real AT commands correctly:
+  `ATI`, `AT+CSQ`, `AT+QTEMP` all confirmed against the live modem.
+  Concurrent access needed a real fix, not just the read technique: a
+  per-iteration `read -r request < "$REQUEST_PIPE"` (QuecControl's
+  pattern, and this script's first draft) silently drops requests from
+  writers that race the window between one read closing the FIFO and the
+  next iteration reopening it — confirmed with 3 concurrent writers,
+  where only 2 requests ever reached the broker. Fixed by holding the
+  FIFO open on a persistent read-write fd (`exec 4<>"$REQUEST_PIPE"`)
+  instead; retested with up to 7 concurrent requests, all succeeded.
 
 ## Open questions
 

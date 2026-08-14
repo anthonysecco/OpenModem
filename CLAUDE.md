@@ -39,15 +39,29 @@ web assets.
 
 - **`bin/`** — long-running shell daemons installed as services on the
   modem:
-  - `at_broker.sh` owns the AT command device (e.g. `/dev/smd11`, a raw
-    character device, not a tty — `stty`/`read -t` don't work on it) and
-    serializes access through a request/response FIFO so the poller and
-    CGI scripts never write to it concurrently. Protocol:
-    `echo "req_id|timeout_s|AT+COMMAND" > /tmp/at_request`, response
-    appears at `/tmp/at_responses/<req_id>`.
+  - `at_broker.sh` owns the AT command device (`/dev/smd11`, confirmed on
+    real hardware — a raw character device, not a tty: `stty`/`read -t`
+    don't work on it) and serializes access through a request/response
+    FIFO so the poller and CGI scripts never write to it concurrently.
+    Protocol: `echo "req_id|timeout_s|AT+COMMAND" > /tmp/at_request`,
+    response appears at `/tmp/at_responses/<req_id>`. Reads use fixed
+    ~100ms `cat <&3` windows with terminal-line detection (`OK`/`ERROR`/
+    `+CME ERROR`/`+CMS ERROR`), the same technique QuecControl uses for
+    the same hardware constraint — confirmed working against a real
+    RM520N-GL. The FIFO itself is held open on a persistent read-write fd
+    (`exec 4<>"$REQUEST_PIPE"`) rather than reopened per read — a
+    per-iteration `read -r request < "$REQUEST_PIPE"` (what QuecControl
+    does, and what this was ported from) loses concurrent writers that
+    race the close/reopen window, confirmed by testing: 3 concurrent
+    requests, only 2 ever reached the broker. Don't revert to the
+    per-iteration form.
+  - `at_command.sh` is the client: `at_command.sh "AT+CMD" [timeout]`
+    writes a request and blocks for the response file. Everything else
+    (poller, CGI scripts) should go through this rather than writing to
+    the FIFO directly.
   - `at_poller.sh` periodically issues AT commands through the broker and
     writes merged state to `/tmp/openmodem/state_merged.json` for the
-    front end to poll.
+    front end to poll. **Not yet implemented** — still a stub.
 - **`config/openmodem.conf`** — shell-sourced config (`KEY=value`, no
   spaces) read by the daemons and CGI scripts at startup. Poll intervals
   and log verbosity live here.
@@ -68,9 +82,9 @@ web assets.
   run on the device at a time), then deploys `bin/`, `config/`, `www/`
   under `/usrdata/openmodem` and installs/starts systemd services for the
   broker, poller, and httpd. `openmodem.conf` is preserved across
-  reinstalls. See `SCOPE.md` for details, including the SimpleAdmin
-  service names that still need verifying against a real install.
-  `www/cgi-bin/update.sh` is how the System page's Update button
+  reinstalls. See `SCOPE.md`'s "Verified against real hardware" section
+  for the confirmed SimpleAdmin/socat-at-bridge service names this
+  cleans up. `www/cgi-bin/update.sh` is how the System page's Update button
   re-triggers this installer from GitHub — see its docstring and
   `SCOPE.md`'s Install/update section for the confirm-then-poll flow.
 
@@ -99,7 +113,26 @@ web assets.
 ## Development
 
 There is no local dev server that replicates the modem's runtime — test
-changes by deploying to the actual modem (connected via USB) and exercising
-the web UI there. When adding a `cgi-bin` script, verify it manually with
-`sh -n script.sh` for syntax and, once deployable, with a real HTTP request
-against the modem's httpd.
+changes by deploying to the actual modem and exercising the web UI there.
+When adding a `cgi-bin` script, verify it manually with `sh -n script.sh`
+for syntax and, once deployable, with a real HTTP request against the
+modem's httpd.
+
+The modem being "connected over USB" gets you AT-command serial ports
+(`ttyUSB0-3` on the host), but that is **not** where OpenModem runs. The
+RM520N-GL has its own onboard Application Processor running a full Linux
+(`sdxlemur`, systemd, BusyBox) — that's the actual install target, and the
+way in is `adb shell` over the same USB connection (root shell once
+ADB-unlocked; see `iamromulan/quectel-rgmii-configuration-notes` for the
+unlock process on a fresh module — this device already had it done). From
+there: `systemctl`, `/usrdata` (writable UBI volume — everything actually
+lives here), and `/` (UBIFS, read-only by default, genuinely supports
+`mount -o remount,rw /` despite showing an `assert=read-only` mount
+option). Iterating on a `bin/*.sh` script: `adb push` it straight to
+`/usrdata/openmodem/bin/`, then `systemctl restart openmodem-broker.service`
+(or whichever unit) rather than reinstalling — much faster than round-
+tripping through GitHub and `installer.sh`. Use the *actual* `installer.sh`
+flow only to verify the install/update path itself. Raw GitHub content by
+branch (`.../main/...`) is CDN-cached for a few minutes; pin to a commit
+SHA in the URL when you need to confirm a just-pushed change is really
+what's being fetched.
