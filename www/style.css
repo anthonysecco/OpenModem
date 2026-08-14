@@ -119,6 +119,20 @@ body {
   letter-spacing: 0.03em;
 }
 
+.om-card button {
+  font: inherit;
+  padding: 0.5rem 0.9rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--accent);
+  color: #fff;
+  cursor: pointer;
+}
+
+.om-card button:active {
+  opacity: 0.85;
+}
+
 /* ── Desktop layout ── */
 @media (min-width: 768px) {
   .om-sidebar {

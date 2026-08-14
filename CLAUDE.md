@@ -61,9 +61,18 @@ web assets.
     `Content-Type`/`Cache-Control` headers by hand, and call into
     `bin/at_command.sh`-style helpers rather than touching the AT device
     directly.
-- **`installer.sh`** — deploys `bin/`, `config/`, `www/` onto the modem's
-  filesystem (conventionally under `/usrdata/openmodem`) and installs/
-  starts services for the broker, poller, and httpd.
+- **`installer.sh`** — same shape as QuecControl's installer:
+  `curl -fsSL .../installer.sh | sh` first removes any existing
+  QuecControl, SimpleAdmin, or OpenModem install (services, systemd
+  units, `/usrdata/*`, `/tmp/*` runtime state — only one admin UI should
+  run on the device at a time), then deploys `bin/`, `config/`, `www/`
+  under `/usrdata/openmodem` and installs/starts systemd services for the
+  broker, poller, and httpd. `openmodem.conf` is preserved across
+  reinstalls. See `SCOPE.md` for details, including the SimpleAdmin
+  service names that still need verifying against a real install.
+  `www/cgi-bin/update.sh` is how the System page's Update button
+  re-triggers this installer from GitHub — see its docstring and
+  `SCOPE.md`'s Install/update section for the confirm-then-poll flow.
 
 ## Conventions
 

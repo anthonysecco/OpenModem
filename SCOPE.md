@@ -45,6 +45,31 @@ goal).
   `.om-sidebar`, `.om-tabbar`, `.om-main`, `.om-cards`/`.om-card`) reused by
   every page — no per-page layout reinvention, no framework, no build step.
 
+## Install / update
+
+- `installer.sh` follows QuecControl's own installer shape almost exactly:
+  `curl -fsSL .../installer.sh | sh`, stop/remove whatever's already
+  running, lay down fresh files under `/usrdata/openmodem`, generate
+  `openmodem-broker`/`openmodem-poller`/`openmodem-httpd` systemd units,
+  start them.
+- Before installing, it removes any prior **QuecControl**, **SimpleAdmin**,
+  or **OpenModem** install (services, systemd units, `/usrdata/*`,
+  `/tmp/*` runtime state) so only one admin UI runs on the device at a
+  time. The QuecControl/OpenModem names are confirmed; the SimpleAdmin
+  service/path names in `installer.sh` are a best-effort guess not yet
+  verified against a real SimpleAdmin install — correct them once one is
+  available to inspect.
+- **Update** is just "run the installer again": the System page's Update
+  button calls `www/cgi-bin/update.sh?action=start&confirm=1`, which
+  requires client-side confirmation first (a `window.confirm()` warning
+  that it can take several minutes and will restart all services) and
+  server-side confirmation (`confirm=1`) as a second guard against an
+  accidental/unauthenticated trigger. It then runs the installer
+  detached in the background and the frontend polls
+  `update.sh?action=status` until the reinstalled httpd comes back.
+  `openmodem.conf` is preserved across updates (installer skips
+  re-downloading it if one already exists).
+
 ## Open questions
 
 - Exact set of state fields polled per page (which AT queries feed
