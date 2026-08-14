@@ -59,9 +59,18 @@ web assets.
     writes a request and blocks for the response file. Everything else
     (poller, CGI scripts) should go through this rather than writing to
     the FIFO directly.
-  - `at_poller.sh` periodically issues AT commands through the broker and
-    writes merged state to `/tmp/openmodem/state_merged.json` for the
-    front end to poll. **Not yet implemented** — still a stub.
+  - `at_poller.sh` runs one collection cycle every `POLL_INTERVAL`
+    seconds (via `at_command.sh`, not the FIFO directly) and atomically
+    writes merged state to `/tmp/openmodem/state_merged.json`
+    (write-to-`.tmp`-then-`mv`) for the front end to poll. Every AT
+    response line is `\r\n`-terminated — confirmed live — and `\r` is
+    stripped centrally in its `run_at()` helper; don't reintroduce
+    `$`-anchored parsing on unstripped output elsewhere (see `SCOPE.md`
+    for how this broke several fields silently on the first pass, with
+    `cut -f1`-based fields masking the bug by working anyway). Covers
+    device/SIM/registration/signal/serving-cell/carrier/CA/band-pref/WAN
+    fields; LAN client info is deliberately out of scope here — see
+    `SCOPE.md`'s Open Questions for why and what's still needed.
 - **`config/openmodem.conf`** — shell-sourced config (`KEY=value`, no
   spaces) read by the daemons and CGI scripts at startup. Poll intervals
   and log verbosity live here.

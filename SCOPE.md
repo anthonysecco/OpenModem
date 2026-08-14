@@ -120,11 +120,44 @@ Confirmed on an actual RM520N-GL (2026-08-14), not assumed:
   where only 2 requests ever reached the broker. Fixed by holding the
   FIFO open on a persistent read-write fd (`exec 4<>"$REQUEST_PIPE"`)
   instead; retested with up to 7 concurrent requests, all succeeded.
+- Every AT response line from this modem is `\r\n`-terminated (confirmed
+  with `od -c` on a raw captured response) — the `\r` is real, not a
+  terminal artifact. This silently broke several `$`-anchored parsers in
+  `at_poller.sh`'s first draft (`^RM[0-9A-Z-]+$` for the model, `^OK$`
+  filtering QGMR's firmware line, a trailing `"$` in the QTEMP value
+  parser) since `$` anchors to true end-of-line and the `\r` was still
+  there — device model/IMEI/firmware/IMSI and every temperature sensor
+  value came back `null`. Fields built with `cut -f1` happened to work
+  anyway (position-based, doesn't care what's at the end of the line),
+  which is what let signal/registration ship first and made this bug
+  easy to miss. Fixed centrally in `at_poller.sh`'s `run_at()` (pipes
+  every response through `tr -d '\r'` once) rather than patching each
+  consumer.
+- `at_poller.sh`'s field/command choices were captured against this real,
+  AT&T-registered, LTE-connected modem via `at_command.sh` — see the raw
+  `ATI`/`AT+CSQ`/`AT+QRSRP`/`AT+QENG="servingcell"`/`AT+QCAINFO`/etc.
+  samples worked out during that session. Carrier aggregation count
+  changed from 1 to 3 component carriers between two consecutive polls
+  purely from real network conditions shifting, which incidentally
+  exercised and confirmed the multi-line `QCAINFO` parsing path. Only
+  PDP context 1 ("broadband") is surfaced for WAN state; context 3
+  ("sos") is emergency-only and deliberately skipped. Untested: a
+  PIN-locked SIM, no-service/no-registration state, and an inactive WAN
+  context — this SIM was unlocked and online for the whole session, so
+  those code paths (mostly the `null`-on-no-match defaults) are
+  plausible but not verified against real modem output.
+- LAN client info is NOT collected by `at_poller.sh` — on this hardware
+  it comes from dnsmasq's lease file on the Application Processor (a
+  `dnsmasq` process bound to `192.168.225.1:53` was observed running),
+  not from any AT command. That needs its own collector reading the
+  lease file directly, not more AT polling.
 
 ## Open questions
 
-- Exact set of state fields polled per page (which AT queries feed
-  Dashboard/Cellular/SIM/WAN/LAN specifically).
 - Exact button-level actions under WAN and LAN (which of QuecControl's
   `wan_action.sh`/`lan_action.sh` actions carry over as-is vs. get
   simplified).
+- LAN client list: confirm the dnsmasq lease file path on this firmware
+  and write a collector for it (separate from `at_poller.sh`).
+- Frontend wiring: `www/*.html`'s status cards are still static
+  placeholders — they don't yet read `cgi-bin/state.sh`'s fields.
