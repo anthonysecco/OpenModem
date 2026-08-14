@@ -16,9 +16,20 @@
 
   <main class="om-main">
     <div class="om-cards">
-      <div class="om-card"><h2>Device Info</h2><p>—</p></div>
-      <div class="om-card"><h2>AT Terminal</h2><p>—</p></div>
-      <div class="om-card"><h2>Power</h2><p>—</p></div>
+      <div class="om-card">
+        <h2>Device Info</h2>
+        <div class="om-row"><span class="om-row-label">Model</span><span data-field="device_model">—</span></div>
+        <div class="om-row"><span class="om-row-label">IMEI</span><span data-field="device_imei">—</span></div>
+        <div class="om-row"><span class="om-row-label">Firmware</span><span data-field="device_firmware">—</span></div>
+      </div>
+      <div class="om-card">
+        <h2>AT Terminal</h2>
+        <p class="om-note">Not implemented yet.</p>
+      </div>
+      <div class="om-card">
+        <h2>Power</h2>
+        <p class="om-note">Not implemented yet.</p>
+      </div>
       <div class="om-card">
         <h2>Update</h2>
         <p id="om-update-status">Reinstalls the latest OpenModem from GitHub.</p>

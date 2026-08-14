@@ -16,13 +16,49 @@
 
   <main class="om-main">
     <div class="om-cards">
-      <div class="om-card"><h2>Signal</h2><p>—</p></div>
-      <div class="om-card"><h2>Registration</h2><p>—</p></div>
-      <div class="om-card"><h2>Serving Cell</h2><p>—</p></div>
-      <div class="om-card"><h2>Carrier Aggregation</h2><p>—</p></div>
-      <div class="om-card"><h2>Band Lock</h2><p>—</p></div>
-      <div class="om-card"><h2>Carrier Scan</h2><p>—</p></div>
+      <div class="om-card">
+        <h2>Signal</h2>
+        <div class="om-row"><span class="om-row-label">LTE RSRP</span><span data-field="signal_lte_rsrp">—</span></div>
+        <div class="om-row"><span class="om-row-label">LTE RSRQ</span><span data-field="signal_lte_rsrq">—</span></div>
+        <div class="om-row"><span class="om-row-label">LTE SINR</span><span data-field="signal_lte_sinr">—</span></div>
+        <div class="om-row"><span class="om-row-label">NR RSRP</span><span data-field="signal_nr_rsrp">—</span></div>
+        <div class="om-row"><span class="om-row-label">NR RSRQ</span><span data-field="signal_nr_rsrq">—</span></div>
+        <div class="om-row"><span class="om-row-label">NR SINR</span><span data-field="signal_nr_sinr">—</span></div>
+      </div>
+      <div class="om-card">
+        <h2>Registration</h2>
+        <div class="om-row"><span class="om-row-label">LTE</span><span data-field="reg_lte">—</span></div>
+        <div class="om-row"><span class="om-row-label">5G NR</span><span data-field="reg_nr">—</span></div>
+        <div class="om-row"><span class="om-row-label">CS</span><span data-field="reg_creg">—</span></div>
+      </div>
+      <div class="om-card">
+        <h2>Serving Cell</h2>
+        <div class="om-row"><span class="om-row-label">State</span><span data-field="cell_state">—</span></div>
+        <div class="om-row"><span class="om-row-label">RAT</span><span data-field="cell_rat">—</span></div>
+        <div class="om-row"><span class="om-row-label">Band</span><span data-field="cell_band">—</span></div>
+        <div class="om-row"><span class="om-row-label">EARFCN</span><span data-field="cell_earfcn">—</span></div>
+        <div class="om-row"><span class="om-row-label">PCID</span><span data-field="cell_pcid">—</span></div>
+        <div class="om-row"><span class="om-row-label">Cell ID</span><span data-field="cell_id">—</span></div>
+        <div class="om-row"><span class="om-row-label">TAC</span><span data-field="cell_tac">—</span></div>
+        <div class="om-row"><span class="om-row-label">MCC/MNC</span><span data-field="cell_mcc">—</span>/<span data-field="cell_mnc">—</span></div>
+      </div>
+      <div class="om-card">
+        <h2>Carrier Aggregation</h2>
+        <div class="om-row"><span class="om-row-label">Components</span><span data-field="ca_count">—</span></div>
+        <div class="om-row"><span class="om-row-label">Bands</span><span data-field="ca_bands">—</span></div>
+      </div>
+      <div class="om-card">
+        <h2>Band Lock</h2>
+        <div class="om-row"><span class="om-row-label">LTE bands</span><span data-field="band_pref_lte">—</span></div>
+        <div class="om-row"><span class="om-row-label">NR5G bands</span><span data-field="band_pref_nr5g">—</span></div>
+        <p class="om-note">Read-only for now — locking to specific bands isn't wired up yet.</p>
+      </div>
+      <div class="om-card">
+        <h2>Carrier Scan</h2>
+        <p class="om-note">Not implemented yet.</p>
+      </div>
     </div>
+    <p class="om-updated">Updated <span data-field="_polled_at">—</span></p>
   </main>
 
   <nav class="om-tabbar" id="om-tabbar-nav"></nav>

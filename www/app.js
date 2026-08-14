@@ -29,18 +29,66 @@
     if (tabbar) tabbar.innerHTML = links;
   }
 
+  /* ── State binding ───────────────────────────────────────────────
+     Any element with data-field="some_key" gets its textContent set to
+     state[some_key], run through FORMATTERS[some_key] if one exists
+     (default: raw value, or "—" for null/undefined/empty). No
+     per-page render functions needed — pages just add data-field
+     attributes to the markup they want populated. */
+  var REG_LABELS = {
+    0: 'Not registered', 1: 'Registered (home)', 2: 'Searching',
+    3: 'Denied', 4: 'Unknown', 5: 'Registered (roaming)'
+  };
+
+  function fmtDbm(v) { return (v === null || v === undefined) ? null : v + ' dBm'; }
+  function fmtReg(v) { return REG_LABELS[v] !== undefined ? REG_LABELS[v] : null; }
+  function fmtBool(v) { return v === true ? 'Active' : v === false ? 'Inactive' : null; }
+  function fmtList(v) { return (Array.isArray(v) && v.length) ? v.join(', ') : (Array.isArray(v) ? null : v); }
+  function fmtBands(v) { return (typeof v === 'string' && v.length) ? v.split(':').join(', ') : v; }
+  function fmtAge(v) {
+    if (!v) return null;
+    var secs = Math.max(0, Math.round(Date.now() / 1000 - v));
+    return secs < 90 ? secs + 's ago' : Math.round(secs / 60) + 'm ago';
+  }
+
+  var FORMATTERS = {
+    reg_lte: fmtReg, reg_nr: fmtReg, reg_creg: fmtReg,
+    signal_lte_rsrp: fmtDbm, signal_lte_rsrq: fmtDbm, signal_lte_sinr: fmtDbm,
+    signal_nr_rsrp: fmtDbm, signal_nr_rsrq: fmtDbm, signal_nr_sinr: fmtDbm,
+    wan_active: fmtBool,
+    ca_bands: fmtList,
+    band_pref_lte: fmtBands, band_pref_nr5g: fmtBands,
+    _polled_at: fmtAge
+  };
+
+  function renderState(state) {
+    var nodes = document.querySelectorAll('[data-field]');
+    for (var i = 0; i < nodes.length; i++) {
+      var node = nodes[i];
+      var key = node.getAttribute('data-field');
+      var raw = state[key];
+      var fmt = FORMATTERS[key];
+      var out = fmt ? fmt(raw) : raw;
+      node.textContent = (out === null || out === undefined || out === '') ? '—' : out;
+    }
+  }
+
   function refreshState() {
-    var el = document.getElementById('om-conn-status');
-    if (!el) return;
+    var statusEl = document.getElementById('om-conn-status');
     fetch('/cgi-bin/state.sh')
       .then(function (r) { return r.json(); })
       .then(function (state) {
-        el.textContent = state._error ? state._message : 'Connected';
-        el.classList.toggle('bad', !!state._error);
+        if (statusEl) {
+          statusEl.textContent = state._error ? state._message : 'Connected';
+          statusEl.classList.toggle('bad', !!state._error);
+        }
+        if (!state._error) renderState(state);
       })
       .catch(function () {
-        el.textContent = 'Unreachable';
-        el.classList.add('bad');
+        if (statusEl) {
+          statusEl.textContent = 'Unreachable';
+          statusEl.classList.add('bad');
+        }
       });
   }
 

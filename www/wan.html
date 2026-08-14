@@ -16,10 +16,18 @@
 
   <main class="om-main">
     <div class="om-cards">
-      <div class="om-card"><h2>WAN Status</h2><p>—</p></div>
-      <div class="om-card"><h2>IP Address</h2><p>—</p></div>
-      <div class="om-card"><h2>TTL Spoofing</h2><p>—</p></div>
+      <div class="om-card">
+        <h2>WAN Status</h2>
+        <div class="om-row"><span class="om-row-label">State</span><span data-field="wan_active">—</span></div>
+        <div class="om-row"><span class="om-row-label">APN</span><span data-field="wan_apn">—</span></div>
+      </div>
+      <div class="om-card"><h2>IP Address</h2><p data-field="wan_ip">—</p></div>
+      <div class="om-card">
+        <h2>TTL Spoofing</h2>
+        <p class="om-note">Not implemented yet.</p>
+      </div>
     </div>
+    <p class="om-updated">Updated <span data-field="_polled_at">—</span></p>
   </main>
 
   <nav class="om-tabbar" id="om-tabbar-nav"></nav>

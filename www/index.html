@@ -16,11 +16,29 @@
 
   <main class="om-main">
     <div class="om-cards">
-      <div class="om-card"><h2>Signal</h2><p>—</p></div>
-      <div class="om-card"><h2>Carrier</h2><p>—</p></div>
-      <div class="om-card"><h2>SIM</h2><p>—</p></div>
-      <div class="om-card"><h2>WAN</h2><p>—</p></div>
+      <div class="om-card">
+        <h2>Signal</h2>
+        <div class="om-row"><span class="om-row-label">RSRP</span><span data-field="signal_lte_rsrp">—</span></div>
+        <div class="om-row"><span class="om-row-label">RSRQ</span><span data-field="signal_lte_rsrq">—</span></div>
+        <div class="om-row"><span class="om-row-label">SINR</span><span data-field="signal_lte_sinr">—</span></div>
+      </div>
+      <div class="om-card">
+        <h2>Carrier</h2>
+        <div class="om-row"><span class="om-row-label">Name</span><span data-field="carrier_name">—</span></div>
+        <div class="om-row"><span class="om-row-label">Type</span><span data-field="cell_rat">—</span></div>
+        <div class="om-row"><span class="om-row-label">Band</span><span data-field="cell_band">—</span></div>
+      </div>
+      <div class="om-card">
+        <h2>SIM</h2>
+        <p data-field="sim_status">—</p>
+      </div>
+      <div class="om-card">
+        <h2>WAN</h2>
+        <div class="om-row"><span class="om-row-label">Status</span><span data-field="wan_active">—</span></div>
+        <div class="om-row"><span class="om-row-label">IP</span><span data-field="wan_ip">—</span></div>
+      </div>
     </div>
+    <p class="om-updated">Updated <span data-field="_polled_at">—</span></p>
   </main>
 
   <nav class="om-tabbar" id="om-tabbar-nav"></nav>

@@ -133,6 +133,41 @@ body {
   opacity: 0.85;
 }
 
+.om-card p {
+  margin: 0;
+}
+
+.om-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.3rem 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.9rem;
+}
+
+.om-row:last-of-type {
+  border-bottom: none;
+}
+
+.om-row-label {
+  color: var(--text-dim);
+}
+
+.om-note {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--text-dim);
+  font-style: italic;
+}
+
+.om-updated {
+  margin: 1rem 0 0;
+  font-size: 0.8rem;
+  color: var(--text-dim);
+  text-align: right;
+}
+
 /* ── Desktop layout ── */
 @media (min-width: 768px) {
   .om-sidebar {
