@@ -11,9 +11,25 @@ development, the modem is connected to this host over USB.
 
 The design takes inspiration from
 [QuecControl](https://github.com/anthonysecco/QuecControl), an existing
-project for the same modem family. Consult it for prior art on the AT
-broker/poller pattern, CGI conventions, and installer structure before
-inventing new approaches.
+project for the same modem family, but OpenModem is a standalone
+replacement, not a fork — it's deliberately narrower and simpler. Consult
+QuecControl for prior art on the AT broker/poller pattern, CGI conventions,
+and installer structure, but do not assume feature parity is a goal. See
+`SCOPE.md` for the intended feature set and what's explicitly excluded —
+check it before adding a feature or assuming scope that isn't documented
+there.
+
+Key differences from QuecControl, by design:
+
+- **No additional software on the modem.** Backend stays on whatever
+  BusyBox already provides (`ash`, `httpd`, coreutils applets) — no
+  Go/Python/Node runtime, no cross-compiled binaries added to the device.
+- **Narrower feature scope.** Many of QuecControl's features assume a
+  working internet connection; OpenModem deliberately excludes most of
+  those. Don't add a feature back "for parity" without checking `SCOPE.md`
+  or asking.
+- **Simpler polling.** A single poll interval, not tiered fast/medium/slow
+  polling, and fewer state fields polled overall.
 
 ## Architecture
 
