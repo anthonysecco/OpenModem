@@ -51,11 +51,22 @@
         <h2>Band Lock</h2>
         <div class="om-row"><span class="om-row-label">LTE bands</span><span data-field="band_pref_lte">—</span></div>
         <div class="om-row"><span class="om-row-label">NR5G bands</span><span data-field="band_pref_nr5g">—</span></div>
-        <p class="om-note">Read-only for now — locking to specific bands isn't wired up yet.</p>
+        <div class="om-form-row">
+          <label for="om-bandlock-lte">Set LTE bands</label>
+          <input id="om-bandlock-lte" type="text" placeholder="e.g. 2,4,12" autocomplete="off">
+        </div>
+        <div class="om-form-row">
+          <label for="om-bandlock-nr">Set NR5G bands</label>
+          <input id="om-bandlock-nr" type="text" placeholder="e.g. 71,77" autocomplete="off">
+        </div>
+        <button id="om-bandlock-apply" type="button">Apply Band Lock</button>
+        <p id="om-bandlock-status" class="om-note"></p>
       </div>
-      <div class="om-card">
+      <div class="om-card om-card-wide">
         <h2>Carrier Scan</h2>
-        <p class="om-note">Not implemented yet.</p>
+        <button id="om-scan-btn" type="button">Scan for Carriers</button>
+        <p id="om-scan-status" class="om-note"></p>
+        <div id="om-scan-results"></div>
       </div>
     </div>
     <p class="om-updated">Updated <span data-field="_polled_at">—</span></p>

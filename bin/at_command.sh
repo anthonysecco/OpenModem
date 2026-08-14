@@ -25,10 +25,16 @@ echo "${req_id}|${timeout}|${at_cmd}" > "$REQUEST_PIPE"
 
 # Poll for the response file — wait slightly longer than the broker's own
 # timeout so a slow-but-answered command isn't cut off here first.
-wait_limit=$(( timeout + 5 ))
+#
+# elapsed counts 100ms ticks, not seconds — wait_limit must be scaled by
+# 10 to match, or this loop gives up after (timeout+5) * 100ms instead of
+# (timeout+5) seconds. Found by testing a real 130s carrier scan: it came
+# back "TIMEOUT" after ~14s instead of waiting the requested ~135s. Same
+# bug exists in QuecControl's at_command.sh, which this was ported from.
+wait_limit=$(( (timeout + 5) * 10 ))
 elapsed=0
 while [ ! -f "$RESPONSE_DIR/${req_id}" ] && [ "$elapsed" -lt "$wait_limit" ]; do
-    usleep 100000 2>/dev/null || sleep 1
+    usleep 100000 2>/dev/null || sleep 0.1
     elapsed=$(( elapsed + 1 ))
 done
 

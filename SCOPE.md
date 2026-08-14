@@ -156,14 +156,12 @@ Confirmed on an actual RM520N-GL (2026-08-14), not assumed:
 
 - Exact button-level actions under WAN and LAN (which of QuecControl's
   `wan_action.sh`/`lan_action.sh` actions carry over as-is vs. get
-  simplified).
+  simplified). TTL spoofing specifically is still unimplemented.
 - LAN client list: confirm the dnsmasq lease file path on this firmware
   and write a collector for it (separate from `at_poller.sh`).
-- Band lock is currently read-only in the UI (shows the modem's current
-  `AT+QNWPREFCFG` preference) — writing a new preference isn't wired up.
-- Carrier scan, AT terminal, power actions, and TTL spoofing are all
-  marked "Not implemented yet" in the UI — no `cgi-bin` action script
-  exists for any of them yet.
+- Factory reset was deliberately left out of Power (QuecControl has it;
+  wasn't asked for here and is hard to make safely reversible) — revisit
+  if actually needed.
 
 ## Frontend wiring
 
@@ -179,3 +177,69 @@ a live `cgi-bin/state.sh` response (Python-simulated the same formatting
 logic against real JSON — no real browser was available in the dev
 environment to check visually), and confirmed no `data-field` name
 diverges from what `at_poller.sh` actually produces.
+
+The refresh cadence adapts to the backend rather than being hardcoded:
+`at_poller.sh` exposes its own `POLL_INTERVAL` as `_poll_interval_s` in
+the JSON, and `app.js` reschedules its next `state.sh` fetch using that
+value (self-rescheduling `setTimeout`, not a fixed `setInterval`) — so
+changing `POLL_INTERVAL` in `openmodem.conf` and restarting the poller
+takes effect on the frontend's very next fetch, with no separate config
+to keep in sync. The "Updated Xs ago" display is a genuinely live
+counter, not a value that only changes when a fetch happens to land: a
+separate 1-second `setInterval` ticks it based on the last known
+`_polled_at`, independent of the (much slower) actual poll cadence.
+
+## Actions: band lock, carrier scan, AT terminal, power
+
+Implemented as three new `cgi-bin` scripts, all confirmed against the
+real modem, adapted from QuecControl's `band_lock.sh`/`carrier_scan.sh`/
+`at_cmd.sh` (same AT commands, same JSON-array-from-shell approach, our
+own paths/conventions):
+
+- **`band_lock.sh`** — `action=get` reads `AT+QNWPREFCFG` (same as
+  `at_poller.sh`, kept as a separate read here so this script is
+  self-contained); `action=set&lte_bands=2,4,12&nr_bands=71` applies it,
+  writing NR bands to both `nr5g_band` (SA) and `nsa_nr5g_band` (NSA).
+  Tested live by setting it to the modem's own current full band list
+  (a no-op in effect, but exercises the real write path without
+  actually restricting connectivity) — confirmed applied via a
+  follow-up GET. Cellular page's Band Lock card shows the current
+  value read-only (via `at_poller.sh`'s `band_pref_lte`/`band_pref_nr5g`)
+  plus separate inputs to set new ones — it does not pre-fill the
+  inputs from the current value.
+- **`carrier_scan.sh`** — `AT+COPS=?`, up to a 130s timeout since a real
+  scan can take close to 2 minutes. Tested live: returned 9 real
+  operators (AT&T current, FirstNet forbidden, Verizon/T-Mobile
+  available) in ~12s. Cellular page's Carrier Scan button requires
+  confirmation first (states the ~2-minute duration and the data
+  interruption) before calling it.
+- **`at_cmd.sh`** — generic `AT+COMMAND` passthrough (blocks shell
+  metacharacters, requires an `AT` prefix, per-command timeout overrides
+  for `CFUN=1`/`CFUN=0`/`QPOWD`/`COPS=?`). Backs both System's AT
+  Terminal (free-form input) and Power's three buttons (Reboot →
+  `AT+CFUN=1,1`, Radio Off → `AT+CFUN=0`, Radio On → `AT+CFUN=1`), each
+  gated behind its own `confirm()` describing what it does and, for
+  Reboot, that the connection drops for ~30s. No dedicated `power.sh` —
+  matches QuecControl's own approach of sending fixed AT commands
+  through the generic AT endpoint rather than a separate script per
+  action.
+
+### A real bug found while testing carrier scan
+
+The first `carrier_scan.sh` test came back `{"error":"Scan timed
+out"}` after ~14s instead of waiting the requested ~130s. Root cause was
+in `at_command.sh` (present since it was first written, inherited from
+the same pattern in QuecControl's own `at_command.sh`): `wait_limit =
+timeout + 5` is computed in seconds, but the polling loop increments its
+counter once per 100ms tick, not once per second — so the loop actually
+gave up after `(timeout + 5) * 100ms`, roughly a tenth of the intended
+wait. This affected every `at_command.sh` caller with a nontrivial
+timeout, not just carrier scan; short/fast commands (the majority of
+`at_poller.sh`'s calls) mostly finish well inside even the shrunken
+window, which is why it went unnoticed until a command that genuinely
+needs a long timeout was tried. Fixed by scaling `wait_limit` by 10;
+retested carrier scan for real afterward (9 operators, ~12s — the modem
+itself finished well within the now-correct window). Also fixed a
+smaller issue found in the same spot: the `usleep`-unavailable fallback
+was `sleep 1` (a full second, 10x the intended per-tick granularity)
+instead of QuecControl's original `sleep 0.1`.

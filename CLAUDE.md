@@ -58,7 +58,13 @@ web assets.
   - `at_command.sh` is the client: `at_command.sh "AT+CMD" [timeout]`
     writes a request and blocks for the response file. Everything else
     (poller, CGI scripts) should go through this rather than writing to
-    the FIFO directly.
+    the FIFO directly. Its response-file poll loop counts 100ms ticks —
+    `wait_limit` must be `(timeout + 5) * 10`, not `timeout + 5`. Getting
+    this wrong (an off-by-10x, inherited from the same bug in
+    QuecControl's own `at_command.sh`) meant every call effectively
+    waited a tenth of its requested timeout; found when a real
+    `AT+COPS=?` carrier scan came back "timed out" after ~14s instead of
+    the ~130s it was given. See `SCOPE.md` for the full story.
   - `at_poller.sh` runs one collection cycle every `POLL_INTERVAL`
     seconds (via `at_command.sh`, not the FIFO directly) and atomically
     writes merged state to `/tmp/openmodem/state_merged.json`
@@ -82,8 +88,21 @@ web assets.
     the modem's embedded web server (e.g. `busybox httpd`). They read
     query strings from `$QUERY_STRING` (no framework parsing), write
     `Content-Type`/`Cache-Control` headers by hand, and call into
-    `bin/at_command.sh`-style helpers rather than touching the AT device
-    directly.
+    `bin/at_command.sh` rather than touching the AT device directly.
+    `state.sh` (poller JSON passthrough) and `update.sh` (System's
+    Update button) exist alongside three action scripts adapted from
+    QuecControl's equivalents: `band_lock.sh` (get/set
+    `AT+QNWPREFCFG`), `carrier_scan.sh` (`AT+COPS=?`, up to a 130s
+    timeout), and `at_cmd.sh` (generic `AT+COMMAND` passthrough,
+    backing both the AT Terminal and Power's fixed-command buttons — see
+    `SCOPE.md`'s Actions section).
+  - `app.js`'s state refresh is self-scheduling, not a fixed interval:
+    each `state.sh` fetch reads `_poll_interval_s` from the response and
+    reschedules its own next fetch using that value, so it tracks
+    `POLL_INTERVAL` in `openmodem.conf` automatically. The "Updated Xs
+    ago" display ticks every second on its own timer, independent of the
+    actual (much slower) fetch cadence — don't conflate the two if
+    touching either.
 - **`installer.sh`** — same shape as QuecControl's installer:
   `curl -fsSL .../installer.sh | sh` first removes any existing
   QuecControl, SimpleAdmin, or OpenModem install (services, systemd

@@ -22,13 +22,21 @@
         <div class="om-row"><span class="om-row-label">IMEI</span><span data-field="device_imei">—</span></div>
         <div class="om-row"><span class="om-row-label">Firmware</span><span data-field="device_firmware">—</span></div>
       </div>
-      <div class="om-card">
+      <div class="om-card om-card-wide">
         <h2>AT Terminal</h2>
-        <p class="om-note">Not implemented yet.</p>
+        <div id="om-term-log" class="om-term-log"></div>
+        <div class="om-term-input-row">
+          <input id="om-term-input" type="text" placeholder="AT+..." autocomplete="off" spellcheck="false">
+          <button id="om-term-send" type="button">Send</button>
+        </div>
       </div>
       <div class="om-card">
         <h2>Power</h2>
-        <p class="om-note">Not implemented yet.</p>
+        <div class="om-button-stack">
+          <button type="button" data-power-action="reboot">Reboot</button>
+          <button type="button" data-power-action="radio_off">Radio Off</button>
+          <button type="button" data-power-action="radio_on">Radio On</button>
+        </div>
       </div>
       <div class="om-card">
         <h2>Update</h2>

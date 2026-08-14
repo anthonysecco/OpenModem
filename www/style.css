@@ -168,6 +168,84 @@ body {
   text-align: right;
 }
 
+.om-card-wide {
+  grid-column: 1 / -1;
+}
+
+.om-button-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.om-form-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin: 0.6rem 0;
+}
+
+.om-form-row label {
+  font-size: 0.8rem;
+  color: var(--text-dim);
+}
+
+.om-form-row input,
+.om-term-input-row input {
+  font: inherit;
+  padding: 0.5rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text);
+}
+
+#om-bandlock-apply {
+  margin-top: 0.25rem;
+}
+
+#om-bandlock-status,
+#om-scan-status {
+  margin-top: 0.5rem;
+}
+
+/* ── AT Terminal ── */
+.om-term-log {
+  max-height: 320px;
+  overflow-y: auto;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.5rem 0.75rem;
+  margin-bottom: 0.75rem;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 0.85rem;
+}
+
+.om-term-line {
+  margin-bottom: 0.5rem;
+}
+
+.om-term-cmd {
+  color: var(--accent);
+}
+
+.om-term-resp {
+  margin: 0.15rem 0 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--text);
+}
+
+.om-term-input-row {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.om-term-input-row input {
+  flex: 1;
+}
+
 /* ── Desktop layout ── */
 @media (min-width: 768px) {
   .om-sidebar {

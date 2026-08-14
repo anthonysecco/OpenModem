@@ -274,6 +274,7 @@ write_state() {
 {
   "_polled_at": ${_polled_at},
   "_poll_duration_s": ${_duration},
+  "_poll_interval_s": ${POLL_INTERVAL},
   "device_model": ${F_MODEL},
   "device_imei": ${F_IMEI},
   "device_firmware": ${F_FIRMWARE},
