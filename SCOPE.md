@@ -55,10 +55,17 @@ goal).
 - Before installing, it removes any prior **QuecControl**, **SimpleAdmin**,
   or **OpenModem** install (services, systemd units, `/usrdata/*`,
   `/tmp/*` runtime state) so only one admin UI runs on the device at a
-  time. The QuecControl/OpenModem names are confirmed; the SimpleAdmin
-  service/path names in `installer.sh` are a best-effort guess not yet
-  verified against a real SimpleAdmin install — correct them once one is
-  available to inspect.
+  time. All names are confirmed against a real device (see "Verified
+  against real hardware" below) — SimpleAdmin (from
+  `iamromulan/quectel-rgmii-toolkit`) runs `simpleadmin_httpd.service` +
+  `simpleadmin_generate_status.service` out of `/usrdata/simpleadmin`,
+  plus a separate `socat-at-bridge` toolkit (`socat-smd11*`/`socat-smd7*`
+  units out of `/usrdata/socat-at-bridge`) that bridges `/dev/smd11` to
+  pty pairs for it — that has to be removed too, not just SimpleAdmin
+  itself, since it and our own `at_broker.sh` would otherwise both try to
+  own `/dev/smd11` at once. Tailscale and simplefirewall (also part of
+  that toolkit) are deliberately left alone — nothing here conflicts with
+  them and removing them wasn't asked for.
 - **Update** is just "run the installer again": the System page's Update
   button calls `www/cgi-bin/update.sh?action=start&confirm=1`, which
   requires client-side confirmation first (a `window.confirm()` warning
@@ -69,6 +76,32 @@ goal).
   `update.sh?action=status` until the reinstalled httpd comes back.
   `openmodem.conf` is preserved across updates (installer skips
   re-downloading it if one already exists).
+
+## Verified against real hardware
+
+Confirmed on an actual RM520N-GL (2026-08-14), not assumed:
+
+- The module runs its own embedded Linux on-board (`sdxlemur`, Qualcomm
+  SDX65, `LE.UM.6.3.6.r1-02600-SDX65.0`, armv7l) — this is what
+  `installer.sh` targets, not the host it's tethered to. Get a root shell
+  on it via `adb shell` over the same USB connection used for AT/data
+  (it was already unlocked on this device via the ADBKEY process
+  documented by `iamromulan/quectel-rgmii-configuration-notes`; a fresh
+  module needs that unlock done once first).
+- `systemd 244`, `busybox 1.31.1`; `/usr/sbin/httpd` is a symlink to
+  busybox (`installer.sh` uses this path rather than `/bin/busybox httpd`
+  to match the device's own convention).
+- `/dev/smd11` exists exactly as `config/openmodem.conf`'s `AT_DEVICE`
+  default assumes.
+- `/` is UBIFS (`ubi0:rootfs`), mounted read-only by default. Despite
+  showing an `assert=read-only` mount option, `mount -o remount,rw /`
+  genuinely works — confirmed by writing to `/lib/systemd/system` after
+  remounting, then remounting back `ro`. This is the same
+  remount-write-remount pattern `installer.sh` (and SimpleAdmin's own
+  installer, judging by its installed state) uses.
+- `/usrdata` (a separate UBI volume, `/dev/ubi2_0`) is always read-write
+  and is where every third-party toolkit — SimpleAdmin, socat-at-bridge,
+  Tailscale, simplefirewall, and now OpenModem — actually lives.
 
 ## Open questions
 

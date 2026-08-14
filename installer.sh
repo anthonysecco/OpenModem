@@ -21,18 +21,24 @@ echo "==============================="
 echo ""
 
 # --- Remove other/prior installs ---
-# QuecControl and OpenModem service/path names are confirmed (this repo's
-# own installer, and QuecControl's, both cleaned up their predecessor).
-# The SimpleAdmin names below are a best-effort guess at its conventions
-# and have NOT been verified against a real SimpleAdmin install — check
-# `systemctl list-units`/`ls /usrdata` on a device that has it installed
-# and correct these if they don't match.
+# QuecControl and OpenModem service/path names are confirmed. SimpleAdmin's
+# were verified against a real iamromulan/quectel-rgmii-toolkit install:
+# it runs simpleadmin_httpd.service + simpleadmin_generate_status.service
+# out of /usrdata/simpleadmin, plus a separate socat-at-bridge toolkit
+# (socat-smd11*/socat-smd7* units out of /usrdata/socat-at-bridge) that
+# bridges /dev/smd11 to pty pairs for it. The socat bridge has to go too,
+# not just simpleadmin itself — it and our own at_broker.sh would otherwise
+# both try to own /dev/smd11 at once. Tailscale and simplefirewall (also
+# part of that toolkit) are left alone; nothing here conflicts with them
+# and removing them wasn't asked for.
 echo "[1/6] Removing existing installs (QuecControl, SimpleAdmin, OpenModem)..."
 
 for svc in \
     queccontrol-poller queccontrol-init queccontrol-broker queccontrol-httpd \
     quecmanager-broker quecmanager-httpd \
-    simpleadmin-poller simpleadmin-broker simpleadmin-httpd simpleadmin \
+    simpleadmin_httpd simpleadmin_generate_status \
+    socat-smd11 socat-smd11-to-ttyIN socat-smd11-from-ttyIN \
+    socat-smd7 socat-smd7-to-ttyIN2 socat-smd7-from-ttyIN2 socat-killsmd7bridge \
     openmodem-poller openmodem-broker openmodem-httpd
 do
     systemctl stop "$svc" 2>/dev/null
@@ -42,18 +48,22 @@ done
 rm -f /etc/systemd/system/queccontrol-*.service
 rm -f /etc/systemd/system/quecmanager-*.service
 rm -f /etc/systemd/system/simpleadmin*.service
+rm -f /etc/systemd/system/socat-*.service
 rm -f /etc/systemd/system/openmodem-*.service
 rm -f /lib/systemd/system/queccontrol-*.service
 rm -f /lib/systemd/system/quecmanager-*.service
 rm -f /lib/systemd/system/simpleadmin*.service
+rm -f /lib/systemd/system/socat-*.service
 rm -f /lib/systemd/system/openmodem-*.service
 rm -f /lib/systemd/system/multi-user.target.wants/queccontrol-*.service
 rm -f /lib/systemd/system/multi-user.target.wants/quecmanager-*.service
 rm -f /lib/systemd/system/multi-user.target.wants/simpleadmin*.service
+rm -f /lib/systemd/system/multi-user.target.wants/socat-*.service
 rm -f /lib/systemd/system/multi-user.target.wants/openmodem-*.service
 rm -f /etc/systemd/system/multi-user.target.wants/queccontrol-*.service
 rm -f /etc/systemd/system/multi-user.target.wants/quecmanager-*.service
 rm -f /etc/systemd/system/multi-user.target.wants/simpleadmin*.service
+rm -f /etc/systemd/system/multi-user.target.wants/socat-*.service
 rm -f /etc/systemd/system/multi-user.target.wants/openmodem-*.service
 
 if [ -f /etc/init.d/queccontrol ]; then
@@ -67,9 +77,11 @@ fi
 
 systemctl daemon-reload 2>/dev/null
 
-pkill -f "httpd.*8080"      2>/dev/null
-pkill -f "at_broker.sh"     2>/dev/null
-pkill -f "at_poller.sh"     2>/dev/null
+pkill -f "httpd.*8080"        2>/dev/null
+pkill -f "at_broker.sh"       2>/dev/null
+pkill -f "at_poller.sh"       2>/dev/null
+pkill -f "socat-armel-static" 2>/dev/null
+pkill -f "build_modem_status" 2>/dev/null
 
 rm -f  /tmp/at_request
 rm -rf /tmp/at_responses
@@ -89,6 +101,7 @@ fi
 rm -rf "$INSTALL_DIR"
 rm -rf "/usrdata/quecmanager"
 rm -rf "/usrdata/simpleadmin"
+rm -rf "/usrdata/socat-at-bridge"
 
 echo "  Done."
 
@@ -208,7 +221,7 @@ Requires=openmodem-broker.service
 
 [Service]
 Type=simple
-ExecStart=/bin/busybox httpd -f -p 8080 -h /usrdata/openmodem/www
+ExecStart=/usr/sbin/httpd -f -h /usrdata/openmodem/www -p 8080
 Restart=always
 RestartSec=3
 
