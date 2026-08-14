@@ -230,8 +230,11 @@ collect_carrier_aggregation() {
     for _line in $_lines; do
         _band=$(printf '%s' "$_line" | grep -oE '"LTE BAND [0-9]+"' | tr -d '"')
         [ -z "$_band" ] && continue
+        # First quoted field on the line is the component type, "PCC" or
+        # "SCC" (primary/secondary component carrier).
+        _type=$(printf '%s' "$_line" | sed 's/^+QCAINFO: "//; s/".*//')
         [ "$_first" -eq 1 ] || _json="${_json},"
-        _json="${_json}$(json_str "$_band")"
+        _json="${_json}{\"type\":$(json_str "$_type"),\"band\":$(json_str "$_band")}"
         _first=0
         _count=$(( _count + 1 ))
     done

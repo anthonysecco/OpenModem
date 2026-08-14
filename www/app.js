@@ -11,11 +11,54 @@
     { label: 'System',    href: '/system.html',   key: 'system'    },
   ];
 
+  /* Material-Design-style outline icons (24x24, stroke=currentColor).
+     Hand-built with plain shapes rather than pasted-in Material Icons
+     path data — a misremembered path string renders as visible garbage,
+     a wrong rect/circle coordinate is at worst a slightly-off shape. */
+  var ICONS = {
+    dashboard:
+      '<rect x="3" y="3" width="8" height="8" rx="1.5"/>' +
+      '<rect x="13" y="3" width="8" height="8" rx="1.5"/>' +
+      '<rect x="3" y="13" width="8" height="8" rx="1.5"/>' +
+      '<rect x="13" y="13" width="8" height="8" rx="1.5"/>',
+    cellular:
+      '<rect x="4" y="15" width="3" height="6" rx="0.5"/>' +
+      '<rect x="10.5" y="10" width="3" height="11" rx="0.5"/>' +
+      '<rect x="17" y="5" width="3" height="16" rx="0.5"/>',
+    sim:
+      '<path d="M8 3h10l2 2v16H6V5z"/>' +
+      '<rect x="9" y="9" width="6" height="5" rx="1"/>',
+    wan:
+      '<circle cx="12" cy="12" r="9"/>' +
+      '<ellipse cx="12" cy="12" rx="4" ry="9"/>' +
+      '<line x1="3" y1="12" x2="21" y2="12"/>',
+    lan:
+      '<circle cx="12" cy="12" r="2"/>' +
+      '<circle cx="4" cy="5" r="2"/><circle cx="20" cy="5" r="2"/><circle cx="12" cy="20" r="2"/>' +
+      '<line x1="12" y1="12" x2="4" y2="5"/><line x1="12" y1="12" x2="20" y2="5"/><line x1="12" y1="12" x2="12" y2="20"/>',
+    system:
+      '<circle cx="12" cy="12" r="3"/><circle cx="12" cy="12" r="7"/>' +
+      '<line x1="19" y1="12" x2="21.5" y2="12"/>' +
+      '<line x1="16.95" y1="16.95" x2="18.72" y2="18.72"/>' +
+      '<line x1="12" y1="19" x2="12" y2="21.5"/>' +
+      '<line x1="7.05" y1="16.95" x2="5.28" y2="18.72"/>' +
+      '<line x1="5" y1="12" x2="2.5" y2="12"/>' +
+      '<line x1="7.05" y1="7.05" x2="5.28" y2="5.28"/>' +
+      '<line x1="12" y1="5" x2="12" y2="2.5"/>' +
+      '<line x1="16.95" y1="7.05" x2="18.72" y2="5.28"/>'
+  };
+
+  function iconSvg(key) {
+    return '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" ' +
+      'stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+      (ICONS[key] || '') + '</svg>';
+  }
+
   function buildNavLinks(activeKey) {
     return NAV.map(function (item) {
       var cls = item.key === activeKey ? ' class="active"' : '';
-      return '<a href="' + item.href + '"' + cls + '><span class="icon" data-icon="' +
-        item.key + '"></span><span class="label">' + item.label + '</span></a>';
+      return '<a href="' + item.href + '"' + cls + '>' + iconSvg(item.key) +
+        '<span class="label">' + item.label + '</span></a>';
     }).join('');
   }
 
@@ -47,15 +90,20 @@
   function fmtDbm(v) { return (v === null || v === undefined) ? null : v + ' dBm'; }
   function fmtReg(v) { return REG_LABELS[v] !== undefined ? REG_LABELS[v] : null; }
   function fmtBool(v) { return v === true ? 'Active' : v === false ? 'Inactive' : null; }
-  function fmtList(v) { return (Array.isArray(v) && v.length) ? v.join(', ') : (Array.isArray(v) ? null : v); }
   function fmtBands(v) { return (typeof v === 'string' && v.length) ? v.split(':').join(', ') : v; }
+  // ca_bands is [{type:"PCC"|"SCC", band:"LTE BAND N"}, ...] — PCC first
+  // (it's always listed first by the modem), then each SCC.
+  function fmtCaBands(v) {
+    if (!Array.isArray(v) || !v.length) return null;
+    return v.map(function (c) { return c.type + ': ' + c.band; }).join(', ');
+  }
 
   var FORMATTERS = {
     reg_lte: fmtReg, reg_nr: fmtReg, reg_creg: fmtReg,
     signal_lte_rsrp: fmtDbm, signal_lte_rsrq: fmtDbm, signal_lte_sinr: fmtDbm,
     signal_nr_rsrp: fmtDbm, signal_nr_rsrq: fmtDbm, signal_nr_sinr: fmtDbm,
     wan_active: fmtBool,
-    ca_bands: fmtList,
+    ca_bands: fmtCaBands,
     band_pref_lte: fmtBands, band_pref_nr5g: fmtBands
   };
 
@@ -192,52 +240,144 @@
     if (btn) btn.addEventListener('click', startUpdate);
   }
 
-  /* ── AT Terminal (System page) ──────────────────────────────────── */
-  function termAppend(cmd, response) {
-    var log = document.getElementById('om-term-log');
-    if (!log) return;
-    var line = document.createElement('div');
-    line.className = 'om-term-line';
-    line.innerHTML =
-      '<div class="om-term-cmd">&gt; ' + escapeHtml(cmd) + '</div>' +
-      '<pre class="om-term-resp">' + escapeHtml(response) + '</pre>';
-    log.appendChild(line);
-    log.scrollTop = log.scrollHeight;
-  }
-
+  /* ── AT Terminal (System page) ───────────────────────────────────
+     Styled after QuecControl's system.html terminal: mac-window chrome,
+     colored output lines, preset command chips, command history via
+     arrow keys. One deliberate difference: QuecControl force-uppercases
+     the entire command before sending it, which would mangle a
+     case-sensitive quoted parameter (e.g. AT+QNWPREFCFG="lte_band" —
+     that "lte_band" string must stay lowercase). This only uppercases
+     what's needed to recognize the AT prefix, and prepends "AT" if the
+     user typed just the suffix — it doesn't touch the rest of the
+     command. */
   function escapeHtml(s) {
     return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   }
 
+  function termAppendHtml(html) {
+    var log = document.getElementById('om-term-log');
+    if (!log) return;
+    var div = document.createElement('div');
+    div.innerHTML = html;
+    log.appendChild(div);
+    log.scrollTop = log.scrollHeight;
+  }
+
+  function termTimestamp() {
+    return '<span class="om-t-muted">[' + new Date().toLocaleTimeString() + ']</span> ';
+  }
+
+  function termAppendPrompt(cmd) {
+    termAppendHtml(termTimestamp() + '<span class="om-t-prompt">&gt; ' + escapeHtml(cmd) + '</span>');
+  }
+
+  function termAppendResponse(text) {
+    var lines = text.trim().split(/\r\n|\r|\n/);
+    lines.forEach(function (line) {
+      if (!line) return;
+      var cls = 'om-t-info';
+      if (line.trim() === 'OK') cls = 'om-t-ok';
+      else if (/ERROR/.test(line)) cls = 'om-t-error';
+      termAppendHtml('<span class="' + cls + '">' + escapeHtml(line) + '</span>');
+    });
+  }
+
   function sendAtCommand(cmd) {
-    if (!cmd) return;
+    if (!cmd) return Promise.resolve();
+    termAppendPrompt(cmd);
     return fetch('/cgi-bin/at_cmd.sh?cmd=' + encodeURIComponent(cmd))
       .then(function (r) { return r.text(); })
       .then(function (text) {
-        termAppend(cmd, text.trim());
+        termAppendResponse(text);
         return text;
       })
       .catch(function (err) {
-        termAppend(cmd, 'ERROR: ' + err);
+        termAppendHtml('<span class="om-t-error">Error: ' + escapeHtml(String(err)) + '</span>');
       });
   }
+
+  var TERM_PRESETS = [
+    'ATI', 'AT+QGMR', 'AT+GSN', 'AT+QTEMP', 'AT+CSQ', 'AT+QRSRP', 'AT+QRSRQ',
+    'AT+QSINR', 'AT+CEREG?', 'AT+C5GREG?', 'AT+CFUN?', 'AT+COPS?', 'AT+QSPN'
+  ];
+
+  function buildTermPresets() {
+    var row = document.getElementById('om-term-presets');
+    var input = document.getElementById('om-term-input');
+    if (!row || !input) return;
+    TERM_PRESETS.forEach(function (cmd) {
+      var chip = document.createElement('span');
+      chip.className = 'om-term-preset';
+      chip.textContent = cmd;
+      chip.addEventListener('click', function () {
+        input.value = cmd;
+        input.focus();
+      });
+      row.appendChild(chip);
+    });
+  }
+
+  var termHistory = [];
+  var termHistIdx = -1;
 
   function initAtTerminal() {
     var input = document.getElementById('om-term-input');
     var btn = document.getElementById('om-term-send');
+    var clearBtn = document.getElementById('om-term-clear');
+    var exportBtn = document.getElementById('om-term-export');
     if (!input || !btn) return;
 
+    buildTermPresets();
+
     var submit = function () {
-      var cmd = input.value.trim();
-      if (!cmd) return;
+      var raw = input.value.trim();
+      if (!raw) return;
+      var cmd = /^AT/i.test(raw) ? raw : 'AT' + raw;
       input.value = '';
+      termHistIdx = -1;
+      termHistory.push(cmd);
+      if (termHistory.length > 50) termHistory.shift();
       sendAtCommand(cmd);
     };
 
     btn.addEventListener('click', submit);
     input.addEventListener('keydown', function (e) {
-      if (e.key === 'Enter') submit();
+      if (e.key === 'Enter') { submit(); return; }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        if (termHistIdx < termHistory.length - 1) {
+          termHistIdx++;
+          input.value = termHistory[termHistory.length - 1 - termHistIdx] || '';
+        }
+        return;
+      }
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        if (termHistIdx > 0) {
+          termHistIdx--;
+          input.value = termHistory[termHistory.length - 1 - termHistIdx] || '';
+        } else {
+          termHistIdx = -1;
+          input.value = '';
+        }
+      }
     });
+
+    if (clearBtn) {
+      clearBtn.addEventListener('click', function () {
+        document.getElementById('om-term-log').innerHTML = '';
+      });
+    }
+    if (exportBtn) {
+      exportBtn.addEventListener('click', function () {
+        var text = document.getElementById('om-term-log').innerText;
+        var blob = new Blob([text], { type: 'text/plain' });
+        var a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = 'openmodem_at_log_' + Date.now() + '.txt';
+        a.click();
+      });
+    }
   }
 
   /* ── Power actions (System page) ───────────────────────────────────
@@ -275,21 +415,89 @@
   }
 
   /* ── Band lock (Cellular page) ─────────────────────────────────────
-     Current values are shown read-only via data-field (band_pref_lte/
-     band_pref_nr5g, from the poller). This just adds a way to set new
-     ones — it doesn't try to pre-fill the inputs with current values. */
+     One checkbox per band, matching QuecControl's bandlock.html rather
+     than a free-text comma list. Band universes are the modem's own
+     reported capability (captured live from AT+QNWPREFCFG when nothing
+     is locked, i.e. every band it's willing to list is enabled) rather
+     than a hardcoded reference list.
+
+     Checkbox state is initialized once on page load from
+     band_lock.sh?action=get — deliberately NOT re-synced on every
+     state.sh poll tick (that runs every POLL_INTERVAL, ~10s by default),
+     which would silently discard whatever the user is mid-edit on. */
+  var LTE_BANDS = [1, 2, 3, 4, 5, 7, 8, 12, 13, 14, 17, 18, 19, 20, 25, 26, 28, 29, 30, 32, 34, 38, 39, 40, 41, 42, 43, 46, 48, 66, 71];
+  var NR_BANDS = [1, 2, 3, 5, 7, 8, 12, 13, 14, 18, 20, 25, 26, 28, 29, 30, 38, 40, 41, 48, 66, 70, 71, 75, 76, 77, 78, 79];
+
+  function renderBandGrid(containerId, bands, labelPrefix) {
+    var container = document.getElementById(containerId);
+    if (!container) return;
+    container.innerHTML = bands.map(function (b) {
+      return '<label class="om-band-item"><input type="checkbox" value="' + b + '"> ' +
+        labelPrefix + b + '</label>';
+    }).join('');
+  }
+
+  function setBandGridChecked(containerId, selected) {
+    var container = document.getElementById(containerId);
+    if (!container) return;
+    var checkboxes = container.querySelectorAll('input[type="checkbox"]');
+    for (var i = 0; i < checkboxes.length; i++) {
+      checkboxes[i].checked = selected.indexOf(Number(checkboxes[i].value)) !== -1;
+    }
+  }
+
+  function setBandGridAll(containerId, checked) {
+    var container = document.getElementById(containerId);
+    if (!container) return;
+    var checkboxes = container.querySelectorAll('input[type="checkbox"]');
+    for (var i = 0; i < checkboxes.length; i++) checkboxes[i].checked = checked;
+  }
+
+  function getBandGridSelected(containerId) {
+    var container = document.getElementById(containerId);
+    if (!container) return [];
+    var checked = container.querySelectorAll('input[type="checkbox"]:checked');
+    var out = [];
+    for (var i = 0; i < checked.length; i++) out.push(checked[i].value);
+    return out;
+  }
+
+  function loadCurrentBandLock() {
+    fetch('/cgi-bin/band_lock.sh?action=get')
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        if (!data.success) return;
+        // null means the modem reported a hex bitmask (= "all bands");
+        // treat that the same as everything being selected.
+        setBandGridChecked('om-bandlock-lte-grid', data.lte_bands || LTE_BANDS);
+        setBandGridChecked('om-bandlock-nr-grid', data.nr_bands || NR_BANDS);
+      })
+      .catch(function () { /* leave grids at their default (unchecked) state */ });
+  }
+
   function initBandLock() {
     var btn = document.getElementById('om-bandlock-apply');
     if (!btn) return;
-    var lteInput = document.getElementById('om-bandlock-lte');
-    var nrInput = document.getElementById('om-bandlock-nr');
     var statusEl = document.getElementById('om-bandlock-status');
 
+    renderBandGrid('om-bandlock-lte-grid', LTE_BANDS, 'B');
+    renderBandGrid('om-bandlock-nr-grid', NR_BANDS, 'n');
+    loadCurrentBandLock();
+
+    var lteAll = document.getElementById('om-bandlock-lte-all');
+    var lteNone = document.getElementById('om-bandlock-lte-none');
+    var nrAll = document.getElementById('om-bandlock-nr-all');
+    var nrNone = document.getElementById('om-bandlock-nr-none');
+    if (lteAll) lteAll.addEventListener('click', function () { setBandGridAll('om-bandlock-lte-grid', true); });
+    if (lteNone) lteNone.addEventListener('click', function () { setBandGridAll('om-bandlock-lte-grid', false); });
+    if (nrAll) nrAll.addEventListener('click', function () { setBandGridAll('om-bandlock-nr-grid', true); });
+    if (nrNone) nrNone.addEventListener('click', function () { setBandGridAll('om-bandlock-nr-grid', false); });
+
     btn.addEventListener('click', function () {
-      var lte = lteInput.value.trim();
-      var nr = nrInput.value.trim();
-      if (!lte && !nr) {
-        statusEl.textContent = 'Enter at least one band list.';
+      var lte = getBandGridSelected('om-bandlock-lte-grid');
+      var nr = getBandGridSelected('om-bandlock-nr-grid');
+      if (!lte.length && !nr.length) {
+        statusEl.textContent = 'Select at least one band.';
         return;
       }
       if (!window.confirm('This changes the band lock. The network may briefly reconnect. Continue?')) return;
@@ -297,8 +505,8 @@
       btn.disabled = true;
       statusEl.textContent = 'Applying…';
       var qs = [];
-      if (lte) qs.push('lte_bands=' + encodeURIComponent(lte));
-      if (nr) qs.push('nr_bands=' + encodeURIComponent(nr));
+      if (lte.length) qs.push('lte_bands=' + encodeURIComponent(lte.join(',')));
+      if (nr.length) qs.push('nr_bands=' + encodeURIComponent(nr.join(',')));
 
       fetch('/cgi-bin/band_lock.sh?action=set&' + qs.join('&'))
         .then(function (r) { return r.json(); })
@@ -338,8 +546,9 @@
 
     btn.addEventListener('click', function () {
       if (!window.confirm(
-        'This scans for available carriers (AT+COPS=?). It can take up to ' +
-        '2 minutes and will interrupt data service while it runs. Continue?'
+        'Are you sure? Scanning for carriers (AT+COPS=?) will disrupt ' +
+        'connectivity for up to 2 minutes while the modem searches. ' +
+        'Click Cancel to back out, or OK to proceed.'
       )) return;
 
       btn.disabled = true;

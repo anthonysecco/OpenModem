@@ -42,24 +42,31 @@
         <div class="om-row"><span class="om-row-label">TAC</span><span data-field="cell_tac">—</span></div>
         <div class="om-row"><span class="om-row-label">MCC/MNC</span><span data-field="cell_mcc">—</span>/<span data-field="cell_mnc">—</span></div>
       </div>
-      <div class="om-card">
+      <div class="om-card om-card-wide">
         <h2>Carrier Aggregation</h2>
         <div class="om-row"><span class="om-row-label">Components</span><span data-field="ca_count">—</span></div>
-        <div class="om-row"><span class="om-row-label">Bands</span><span data-field="ca_bands">—</span></div>
+        <div class="om-row"><span class="om-row-label">PCC / SCC</span><span data-field="ca_bands">—</span></div>
       </div>
-      <div class="om-card">
+      <div class="om-card om-card-wide">
         <h2>Band Lock</h2>
-        <div class="om-row"><span class="om-row-label">LTE bands</span><span data-field="band_pref_lte">—</span></div>
-        <div class="om-row"><span class="om-row-label">NR5G bands</span><span data-field="band_pref_nr5g">—</span></div>
-        <div class="om-form-row">
-          <label for="om-bandlock-lte">Set LTE bands</label>
-          <input id="om-bandlock-lte" type="text" placeholder="e.g. 2,4,12" autocomplete="off">
+        <div class="om-row"><span class="om-row-label">Currently locked — LTE</span><span data-field="band_pref_lte">—</span></div>
+        <div class="om-row"><span class="om-row-label">Currently locked — NR5G</span><span data-field="band_pref_nr5g">—</span></div>
+
+        <p class="om-band-section-title">LTE bands</p>
+        <div class="om-band-actions">
+          <button type="button" id="om-bandlock-lte-all" class="om-secondary">All</button>
+          <button type="button" id="om-bandlock-lte-none" class="om-secondary">None</button>
         </div>
-        <div class="om-form-row">
-          <label for="om-bandlock-nr">Set NR5G bands</label>
-          <input id="om-bandlock-nr" type="text" placeholder="e.g. 71,77" autocomplete="off">
+        <div id="om-bandlock-lte-grid" class="om-band-grid"></div>
+
+        <p class="om-band-section-title">NR5G bands</p>
+        <div class="om-band-actions">
+          <button type="button" id="om-bandlock-nr-all" class="om-secondary">All</button>
+          <button type="button" id="om-bandlock-nr-none" class="om-secondary">None</button>
         </div>
-        <button id="om-bandlock-apply" type="button">Apply Band Lock</button>
+        <div id="om-bandlock-nr-grid" class="om-band-grid"></div>
+
+        <button id="om-bandlock-apply" type="button" style="margin-top: 1rem;">Apply Band Lock</button>
         <p id="om-bandlock-status" class="om-note"></p>
       </div>
       <div class="om-card om-card-wide">

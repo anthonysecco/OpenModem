@@ -88,9 +88,7 @@ body {
 .om-sidebar .icon {
   width: 20px;
   height: 20px;
-  border-radius: 4px;
-  background: currentColor;
-  opacity: 0.25;
+  flex-shrink: 0;
 }
 
 /* ── Main content ── */
@@ -190,14 +188,69 @@ body {
   color: var(--text-dim);
 }
 
-.om-form-row input,
-.om-term-input-row input {
+.om-form-row input {
   font: inherit;
   padding: 0.5rem 0.6rem;
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--bg);
   color: var(--text);
+}
+
+.om-band-section-title {
+  font-size: 0.72rem;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin: 0.75rem 0 0.4rem;
+}
+.om-band-section-title:first-child { margin-top: 0; }
+
+.om-band-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.om-band-item {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.3rem 0.55rem;
+  font-size: 0.78rem;
+  cursor: pointer;
+  user-select: none;
+}
+
+.om-band-item:hover { border-color: var(--accent); }
+
+.om-band-item input {
+  cursor: pointer;
+  accent-color: var(--accent);
+  width: 14px;
+  height: 14px;
+}
+
+.om-band-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.om-band-actions button {
+  font-size: 0.78rem;
+  padding: 0.35rem 0.7rem;
+}
+
+.om-band-actions .om-secondary {
+  background: var(--bg);
+  color: var(--text-dim);
+  border: 1px solid var(--border);
 }
 
 #om-bandlock-apply {
@@ -209,41 +262,140 @@ body {
   margin-top: 0.5rem;
 }
 
-/* ── AT Terminal ── */
-.om-term-log {
-  max-height: 320px;
-  overflow-y: auto;
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 0.5rem 0.75rem;
+/* ── AT Terminal ──
+   Deliberately dark in both light and dark host themes, like a real
+   terminal emulator — modeled on QuecControl's system.html terminal. */
+.om-term-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   margin-bottom: 0.75rem;
-  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
-  font-size: 0.85rem;
 }
 
-.om-term-line {
-  margin-bottom: 0.5rem;
-}
-
-.om-term-cmd {
-  color: var(--accent);
-}
-
-.om-term-resp {
-  margin: 0.15rem 0 0;
-  white-space: pre-wrap;
-  word-break: break-word;
-  color: var(--text);
-}
-
-.om-term-input-row {
+.om-term-header-btns {
   display: flex;
   gap: 0.5rem;
 }
 
+.om-term-header-btns button {
+  font-size: 0.75rem;
+  padding: 0.3rem 0.65rem;
+  background: var(--surface);
+  color: var(--text-dim);
+  border: 1px solid var(--border);
+}
+
+.om-terminal {
+  background: #181818;
+  border: 1px solid #333;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.om-term-bar {
+  background: #252525;
+  padding: 0.5rem 0.85rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  border-bottom: 1px solid #333;
+}
+
+.om-term-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+.om-term-dot.red    { background: #ff5f56; }
+.om-term-dot.yellow { background: #ffbd2e; }
+.om-term-dot.green  { background: #27c93f; }
+
+.om-term-title {
+  flex: 1;
+  text-align: center;
+  font-size: 0.75rem;
+  color: #777;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+
+.om-term-log {
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 0.82rem;
+  line-height: 1.6;
+  padding: 0.85rem 1rem;
+  min-height: 200px;
+  max-height: 340px;
+  overflow-y: auto;
+  color: #ccc;
+}
+
+.om-term-log:empty::before {
+  content: "AT command output will appear here…";
+  color: #555;
+  font-style: italic;
+}
+
+.om-t-prompt { color: #c49a6c; }
+.om-t-ok     { color: #27c93f; }
+.om-t-error  { color: #ff5f56; }
+.om-t-info   { color: #7dd3fc; }
+.om-t-muted  { color: #666; font-size: 0.72rem; }
+
+.om-term-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  padding: 0.65rem 1rem;
+  border-top: 1px solid #333;
+  background: #1c1c1c;
+}
+
+.om-term-preset {
+  background: #2a2a2a;
+  border: 1px solid #3a3a3a;
+  color: #999;
+  font-size: 0.72rem;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  padding: 0.2rem 0.5rem;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.om-term-preset:hover {
+  background: #333;
+  color: #c49a6c;
+  border-color: #c49a6c;
+}
+
+.om-term-input-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.6rem 1rem;
+  border-top: 1px solid #333;
+  background: #1a1a1a;
+}
+
+.om-term-prefix {
+  color: #c49a6c;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 0.85rem;
+}
+
 .om-term-input-row input {
   flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: #ececec;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 0.85rem;
+}
+
+.om-term-input-row input::placeholder { color: #555; }
+
+.om-term-input-row button {
+  flex-shrink: 0;
 }
 
 /* ── Desktop layout ── */

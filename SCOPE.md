@@ -205,8 +205,8 @@ own paths/conventions):
   actually restricting connectivity) — confirmed applied via a
   follow-up GET. Cellular page's Band Lock card shows the current
   value read-only (via `at_poller.sh`'s `band_pref_lte`/`band_pref_nr5g`)
-  plus separate inputs to set new ones — it does not pre-fill the
-  inputs from the current value.
+  plus a checkbox per band (see "Visual redesign" below) that's
+  pre-filled from a one-time `action=get` call on page load.
 - **`carrier_scan.sh`** — `AT+COPS=?`, up to a 130s timeout since a real
   scan can take close to 2 minutes. Tested live: returned 9 real
   operators (AT&T current, FirstNet forbidden, Verizon/T-Mobile
@@ -243,3 +243,50 @@ itself finished well within the now-correct window). Also fixed a
 smaller issue found in the same spot: the `usleep`-unavailable fallback
 was `sleep 1` (a full second, 10x the intended per-tick granularity)
 instead of QuecControl's original `sleep 0.1`.
+
+## Visual redesign
+
+Four changes, all modeled on QuecControl's actual markup/CSS (fetched
+and read directly from its GitHub repo, not guessed at):
+
+- **AT Terminal** now looks like QuecControl's: a dark mac-style
+  terminal window (traffic-light dots, monospace title bar) regardless
+  of the page's own light/dark theme, colored output lines (`OK` green,
+  lines containing `ERROR` red, everything else a neutral info color,
+  each line timestamped), a row of clickable preset command chips, and
+  command history via the input's Up/Down arrows. One deliberate
+  departure from QuecControl: it force-uppercases the *entire* typed
+  command before sending, which would corrupt a case-sensitive quoted
+  parameter (`AT+QNWPREFCFG="lte_band"` — that string has to stay
+  lowercase). Ours only prepends `AT` if missing; it doesn't touch case.
+- **Nav icons** replaced the plain colored-square placeholders with
+  inline SVG, Material-Design-outline style (24×24, stroke-based). These
+  are hand-built with plain shapes (rects, circles, lines) rather than
+  pasted-in Material Icons path data from memory — a misremembered path
+  string renders as visible garbage or nothing at all, while a
+  slightly-off rect/circle coordinate is at worst a shape that's a
+  little off. Validated as well-formed SVG XML and checked that every
+  coordinate stays inside the 24×24 viewBox (no icon accidentally
+  invisible from an out-of-range number) — see the commit for how, no
+  real browser was available to eyeball them directly.
+- **Band lock is checkboxes now**, not a comma-separated text field —
+  one checkbox per band, matching QuecControl's `bandlock.html`. The
+  band universe (which checkboxes exist at all) is the modem's own
+  reported capability, captured live from `AT+QNWPREFCFG` when nothing
+  is locked (i.e. every band it's willing to list is "enabled") rather
+  than a hardcoded reference list that might not match this exact
+  firmware. All/None quick-select buttons per band type, matching
+  QuecControl. Checkbox state is initialized *once* on page load via
+  `band_lock.sh?action=get` — deliberately not re-synced on every
+  `state.sh` poll tick, which runs every `POLL_INTERVAL` (~10s) and
+  would otherwise silently discard whatever the user is mid-edit on.
+- **Carrier aggregation shows PCC/SCC** — `at_poller.sh`'s
+  `collect_carrier_aggregation` now captures each `+QCAINFO` line's
+  first quoted field (`"PCC"` or `"SCC"`), not just the band. `ca_bands`
+  is now `[{"type":"PCC","band":"LTE BAND 2"}, ...]` instead of a flat
+  array of band strings — a real shape change to that JSON field, not
+  additive. Confirmed live: a 3-component-carrier session rendered as
+  `PCC: LTE BAND 2, SCC: LTE BAND 66, SCC: LTE BAND 66`.
+- Carrier scan's confirm-before-scanning dialog (data will be disrupted
+  for up to 2 minutes) already existed from the previous round; wording
+  tightened slightly, no functional change.

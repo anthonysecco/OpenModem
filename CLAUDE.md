@@ -77,6 +77,9 @@ web assets.
     device/SIM/registration/signal/serving-cell/carrier/CA/band-pref/WAN
     fields; LAN client info is deliberately out of scope here — see
     `SCOPE.md`'s Open Questions for why and what's still needed.
+    `ca_bands` is `[{"type":"PCC"|"SCC","band":"LTE BAND N"}, ...]`, not
+    a flat array of band strings — mind this shape if touching carrier
+    aggregation data.
 - **`config/openmodem.conf`** — shell-sourced config (`KEY=value`, no
   spaces) read by the daemons and CGI scripts at startup. Poll intervals
   and log verbosity live here.

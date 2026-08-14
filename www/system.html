@@ -23,11 +23,27 @@
         <div class="om-row"><span class="om-row-label">Firmware</span><span data-field="device_firmware">—</span></div>
       </div>
       <div class="om-card om-card-wide">
-        <h2>AT Terminal</h2>
-        <div id="om-term-log" class="om-term-log"></div>
-        <div class="om-term-input-row">
-          <input id="om-term-input" type="text" placeholder="AT+..." autocomplete="off" spellcheck="false">
-          <button id="om-term-send" type="button">Send</button>
+        <div class="om-term-header">
+          <h2 style="margin:0;">AT Terminal</h2>
+          <div class="om-term-header-btns">
+            <button id="om-term-clear" type="button">Clear</button>
+            <button id="om-term-export" type="button">Export Log</button>
+          </div>
+        </div>
+        <div class="om-terminal">
+          <div class="om-term-bar">
+            <span class="om-term-dot red"></span>
+            <span class="om-term-dot yellow"></span>
+            <span class="om-term-dot green"></span>
+            <span class="om-term-title">AT Terminal — RM520N-GL</span>
+          </div>
+          <div id="om-term-log" class="om-term-log"></div>
+          <div id="om-term-presets" class="om-term-presets"></div>
+          <div class="om-term-input-row">
+            <span class="om-term-prefix">AT&gt;</span>
+            <input id="om-term-input" type="text" placeholder="Enter AT command and press Enter…" autocomplete="off" spellcheck="false">
+            <button id="om-term-send" type="button">Send</button>
+          </div>
         </div>
       </div>
       <div class="om-card">
