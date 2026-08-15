@@ -159,8 +159,9 @@ body {
 
 .om-row {
   display: flex;
+  flex-wrap: wrap;
   justify-content: space-between;
-  gap: 1rem;
+  gap: 0.25rem 1rem;
   padding: 0.3rem 0;
   border-bottom: 1px solid var(--border);
   font-size: 0.9rem;
@@ -172,6 +173,20 @@ body {
 
 .om-row-label {
   color: var(--text-dim);
+  flex-shrink: 0;
+}
+
+/* A value too long to fit next to its label (long hostnames, IPv6
+   addresses, multi-part locations) wraps to its own line below the
+   label instead of clipping or squeezing into a narrow column —
+   flex-wrap alone drops the whole value to a new flex line when it
+   doesn't fit; min-width/overflow-wrap keep it from overflowing the
+   card once there, even mid-word (an IPv6 address has no spaces or
+   hyphens to break on otherwise). Targets every value span, not just
+   :last-child, since a couple of rows (e.g. MCC/MNC) hold two. */
+.om-row > span:not(.om-row-label) {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .om-note {
