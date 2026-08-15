@@ -70,6 +70,18 @@ goal).
   Actively tests internet connectivity; dropped because OpenModem is
   narrowing away from features that assume a working internet connection.
 - **GPS location** — QuecControl's `api_gps.sh`. Dropped.
+- **Explicit exception: WAN's "Internet" card** (public IP/ASN/ISP/
+  geolocation via `ipinfo.io`, matching QuecControl's `wan.html`
+  breakout info) — internet-dependent by definition, which is exactly
+  the category this section otherwise excludes, but added by explicit
+  request. Implemented as a plain browser `fetch('https://ipinfo.io/
+  json')` in `app.js` (`fetchWanInternet()`/`initWanInternet()`), not
+  routed through the modem or `at_poller.sh` — this is the one place in
+  the whole project where the browser talks to the internet directly
+  rather than through the AT device, and it degrades to a visible error
+  message rather than breaking the page if there's no connectivity.
+  `org`'s `"AS7018 AT&T Services, Inc."` shape is split into separate
+  ASN/ISP fields since the card shows them as distinct rows.
 
 ## UI/UX
 

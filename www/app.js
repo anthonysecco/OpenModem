@@ -911,6 +911,48 @@
     }
   }
 
+  /* ── Internet card (WAN page) ────────────────────────────────────────
+     The one place OpenModem talks to the internet directly rather than
+     through the modem — a plain browser fetch to ipinfo.io, same as
+     QuecControl's wan.html. Not part of state.sh/at_poller.sh: this is
+     read-only, third-party, and has nothing to do with the AT device,
+     so it gets its own dedicated fetch/refresh cycle instead of being
+     shoehorned into the poller. org comes back as "AS7018 AT&T
+     Services, Inc." — split on the first space into ASN + ISP rather
+     than shown as one blob, since the card has separate rows for each. */
+  var WAN_INTERNET_REFRESH_MS = 300000;
+
+  function fetchWanInternet() {
+    var statusEl = document.getElementById('om-wan-inet-status');
+    fetch('https://ipinfo.io/json', { headers: { 'Accept': 'application/json' } })
+      .then(function (r) {
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        return r.json();
+      })
+      .then(function (data) {
+        document.getElementById('om-wan-inet-ip').textContent = data.ip || '—';
+
+        var org = data.org || '';
+        var m = org.match(/^(AS\d+)\s*(.*)$/);
+        document.getElementById('om-wan-inet-asn').textContent = m ? m[1] : '—';
+        document.getElementById('om-wan-inet-isp').textContent = m ? (m[2] || '—') : (org || '—');
+
+        var geo = [data.city, data.region, data.country].filter(function (v) { return v; });
+        document.getElementById('om-wan-inet-geo').textContent = geo.length ? geo.join(', ') : '—';
+
+        if (statusEl) statusEl.textContent = '';
+      })
+      .catch(function (err) {
+        if (statusEl) statusEl.textContent = 'Unable to fetch public IP info: ' + err;
+      });
+  }
+
+  function initWanInternet() {
+    if (!document.getElementById('om-wan-inet-ip')) return; // not on this page
+    fetchWanInternet();
+    setInterval(fetchWanInternet, WAN_INTERNET_REFRESH_MS);
+  }
+
   window.OM = { init: initShell };
 
   document.addEventListener('DOMContentLoaded', function () {
@@ -923,5 +965,6 @@
     initCarrierScan();
     initLanConfig();
     initWanConfig();
+    initWanInternet();
   });
 })();
