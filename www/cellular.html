@@ -53,6 +53,19 @@
         <div class="om-row"><span class="om-row-label">PCC / SCC</span><span data-field="ca_bands">—</span></div>
       </div>
       <div class="om-card om-card-wide">
+        <h2>Neighbor Cells</h2>
+        <div class="om-table-wrap">
+          <table class="om-table">
+            <thead>
+              <tr><th>EARFCN</th><th>PCI</th><th>Tech</th><th>Band</th><th>RSRP</th></tr>
+            </thead>
+            <tbody id="om-neighbor-tbody">
+              <tr><td colspan="5" class="om-note">Loading…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div class="om-card om-card-wide">
         <h2>Band Lock</h2>
 
         <p class="om-band-section-title">LTE bands</p>
@@ -74,19 +87,6 @@
         <button id="om-scan-btn" type="button">Scan for Carriers</button>
         <p id="om-scan-status" class="om-note"></p>
         <div id="om-scan-results"></div>
-      </div>
-      <div class="om-card om-card-wide">
-        <h2>Neighbor Cells</h2>
-        <div class="om-table-wrap">
-          <table class="om-table">
-            <thead>
-              <tr><th>EARFCN</th><th>PCI</th><th>Tech</th><th>Band</th><th>RSRP</th></tr>
-            </thead>
-            <tbody id="om-neighbor-tbody">
-              <tr><td colspan="5" class="om-note">Loading…</td></tr>
-            </tbody>
-          </table>
-        </div>
       </div>
     </div>
     <p class="om-updated">Updated <span data-field="_polled_at">—</span></p>
