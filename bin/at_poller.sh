@@ -57,6 +57,46 @@ run_at() {
     "$AT_CMD_BIN" "$1" "${2:-8}" 2>/dev/null | tr -d '\r'
 }
 
+# Splits a chained "AT+CMD1;+CMD2;+CMD3" response (as returned by run_at)
+# back into per-command blocks, 1-indexed in chain order. Confirmed live
+# on real hardware: each sub-command's answer — however many lines, e.g.
+# CGDCONT's per-context lines — comes back as one contiguous run of
+# non-blank lines, with exactly one blank line separating it from the
+# next sub-command's answer, and a bare "OK"/"ERROR" trailing block after
+# the last one. This lets every collector below chain its AT commands
+# into a single broker round trip while reusing its original per-field
+# parsing unchanged, just fed this instead of a fresh run_at() call per
+# field — round-trip overhead (~0.25-0.35s fixed, regardless of command
+# complexity) dominates poll time, not the AT device's actual response
+# time, so collapsing N commands into 1 round trip is the real lever.
+#
+# Also confirmed live: a chain aborts at the first sub-command that
+# ERRORs — nothing after it is even attempted, only a trailing ERROR
+# block appears — so collectors below order any sub-command known to
+# legitimately fail (e.g. AT+CNUM on SIMs without a provisioned number)
+# last in its chain, so an error there degrades just that one field to
+# null instead of losing the rest of the group.
+nth_block() {
+    printf '%s\n' "$1" | awk -v want="$2" '
+        BEGIN { blk = 0; buf = "" }
+        /^$/ {
+            if (buf != "") {
+                blk++
+                if (blk == want) { print buf; exit }
+                buf = ""
+            }
+            next
+        }
+        { buf = (buf == "" ? $0 : buf "\n" $0) }
+        END {
+            if (buf != "") {
+                blk++
+                if (blk == want) print buf
+            }
+        }
+    '
+}
+
 # -- JSON helpers -----------------------------------------------------------
 json_str() {
     if [ -z "$1" ]; then
@@ -115,17 +155,23 @@ ipv6_from_octets() {
 
 collect_device() {
     F_MODEL="null"; F_IMEI="null"; F_FIRMWARE="null"
-    _gsn=$(run_at "AT+GSN")
+    _blob="$1"
+
+    # GSN/QGMR/ATI("I") each answer with bare, unprefixed text, so it's
+    # chain position via nth_block — not content matching — that tells
+    # them apart once merged. Positions are into the poller's single
+    # whole-cycle chain — see ALL_CMD and its block-number comment below.
+    _gsn=$(nth_block "$_blob" 1)
     F_IMEI=$(json_str "$(printf '%s' "$_gsn" | grep -E '^[0-9]{10,}$' | tr -d ' \r\n')")
 
-    _gmr=$(run_at "AT+QGMR")
+    _gmr=$(nth_block "$_blob" 2)
     F_FIRMWARE=$(json_str "$(printf '%s' "$_gmr" | grep -v '^OK$' | grep -v '^$' | head -1 | tr -d '\r')")
 
-    _ati=$(run_at "ATI")
+    _ati=$(nth_block "$_blob" 3)
     F_MODEL=$(json_str "$(printf '%s' "$_ati" | grep -E '^RM[0-9A-Z-]+$' | head -1 | tr -d '\r')")
 
     # +QTEMP:"sensor","value" per line -> [{"sensor":"...","c":N}, ...]
-    _qtemp=$(run_at "AT+QTEMP")
+    _qtemp=$(nth_block "$_blob" 4)
     F_TEMPS="[]"
     _lines=$(printf '%s' "$_qtemp" | grep '^+QTEMP:')
     if [ -n "$_lines" ]; then
@@ -160,34 +206,41 @@ collect_device() {
 collect_sim() {
     F_SIM_STATUS="null"; F_SIM_IMSI="null"; F_SIM_ICCID="null"
     F_SIM_ACTIVE_SLOT="null"; F_SIM_PHONE="null"
+    _blob="$1"
 
-    _cpin=$(run_at "AT+CPIN?")
+    _cpin=$(nth_block "$_blob" 5)
     F_SIM_STATUS=$(json_str "$(printf '%s' "$_cpin" | grep '+CPIN:' | sed 's/+CPIN: //' | tr -d ' \r\n')")
 
-    _cimi=$(run_at "AT+CIMI")
+    _cimi=$(nth_block "$_blob" 6)
     F_SIM_IMSI=$(json_str "$(printf '%s' "$_cimi" | grep -E '^[0-9]{10,}$' | tr -d ' \r\n')")
 
-    _ccid=$(run_at "AT+QCCID")
+    _ccid=$(nth_block "$_blob" 7)
     F_SIM_ICCID=$(json_str "$(printf '%s' "$_ccid" | grep '+QCCID:' | sed 's/+QCCID: //' | tr -d ' \r\n')")
 
-    _slot=$(run_at "AT+QUIMSLOT?")
+    _slot=$(nth_block "$_blob" 8)
     F_SIM_ACTIVE_SLOT=$(json_num "$(printf '%s' "$_slot" | grep '+QUIMSLOT:' | sed 's/+QUIMSLOT: //' | tr -d ' \r\n')")
 
     # +CNUM: [alpha],"<number>",<type> — alpha tag is usually empty; not
     # every carrier/SIM provisions this, ERROR or a bare OK is normal.
-    _cnum=$(run_at "AT+CNUM")
+    # Kept as the LAST command in the whole-cycle chain (block 28, see
+    # ALL_CMD): a chain aborts at the first ERROR, so an expected CNUM
+    # failure only nulls this one field instead of losing everything
+    # queried after it.
+    _cnum=$(nth_block "$_blob" 28)
     F_SIM_PHONE=$(json_str "$(printf '%s' "$_cnum" | grep '^+CNUM:' | head -1 | sed 's/^+CNUM: //' | cut -d',' -f2 | tr -d '"\r\n')")
 }
 
 collect_registration() {
     F_REG_LTE="null"; F_REG_NR="null"; F_REG_CREG="null"
-    _cereg=$(run_at "AT+CEREG?")
+    _blob="$1"
+
+    _cereg=$(nth_block "$_blob" 9)
     F_REG_LTE=$(json_num "$(printf '%s' "$_cereg" | grep '+CEREG:' | sed 's/+CEREG: //' | cut -d',' -f2 | tr -d ' \r\n')")
 
-    _c5greg=$(run_at "AT+C5GREG?")
+    _c5greg=$(nth_block "$_blob" 10)
     F_REG_NR=$(json_num "$(printf '%s' "$_c5greg" | grep '+C5GREG:' | sed 's/+C5GREG: //' | cut -d',' -f2 | tr -d ' \r\n')")
 
-    _creg=$(run_at "AT+CREG?")
+    _creg=$(nth_block "$_blob" 11)
     F_REG_CREG=$(json_num "$(printf '%s' "$_creg" | grep '+CREG:' | sed 's/+CREG: //' | cut -d',' -f2 | tr -d ' \r\n')")
 }
 
@@ -198,16 +251,17 @@ collect_registration() {
 collect_signal() {
     F_LTE_RSRP="null"; F_LTE_RSRQ="null"; F_LTE_SINR="null"
     F_NR_RSRP="null";  F_NR_RSRQ="null";  F_NR_SINR="null"
+    _blob="$1"
 
-    _rsrp=$(run_at "AT+QRSRP")
+    _rsrp=$(nth_block "$_blob" 12)
     F_LTE_RSRP=$(json_num "$(printf '%s' "$_rsrp" | grep '+QRSRP:.*,LTE' | sed 's/+QRSRP: //; s/,LTE$//' | cut -d',' -f1 | tr -d ' \r\n')")
     F_NR_RSRP=$(json_num "$(printf '%s' "$_rsrp" | grep '+QRSRP:.*,NR5G' | sed 's/+QRSRP: //; s/,NR5G$//' | cut -d',' -f1 | tr -d ' \r\n')")
 
-    _rsrq=$(run_at "AT+QRSRQ")
+    _rsrq=$(nth_block "$_blob" 13)
     F_LTE_RSRQ=$(json_num "$(printf '%s' "$_rsrq" | grep '+QRSRQ:.*,LTE' | sed 's/+QRSRQ: //; s/,LTE$//' | cut -d',' -f1 | tr -d ' \r\n')")
     F_NR_RSRQ=$(json_num "$(printf '%s' "$_rsrq" | grep '+QRSRQ:.*,NR5G' | sed 's/+QRSRQ: //; s/,NR5G$//' | cut -d',' -f1 | tr -d ' \r\n')")
 
-    _sinr=$(run_at "AT+QSINR")
+    _sinr=$(nth_block "$_blob" 14)
     F_LTE_SINR=$(json_num "$(printf '%s' "$_sinr" | grep '+QSINR:.*,LTE' | sed 's/+QSINR: //; s/,LTE$//' | cut -d',' -f1 | tr -d ' \r\n')")
     F_NR_SINR=$(json_num "$(printf '%s' "$_sinr" | grep '+QSINR:.*,NR5G' | sed 's/+QSINR: //; s/,NR5G$//' | cut -d',' -f1 | tr -d ' \r\n')")
 }
@@ -222,7 +276,7 @@ collect_serving_cell() {
     F_CELL_MCC="null"; F_CELL_MNC="null"; F_CELL_ID="null"
     F_CELL_PCID="null"; F_CELL_EARFCN="null"; F_CELL_BAND="null"; F_CELL_TAC="null"
 
-    _serv=$(run_at 'AT+QENG="servingcell"')
+    _serv=$(nth_block "$1" 15)
     _line=$(printf '%s' "$_serv" | grep '+QENG:.*"servingcell"' | head -1)
     [ -z "$_line" ] && return
 
@@ -252,11 +306,13 @@ collect_serving_cell() {
 
 collect_carrier() {
     F_CARRIER_NAME="null"; F_CARRIER_ACT="null"; F_CARRIER_PLMN="null"
-    _cops=$(run_at "AT+COPS?")
+    _blob="$1"
+
+    _cops=$(nth_block "$_blob" 16)
     F_CARRIER_NAME=$(json_str "$(printf '%s' "$_cops" | grep '+COPS:' | cut -d'"' -f2)")
     F_CARRIER_ACT=$(json_num "$(printf '%s' "$_cops" | grep '+COPS:' | awk -F',' '{print $NF}' | tr -d ' \r\n')")
 
-    _qspn=$(run_at "AT+QSPN")
+    _qspn=$(nth_block "$_blob" 17)
     F_CARRIER_PLMN=$(json_str "$(printf '%s' "$_qspn" | grep '+QSPN:' | awk -F',' '{print $NF}' | tr -d '" \r\n')")
 }
 
@@ -276,7 +332,7 @@ collect_carrier_aggregation() {
     F_CA_DL_EST_MBPS="null"
     F_CA_DL_MAX_MBPS="null"
 
-    _ca=$(run_at "AT+QCAINFO")
+    _ca=$(nth_block "$1" 18)
     _lines=$(printf '%s' "$_ca" | grep '^+QCAINFO:')
     [ -z "$_lines" ] && return
 
@@ -541,10 +597,12 @@ compute_ca_throughput() {
 
 collect_band_pref() {
     F_BAND_PREF_LTE="null"; F_BAND_PREF_NR5G="null"
-    _lte=$(run_at 'AT+QNWPREFCFG="lte_band"')
+    _blob="$1"
+
+    _lte=$(nth_block "$_blob" 19)
     F_BAND_PREF_LTE=$(json_str "$(printf '%s' "$_lte" | grep '+QNWPREFCFG:' | sed 's/.*"lte_band",//' | tr -d ' \r\n')")
 
-    _nr=$(run_at 'AT+QNWPREFCFG="nr5g_band"')
+    _nr=$(nth_block "$_blob" 20)
     F_BAND_PREF_NR5G=$(json_str "$(printf '%s' "$_nr" | grep '+QNWPREFCFG:' | sed 's/.*"nr5g_band",//' | tr -d ' \r\n')")
 }
 
@@ -555,24 +613,25 @@ collect_wan() {
     F_WAN_APN="null"; F_WAN_IP="null"; F_WAN_ACTIVE="false"
     F_WAN_IP_TYPE="null"; F_WAN_IPV6="null"
     F_WAN_DATA_TX="null"; F_WAN_DATA_RX="null"
+    _blob="$1"
 
-    _dcont=$(run_at "AT+CGDCONT?")
+    _dcont=$(nth_block "$_blob" 21)
     _dcont_line=$(printf '%s' "$_dcont" | grep '^+CGDCONT: 1,')
     F_WAN_APN=$(json_str "$(printf '%s' "$_dcont_line" | cut -d',' -f3 | tr -d '"\r\n')")
     F_WAN_IP_TYPE=$(json_str "$(printf '%s' "$_dcont_line" | cut -d',' -f2 | tr -d '"\r\n')")
 
-    _addr=$(run_at "AT+CGPADDR")
+    _addr=$(nth_block "$_blob" 22)
     _addr_line=$(printf '%s' "$_addr" | grep '^+CGPADDR: 1,')
     F_WAN_IP=$(json_str "$(printf '%s' "$_addr_line" | cut -d',' -f2 | tr -d '"\r\n')")
     F_WAN_IPV6=$(json_str "$(ipv6_from_octets "$(printf '%s' "$_addr_line" | cut -d',' -f3 | tr -d '"\r\n')")")
 
-    _act=$(run_at "AT+CGACT?")
+    _act=$(nth_block "$_blob" 23)
     _stat=$(printf '%s' "$_act" | grep '^+CGACT: 1,' | cut -d',' -f2 | tr -d ' \r\n')
     F_WAN_ACTIVE=$(json_bool "$_stat")
 
     # +QGDCNT: <tx_bytes>,<rx_bytes> — cumulative since last AT+QGDCNT=0
     # reset (or module boot), confirmed live.
-    _gdcnt=$(run_at "AT+QGDCNT?")
+    _gdcnt=$(nth_block "$_blob" 24)
     _gdcnt_line=$(printf '%s' "$_gdcnt" | grep '^+QGDCNT:' | sed 's/+QGDCNT: //')
     F_WAN_DATA_TX=$(json_num "$(printf '%s' "$_gdcnt_line" | cut -d',' -f1 | tr -d ' \r\n')")
     F_WAN_DATA_RX=$(json_num "$(printf '%s' "$_gdcnt_line" | cut -d',' -f2 | tr -d ' \r\n')")
@@ -586,12 +645,13 @@ collect_wan() {
 collect_lan() {
     F_LAN_ROUTER_IP="null"; F_LAN_DHCP_START="null"; F_LAN_DHCP_END="null"
     F_LAN_MODE="null"; F_LAN_MPDN_MAC="null"; F_LAN_DNS_MODE="null"
+    _blob="$1"
 
     # Confirmed live: AT+QMAP="LANIP",? returns ERROR on this hardware —
     # the bare form (no ,?), same as MPDN_rule/DHCPV4DNS below, is the
     # actual query. Response: +QMAP: "LANIP",<start>,<end>,<gateway>
     # (no quotes around the IPs, unlike QuecControl's documented example).
-    _lanip=$(run_at 'AT+QMAP="LANIP"')
+    _lanip=$(nth_block "$_blob" 25)
     _lanip_line=$(printf '%s' "$_lanip" | grep '+QMAP: "LANIP"' | head -1 | sed 's/.*"LANIP",//')
     if [ -n "$_lanip_line" ]; then
         F_LAN_DHCP_START=$(json_str "$(printf '%s' "$_lanip_line" | cut -d',' -f1 | tr -d '" \r\n')")
@@ -600,7 +660,7 @@ collect_lan() {
     fi
 
     # +QMAP: "MPDN_rule",<rule>,<profile>,<vlan>,<ippt_mode>,<autoconn>[,"<mac>"]
-    _mpdn=$(run_at 'AT+QMAP="MPDN_rule"')
+    _mpdn=$(nth_block "$_blob" 26)
     _mpdn_line=$(printf '%s' "$_mpdn" | grep '^+QMAP: "MPDN_rule",0,' | head -1 | sed 's/.*"MPDN_rule",//')
     _ippt=$(printf '%s' "$_mpdn_line" | cut -d',' -f4 | tr -d ' \r\n')
     case "$_ippt" in
@@ -609,7 +669,7 @@ collect_lan() {
         0) F_LAN_MODE=$(json_str "NAT") ;;
     esac
 
-    _dns=$(run_at 'AT+QMAP="DHCPV4DNS"')
+    _dns=$(nth_block "$_blob" 27)
     _dns_val=$(printf '%s' "$_dns" | grep '+QMAP: "DHCPV4DNS"' | head -1 | sed 's/.*"DHCPV4DNS",//' | tr -d '" \r\n')
     case "$_dns_val" in
         enable)  F_LAN_DNS_MODE=$(json_str "local") ;;
@@ -695,6 +755,33 @@ fi
 
 log_op "Starting — interval=${POLL_INTERVAL}s log_level=${LOG_LEVEL}"
 
+# Every AT round trip costs ~0.25-0.35s of fixed broker/polling overhead
+# regardless of the command's own complexity (confirmed live) — with the
+# 28 commands below issued separately, that overhead alone summed to
+# ~8.2s of a 10s POLL_INTERVAL. Chaining all of them into one "AT+CMD1;
+# +CMD2;..." request (confirmed live: the modem answers the full 28-
+# command chain, in order, in ~0.2-0.3s) collapses that to a single
+# round trip; nth_block() below then splits the merged response back
+# into each field's own block by fixed position. Block numbers, in
+# order:
+#  1 GSN(imei) 2 QGMR(fw) 3 I/ATI(model) 4 QTEMP(temps)
+#  5 CPIN 6 CIMI 7 QCCID 8 QUIMSLOT
+#  9 CEREG 10 C5GREG 11 CREG
+#  12 QRSRP 13 QRSRQ 14 QSINR
+#  15 QENG=servingcell
+#  16 COPS 17 QSPN
+#  18 QCAINFO
+#  19 QNWPREFCFG=lte_band 20 QNWPREFCFG=nr5g_band
+#  21 CGDCONT 22 CGPADDR 23 CGACT 24 QGDCNT
+#  25 QMAP=LANIP 26 QMAP=MPDN_rule 27 QMAP=DHCPV4DNS
+#  28 CNUM
+# CNUM is placed last, out of its natural SIM-info grouping, because a
+# chain aborts at the first ERROR (confirmed live) and it's the one
+# command here documented to legitimately ERROR on some SIMs — putting
+# it last means that failure only nulls sim_phone instead of losing
+# every field queried after it.
+ALL_CMD='AT+GSN;+QGMR;I;+QTEMP;+CPIN?;+CIMI;+QCCID;+QUIMSLOT?;+CEREG?;+C5GREG?;+CREG?;+QRSRP;+QRSRQ;+QSINR;+QENG="servingcell";+COPS?;+QSPN;+QCAINFO;+QNWPREFCFG="lte_band";+QNWPREFCFG="nr5g_band";+CGDCONT?;+CGPADDR;+CGACT?;+QGDCNT?;+QMAP="LANIP";+QMAP="MPDN_rule";+QMAP="DHCPV4DNS";+CNUM'
+
 _cycle=0
 
 # -- Main loop ------------------------------------------------------------
@@ -703,16 +790,18 @@ while true; do
     _cycle=$(( _cycle + 1 ))
     [ $(( _cycle % 20 )) -eq 0 ] && rotate_log
 
-    collect_device
-    collect_sim
-    collect_registration
-    collect_signal
-    collect_serving_cell
-    collect_carrier
-    collect_carrier_aggregation
-    collect_band_pref
-    collect_wan
-    collect_lan
+    _blob=$(run_at "$ALL_CMD" 15)
+
+    collect_device "$_blob"
+    collect_sim "$_blob"
+    collect_registration "$_blob"
+    collect_signal "$_blob"
+    collect_serving_cell "$_blob"
+    collect_carrier "$_blob"
+    collect_carrier_aggregation "$_blob"
+    collect_band_pref "$_blob"
+    collect_wan "$_blob"
+    collect_lan "$_blob"
 
     _end=$(date +%s)
     write_state "$_start" "$(( _end - _start ))"
