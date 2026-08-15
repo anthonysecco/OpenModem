@@ -130,6 +130,15 @@ body {
   letter-spacing: 0.03em;
 }
 
+/* A second h2 inside one card (e.g. LAN's Network Mode + DNS Settings)
+   reads as a new section, not a continuation — space it off from what's
+   above with a divider rather than just the default heading margin. */
+.om-card h2:not(:first-child) {
+  margin-top: 1.25rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border);
+}
+
 .om-card button {
   font: inherit;
   padding: 0.5rem 0.9rem;

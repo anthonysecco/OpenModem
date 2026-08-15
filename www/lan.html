@@ -36,10 +36,18 @@
           <button type="button" data-mode="nat">NAT</button>
           <button type="button" data-mode="passthrough">IP Passthrough</button>
         </div>
+        <p class="om-note">Changing this may briefly disconnect the current WAN connection.</p>
         <div class="om-form-row" id="om-lan-mac-row" style="display:none;">
           <label for="om-lan-mac">Passthrough Target MAC</label>
           <input type="text" id="om-lan-mac" placeholder="FF:FF:FF:FF:FF:FF" value="FF:FF:FF:FF:FF:FF" autocomplete="off">
         </div>
+
+        <h2>DNS Settings</h2>
+        <div class="om-toggle-group" id="om-lan-dns-toggle">
+          <button type="button" data-dns="local">Local</button>
+          <button type="button" data-dns="carrier">Carrier</button>
+        </div>
+        <p class="om-note">Takes effect after reboot.</p>
       </div>
 
       <div class="om-card" id="om-lan-ip-card">
@@ -57,15 +65,6 @@
           <label for="om-lan-dhcp-end">DHCP End</label>
           <input type="text" id="om-lan-dhcp-end" placeholder="192.168.225.200" autocomplete="off">
         </div>
-      </div>
-
-      <div class="om-card">
-        <h2>DNS Settings</h2>
-        <div class="om-toggle-group" id="om-lan-dns-toggle">
-          <button type="button" data-dns="local">Local</button>
-          <button type="button" data-dns="carrier">Carrier</button>
-        </div>
-        <p class="om-note">Takes effect after reboot.</p>
       </div>
     </div>
     <p class="om-updated">Updated <span data-field="_polled_at">—</span></p>
