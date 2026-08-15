@@ -632,18 +632,22 @@
   }
 
   /* ── Neighbor cells (Cellular page) ──────────────────────────────────
-     AT+QENG="neighbourcell" doesn't report a band, only EARFCN —
-     at_poller.sh passes that straight through and the EARFCN→band
-     lookup (plus each band's nominal/colloquial frequency label, e.g.
-     "B13 (700)") lives here instead, matching this project's usual
-     split of "poller stays raw, app.js formats for display." Band
-     ranges are copied from QuecControl's own table (3GPP-standard
-     EARFCN allocations per band, not something modem- or
-     vendor-specific). Nominal frequencies are the commonly-cited
-     rounded label for each band (e.g. "Band 71 is the 600 MHz band"),
-     not a precise per-EARFCN calculation — deliberately simpler than
-     QuecControl's full DL-center-frequency math, since that's not what
-     the requested "(LTE) B13 (700)" format actually shows. */
+     AT+QENG="neighbourcell" only ever returns LTE entries on this
+     hardware — "Tech" defaults to "LTE" via c.rat, kept as a real field
+     read rather than a hardcoded string so a future NR neighbor source
+     (a different AT command) could populate "5G NR" without a table
+     rework. Rows are grouped by EARFCN (same-frequency neighbors sit
+     together), each group ordered by its own strongest RSRP, and
+     groups themselves ordered by their strongest RSRP too — so the
+     single best neighbor overall is always the first row, and every
+     group's members are internally sorted the same way.
+
+     The AT command has no band field, only EARFCN — Band is computed
+     from it here ("B2 (1900)", no tech prefix since that's its own
+     column now) via a copy of QuecControl's EARFCN→band range table
+     (3GPP-standard allocations, not modem-specific) plus each band's
+     commonly-cited nominal/colloquial frequency, not a precise
+     per-EARFCN calculation. */
   var LTE_EARFCN_BAND_RANGES = [
     [0,599,1],[600,1199,2],[1200,1949,3],[1950,2399,4],[2400,2649,5],
     [2650,2749,6],[2750,3449,7],[3450,3799,8],[3800,4149,9],[4150,4749,10],
@@ -681,11 +685,11 @@
     return null;
   }
 
-  function fmtNeighborCarrier(earfcn) {
+  function fmtNeighborBand(earfcn) {
     var band = lteEarfcnToBand(earfcn);
     if (band === null) return '—';
     var mhz = LTE_BAND_NOMINAL_MHZ[band];
-    return '(LTE) B' + band + (mhz ? ' (' + mhz + ')' : '');
+    return 'B' + band + (mhz ? ' (' + mhz + ')' : '');
   }
 
   function renderNeighborCells(state) {
@@ -694,18 +698,41 @@
 
     var cells = state.neighbor_cells;
     if (!Array.isArray(cells) || !cells.length) {
-      tbody.innerHTML = '<tr><td colspan="4" class="om-note">No neighbor cell data available.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="5" class="om-note">No neighbor cell data available.</td></tr>';
       return;
     }
 
-    tbody.innerHTML = cells.map(function (c) {
-      return '<tr>' +
-        '<td>' + escapeHtml(fmtNeighborCarrier(c.earfcn)) + '</td>' +
-        '<td>' + escapeHtml(c.earfcn || '—') + '</td>' +
-        '<td>' + escapeHtml(c.pcid || '—') + '</td>' +
-        '<td>' + (typeof c.rsrp === 'number' ? c.rsrp + ' dBm' : '—') + '</td>' +
-        '</tr>';
-    }).join('');
+    var groups = {};
+    var order = [];
+    cells.forEach(function (c) {
+      var key = c.earfcn || '';
+      if (!groups[key]) { groups[key] = []; order.push(key); }
+      groups[key].push(c);
+    });
+
+    var byRsrpDesc = function (a, b) { return (b.rsrp || -999) - (a.rsrp || -999); };
+    var sortedGroups = order
+      .map(function (key) {
+        var entries = groups[key].slice().sort(byRsrpDesc);
+        return { entries: entries, best: entries[0].rsrp || -999 };
+      })
+      .sort(function (a, b) { return b.best - a.best; });
+
+    var rows = [];
+    sortedGroups.forEach(function (g) {
+      g.entries.forEach(function (c) {
+        rows.push(
+          '<tr>' +
+          '<td>' + escapeHtml(c.earfcn || '—') + '</td>' +
+          '<td>' + escapeHtml(c.pcid || '—') + '</td>' +
+          '<td>' + escapeHtml(c.rat || 'LTE') + '</td>' +
+          '<td>' + escapeHtml(fmtNeighborBand(c.earfcn)) + '</td>' +
+          '<td>' + (typeof c.rsrp === 'number' ? c.rsrp + ' dBm' : '—') + '</td>' +
+          '</tr>'
+        );
+      });
+    });
+    tbody.innerHTML = rows.join('');
   }
 
   /* ── LAN config (LAN page) ──────────────────────────────────────────

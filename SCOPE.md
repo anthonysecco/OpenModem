@@ -18,19 +18,23 @@ goal).
 - **Cellular status** — signal, registration, serving cell, carrier, carrier
   aggregation. Includes band lock and carrier scan as dedicated features
   (not just raw AT access), matching QuecControl's `band_lock.sh` /
-  `carrier_scan.sh`. Neighbor Cells is a full-width table (Carrier,
-  EARFCN, PCI, RSRP) from `AT+QENG="neighbourcell"` — confirmed live
+  `carrier_scan.sh`. Neighbor Cells is a full-width table (EARFCN, PCI,
+  Tech, Band, RSRP) from `AT+QENG="neighbourcell"` — confirmed live
   that "inter" (different-frequency) neighbors commonly report no
   signal data on this hardware (`-` for every field but EARFCN), so
   `at_poller.sh`'s `collect_neighbor_cells()` only keeps entries with a
   genuinely numeric RSRP, same filter QuecControl's own poller uses.
-  The AT command has no band field, only EARFCN — `app.js` computes
-  band + a nominal/colloquial frequency label (`"(LTE) B13 (700)"`)
-  client-side via a copy of QuecControl's EARFCN→band range table,
-  matching this project's usual "poller stays raw, frontend formats"
-  split, and deliberately simpler than QuecControl's precise
-  per-EARFCN center-frequency math since that's not what the requested
-  display format actually shows.
+  Rows are grouped by EARFCN, each group (and the groups themselves)
+  ordered by strongest RSRP first — computed client-side in `app.js`'s
+  `renderNeighborCells()`, poller output stays an unsorted flat array.
+  "Tech" reads a per-entry `rat` field (defaulting to `"LTE"` — this AT
+  command only ever returns LTE neighbors on this hardware) rather than
+  a hardcoded column, so a future NR neighbor source could populate it
+  without a table rework. The AT command has no band field, only
+  EARFCN — "Band" (`"B2 (1900)"`, no tech prefix since that's its own
+  column) is computed from it client-side via a copy of QuecControl's
+  EARFCN→band range table plus each band's commonly-cited nominal
+  frequency, not a precise per-EARFCN calculation.
 - **SIM info** — dual-SIM aware. This module has 2 slots
   (`AT+QUIMSLOT=?` confirmed live: `+QUIMSLOT: (1,2)`), but only one is
   active/queryable at a time — reading the other's ICCID/IMSI would
