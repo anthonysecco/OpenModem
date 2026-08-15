@@ -712,6 +712,46 @@
      QuecControl itself uses. */
   var CA_SEG_CLASSES = ['om-ca-seg-0', 'om-ca-seg-1', 'om-ca-seg-2', 'om-ca-seg-3'];
 
+  /* RSRP/SINR zone-colored inline bars — thresholds and colors ported
+     from QuecControl's RSRP_ZONES/SINR_ZONES (3GPP TS 36.133/38.133 for
+     RSRP, TS 36.214/38.215 for SINR). sigPct clamps to [2,97] so the
+     fill is always visible even at the extreme ends of the range. */
+  var RSRP_MIN = -140, RSRP_MAX = -75;
+  var SINR_MIN = -10, SINR_MAX = 30;
+  var RSRP_ZONES = [
+    { thresh: -80, bar: '#34d399' },
+    { thresh: -90, bar: '#6ee7b7' },
+    { thresh: -100, bar: '#fcd34d' },
+    { thresh: -999, bar: '#fca5a5' }
+  ];
+  var SINR_ZONES = [
+    { thresh: 20, bar: '#34d399' },
+    { thresh: 13, bar: '#6ee7b7' },
+    { thresh: 0, bar: '#fcd34d' },
+    { thresh: -999, bar: '#fca5a5' }
+  ];
+
+  function sigZoneColor(val, zones) {
+    for (var i = 0; i < zones.length; i++) {
+      if (val >= zones[i].thresh) return zones[i].bar;
+    }
+    return zones[zones.length - 1].bar;
+  }
+
+  function sigPct(val, min, max) {
+    return Math.max(2, Math.min(97, Math.round(((val - min) / (max - min)) * 100)));
+  }
+
+  function sigBarCell(val, zones, min, max, unit) {
+    if (typeof val !== 'number') return '—';
+    var color = sigZoneColor(val, zones);
+    var pct = sigPct(val, min, max);
+    return '<div class="om-ca-sigbar">' +
+      '<div class="om-ca-sigbar-track"><div class="om-ca-sigbar-fill" style="width:' + pct + '%;background:' + color + '"></div></div>' +
+      '<span class="om-ca-sigbar-val" style="color:' + color + '">' + val + ' ' + unit + '</span>' +
+      '</div>';
+  }
+
   function renderCarrierAggregation(state) {
     var bar = document.getElementById('om-ca-bwbar');
     var freqRow = document.getElementById('om-ca-bwbar-freq');
@@ -722,7 +762,7 @@
     if (!Array.isArray(carriers) || !carriers.length) {
       bar.innerHTML = '<div class="om-ca-bwbar-empty"></div>';
       freqRow.innerHTML = '';
-      tbody.innerHTML = '<tr><td colspan="7" class="om-note">No carrier aggregation active.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="5" class="om-note">No carrier aggregation active.</td></tr>';
       return;
     }
 
@@ -765,13 +805,13 @@
       var est = typeof c.dl_estimated_mbps === 'number' ? c.dl_estimated_mbps : null;
       var max = typeof c.dl_maximum_mbps === 'number' ? c.dl_maximum_mbps : null;
       var thpt = (est !== null && max !== null) ? (est + ' / ' + max + ' Mbps') : '—';
+      var idTitle = 'EARFCN ' + (c.earfcn || '—') + ' · PCI ' + (c.pci || '—');
       return '<tr>' +
-        '<td><span class="om-ca-carrier-badge ' + cls + '">' + escapeHtml(c.type || '') + '</span>' + escapeHtml(fmtCarrierBand(c.band)) + '</td>' +
+        '<td><span class="om-ca-carrier-badge ' + cls + '">' + escapeHtml(c.type || '') + '</span>' +
+        '<span class="om-ca-carrier-name" title="' + escapeHtml(idTitle) + '">' + escapeHtml(fmtCarrierBand(c.band)) + '</span></td>' +
         '<td>' + (s.bw ? s.bw + ' MHz' : '—') + '</td>' +
-        '<td>' + escapeHtml(c.earfcn || '—') + '</td>' +
-        '<td>' + escapeHtml(c.pci || '—') + '</td>' +
-        '<td>' + (typeof c.rsrp === 'number' ? c.rsrp + ' dBm' : '—') + '</td>' +
-        '<td>' + (typeof c.sinr === 'number' ? c.sinr + ' dB' : '—') + '</td>' +
+        '<td>' + sigBarCell(c.rsrp, RSRP_ZONES, RSRP_MIN, RSRP_MAX, 'dBm') + '</td>' +
+        '<td>' + sigBarCell(c.sinr, SINR_ZONES, SINR_MIN, SINR_MAX, 'dB') + '</td>' +
         '<td>' + thpt + '</td>' +
         '</tr>';
     }).join('');

@@ -421,6 +421,44 @@ body {
   margin-right: 0.4rem;
 }
 
+/* EARFCN/PCI live in this element's native title tooltip rather than
+   their own table columns — the dotted underline is the only hint
+   that there's more to see on hover. */
+.om-ca-carrier-name {
+  cursor: help;
+  border-bottom: 1px dotted var(--text-dim);
+}
+
+/* Inline RSRP/SINR bar — fill width/color set per-row via inline
+   style since the color comes from a continuous value→zone lookup,
+   not a small fixed set like the carrier segment colors above. */
+.om-ca-sigbar {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-width: 100px;
+}
+
+.om-ca-sigbar-track {
+  flex: 1;
+  height: 5px;
+  min-width: 40px;
+  background: var(--border);
+  border-radius: 3px;
+}
+
+.om-ca-sigbar-fill {
+  height: 100%;
+  border-radius: 3px;
+}
+
+.om-ca-sigbar-val {
+  font-size: 0.72rem;
+  font-weight: 600;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
 /* ── Data tables (Cellular page) ── */
 .om-table-wrap {
   overflow-x: auto;
