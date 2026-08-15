@@ -719,18 +719,59 @@
      frequency range, not just a proportional color block. LTE: exact
      per-band DL-low/step/EARFCN-offset (3GPP TS 36.101 Table 5.7.3-1).
      NR: exact piecewise-linear ARFCN formula (3GPP TS 38.104 Table
-     5.4.2.1-1) — no lookup table needed. Both intentionally DL-only
-     (no UL segment split) since this card is downlink-focused
-     throughout (Est/Max Downlink, DL Bandwidth). */
+     5.4.2.1-1) — no lookup table needed.
+
+     Each LTE_BAND_TABLE entry's 4th/5th elements (UL-DL center offset,
+     FDD flag) and NR_FDD_BANDS/NR_UL_OFFSET below position a UL
+     segment alongside each carrier's DL one, also ported from
+     QuecControl — but unlike QuecControl, that UL segment is only
+     drawn when at_poller.sh actually reports real ul_bw_mhz for that
+     carrier (from AT+QENG="servingcell" for the PCC, AT+QCAINFO's own
+     UL fields for each SCC — confirmed live: some SCCs have no uplink
+     grant configured at all in a 3+ carrier session), and its width is
+     that real value, not assumed equal to the DL bandwidth. The offset
+     table only supplies *position* (there is no real per-carrier UL
+     EARFCN available for the PCC to compute an exact one from), so a
+     carrier can show a real, correctly-sized UL segment at an
+     approximate (duplex-formula) frequency position. */
   var LTE_BAND_TABLE = {
-    1: [2110,0.1,0], 2: [1930,0.1,600], 3: [1805,0.1,1200], 4: [2110,0.1,1950],
-    5: [869,0.1,2400], 7: [2620,0.1,2750], 8: [925,0.1,3450], 12: [729,0.1,5010],
-    13: [746,0.1,5180], 14: [758,0.1,5280], 17: [734,0.1,5730], 18: [860,0.1,5850],
-    19: [875,0.1,6000], 20: [791,0.1,6150], 25: [1930,0.1,8040], 26: [859,0.1,8690],
-    28: [758,0.1,9210], 29: [717,0.1,9660], 30: [2350,0.1,9770], 38: [2570,0.1,36000],
-    39: [1880,0.1,36200], 40: [2300,0.1,36350], 41: [2496,0.1,36950], 42: [3400,0.1,37550],
-    43: [3600,0.1,37750], 46: [5150,0.1,46790], 48: [3550,0.1,55240], 65: [2110,0.1,65536],
-    66: [2110,0.1,66436], 71: [617,0.1,68586]
+    //         DLlowMHz step earfcnOff ulOffsetMHz isFdd
+    1:  [2110, 0.1,    0,  -190, true],
+    2:  [1930, 0.1,  600,   -80, true],
+    3:  [1805, 0.1, 1200,   -95, true],
+    4:  [2110, 0.1, 1950,  -400, true],
+    5:  [ 869, 0.1, 2400,   -45, true],
+    7:  [2620, 0.1, 2750,  -120, true],
+    8:  [ 925, 0.1, 3450,   -45, true],
+    12: [ 729, 0.1, 5010,   -30, true],
+    13: [ 746, 0.1, 5180,    31, true],
+    14: [ 758, 0.1, 5280,    31, true],
+    17: [ 734, 0.1, 5730,   -30, true],
+    18: [ 860, 0.1, 5850,   -45, true],
+    19: [ 875, 0.1, 6000,   -45, true],
+    20: [ 791, 0.1, 6150,    41, true],
+    25: [1930, 0.1, 8040,   -80, true],
+    26: [ 859, 0.1, 8690,   -45, true],
+    28: [ 758, 0.1, 9210,   -55, true],
+    29: [ 717, 0.1, 9660,     0, false],
+    30: [2350, 0.1, 9770,   -45, true],
+    38: [2570, 0.1,36000,     0, false],
+    39: [1880, 0.1,36200,     0, false],
+    40: [2300, 0.1,36350,     0, false],
+    41: [2496, 0.1,36950,     0, false],
+    42: [3400, 0.1,37550,     0, false],
+    43: [3600, 0.1,37750,     0, false],
+    46: [5150, 0.1,46790,     0, false],
+    48: [3550, 0.1,55240,     0, false],
+    65: [2110, 0.1,65536,  -190, true],
+    66: [2110, 0.1,66436,  -400, true],
+    71: [ 617, 0.1,68586,   -46, true]
+  };
+
+  var NR_FDD_BANDS = [1,2,3,5,7,8,12,13,14,18,20,25,26,28,30,65,66,70,71,74];
+  var NR_UL_OFFSET = {
+    1:-190, 2:-80, 3:-95, 5:-45, 7:-120, 8:-45, 12:-30, 13:31,
+    14:31, 18:-45, 20:41, 25:-80, 26:-45, 28:-55, 66:-400, 71:-46
   };
 
   function nrArfcnToMhz(arfcn) {
@@ -762,6 +803,27 @@
     var bt = bandNum !== null ? LTE_BAND_TABLE[bandNum] : null;
     if (!bt) return null;
     return (!isNaN(earfcn) && earfcn > 0) ? (bt[0] + (earfcn - bt[2]) * bt[1]) : bt[0];
+  }
+
+  /* UL segment *position* only (duplex-offset formula — see
+     LTE_BAND_TABLE's header comment on why this is approximate rather
+     than measured); the bar's actual UL segment *width* uses
+     ca_bands[].ul_bw_mhz, at_poller.sh's real polled value, not
+     anything derived here. Returns null for TDD bands (DL==UL, no
+     separate segment needed) or any band/earfcn this table cannot
+     resolve. */
+  function carrierUlCenterFreqMhz(c) {
+    var dlCenter = carrierCenterFreqMhz(c);
+    if (dlCenter === null) return null;
+    var bandNum = bandNumberFromLabel(c.band);
+    if (bandNum === null) return null;
+    if (/NR5G/i.test(c.band || '')) {
+      if (NR_FDD_BANDS.indexOf(bandNum) < 0 || NR_UL_OFFSET[bandNum] === undefined) return null;
+      return dlCenter + NR_UL_OFFSET[bandNum];
+    }
+    var bt = LTE_BAND_TABLE[bandNum];
+    if (!bt || !bt[4]) return null;
+    return dlCenter + bt[3];
   }
 
   /* ── Carrier Aggregation (Cellular page) ─────────────────────────────
@@ -835,26 +897,47 @@
       };
     });
 
-    var totalBw = withFreq.reduce(function (sum, s) { return sum + s.bw; }, 0);
+    // Each carrier contributes a DL segment always, plus a UL segment
+    // only when at_poller.sh reported real ul_bw_mhz for it (PCC from
+    // QENG, SCC from QCAINFO's own UL fields — null there means that
+    // carrier genuinely has no uplink grant right now, not missing
+    // data, so no UL segment is the correct rendering, not a fallback).
+    var segments = [];
+    withFreq.forEach(function (s) {
+      var cls = CA_SEG_CLASSES[s.i % CA_SEG_CLASSES.length];
+      segments.push({
+        cls: cls, isUl: false, bw: s.bw, low: s.low, high: s.high,
+        sortKey: s.center === null ? Infinity : s.center
+      });
 
-    var sorted = withFreq.slice().sort(function (a, b) {
-      var ac = a.center === null ? Infinity : a.center;
-      var bc = b.center === null ? Infinity : b.center;
-      return ac - bc;
+      var ulBw = typeof s.c.ul_bw_mhz === 'number' ? s.c.ul_bw_mhz : 0;
+      var ulCenter = ulBw > 0 ? carrierUlCenterFreqMhz(s.c) : null;
+      if (ulBw > 0 && ulCenter !== null) {
+        segments.push({
+          cls: cls, isUl: true, bw: ulBw,
+          low: Math.round(ulCenter - ulBw / 2), high: Math.round(ulCenter + ulBw / 2),
+          sortKey: ulCenter
+        });
+      }
     });
+    segments.sort(function (a, b) { return a.sortKey - b.sortKey; });
 
-    function segWidthPct(s) {
-      return totalBw > 0 ? Math.max((s.bw / totalBw) * 100, 2) : 100 / sorted.length;
+    var totalVisualBw = segments.reduce(function (sum, seg) { return sum + seg.bw; }, 0);
+
+    function segWidthPct(seg) {
+      return totalVisualBw > 0 ? Math.max((seg.bw / totalVisualBw) * 100, 2) : 100 / segments.length;
     }
 
-    bar.innerHTML = sorted.map(function (s) {
-      var cls = CA_SEG_CLASSES[s.i % CA_SEG_CLASSES.length];
-      return '<div class="om-ca-seg ' + cls + '" style="width:' + segWidthPct(s).toFixed(1) + '%"></div>';
+    bar.innerHTML = segments.map(function (seg) {
+      var ulCls = seg.isUl ? ' om-ca-seg-ul' : '';
+      var title = (seg.isUl ? 'UL' : 'DL') + ' ' + seg.bw + ' MHz' +
+        (seg.low !== null ? ' (' + seg.low + '–' + seg.high + ' MHz)' : '');
+      return '<div class="om-ca-seg ' + seg.cls + ulCls + '" style="width:' + segWidthPct(seg).toFixed(1) + '%" title="' + escapeHtml(title) + '"></div>';
     }).join('');
 
-    freqRow.innerHTML = sorted.map(function (s) {
-      var label = (s.low !== null && s.high !== null) ? (s.low + '–' + s.high) : '—';
-      return '<div class="om-ca-bwbar-freq-seg" style="width:' + segWidthPct(s).toFixed(1) + '%">' + label + '</div>';
+    freqRow.innerHTML = segments.map(function (seg) {
+      var label = (seg.low !== null && seg.high !== null) ? (seg.low + '–' + seg.high) : '—';
+      return '<div class="om-ca-bwbar-freq-seg" style="width:' + segWidthPct(seg).toFixed(1) + '%">' + (seg.isUl ? 'UL ' : 'DL ') + label + '</div>';
     }).join('');
 
     var caRows = withFreq.map(function (s) {

@@ -426,6 +426,11 @@ body {
 .om-ca-seg-2 { background: #d98b1f; }
 .om-ca-seg-3 { background: #8b5cf6; }
 
+/* UL segments share their carrier's color (om-ca-seg-0..3 above) but
+   darkened, so a carrier's DL and UL segments read as one identity
+   while still being visually distinct from each other. */
+.om-ca-seg-ul { filter: brightness(0.6); }
+
 /* Frequency range (MHz) printed under each bandwidth-bar segment —
    same width as its segment above so the numbers line up with the
    color they describe. */
