@@ -328,6 +328,17 @@ Confirmed on an actual RM520N-GL (2026-08-14), not assumed:
   (different-frequency) neighbors that all reported `-` for every field
   except EARFCN — confirmed the RSRP-must-be-numeric filter correctly
   drops exactly those 6 and keeps the 3 real ones.
+- Carrier Aggregation's extended `+QCAINFO` parsing (EARFCN/bandwidth/
+  PCI/RSRP/RSRQ/SINR per component carrier, ported from QuecControl —
+  see "Visual redesign") confirmed live (2026-08-15): a real 3-CC
+  session (PCC LTE BAND 2 @ 20MHz, 2x SCC LTE BAND 66 @ 5MHz/10MHz) came
+  back with correct per-carrier PCI/RSRP/RSRQ/SINR and the decoded
+  `bw_mhz` summed to the modem's actual total (35MHz). The server-side
+  throughput estimate (`compute_ca_throughput`, also ported from
+  QuecControl) produced `ca_dl_estimated_mbps: 70` / `ca_dl_maximum_mbps:
+  210` for that session — plausible given the reported SINR/RSRQ, but
+  the estimate itself has no independent ground truth (no throughput
+  test was run against it).
 
 ## Open questions
 

@@ -263,11 +263,10 @@ collect_carrier() {
 # +QCAINFO: "PCC"|"SCC",earfcn,bandwidth,"LTE BAND N"|"NR5G BAND N",...
 # one line per active component carrier. Count > 1 means carrier
 # aggregation is active. Field layout past band (pci/rsrp/rsrq, +sinr
-# for LTE) confirmed by QuecControl against this same modem family
-# (RM520N-GL) and ported as-is; not yet independently re-verified
-# against this project's own hardware session (SCOPE.md's CA testing
-# only exercised the older type+band-only parse) — worth a live check
-# the next time real QCAINFO output is captured.
+# for LTE) ported from QuecControl and confirmed live against this same
+# RM520N-GL (2026-08-15, AT&T, 3-CC session: PCC LTE BAND 2 + 2x SCC LTE
+# BAND 66) — pci/rsrp/rsrq/sinr and the decoded bw_mhz all matched the
+# modem's real QCAINFO output.
 #   NR5G line: ...,<pci>,<rsrp>,<rsrq>,...               (no SINR reported)
 #   LTE line:  ...,<pci>,<rsrp>,<rsrq>,<rssi>,<sinr>,...  (SINR at field 10)
 collect_carrier_aggregation() {
