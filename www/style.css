@@ -294,6 +294,39 @@ body {
   margin-top: 0.5rem;
 }
 
+/* ── Neighbor Cells table (Cellular page) ── */
+.om-table-wrap {
+  overflow-x: auto;
+}
+
+.om-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+  margin-top: 0.25rem;
+}
+
+.om-table th {
+  text-align: left;
+  font-size: 0.72rem;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 0.4rem 0.6rem;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+.om-table td {
+  padding: 0.45rem 0.6rem;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+.om-table tr:last-child td {
+  border-bottom: none;
+}
+
 /* ── AT Terminal ──
    Deliberately dark in both light and dark host themes, like a real
    terminal emulator — modeled on QuecControl's system.html terminal. */

@@ -161,6 +161,7 @@
         if (!state._error) {
           renderState(state);
           renderSimSlots(state);
+          renderNeighborCells(state);
           setLastPolledAt(state._polled_at);
         }
         var intervalMs = (state._poll_interval_s ? state._poll_interval_s * 1000 : DEFAULT_POLL_MS);
@@ -628,6 +629,83 @@
         })
         .finally(function () { btn.disabled = false; });
     });
+  }
+
+  /* ── Neighbor cells (Cellular page) ──────────────────────────────────
+     AT+QENG="neighbourcell" doesn't report a band, only EARFCN —
+     at_poller.sh passes that straight through and the EARFCN→band
+     lookup (plus each band's nominal/colloquial frequency label, e.g.
+     "B13 (700)") lives here instead, matching this project's usual
+     split of "poller stays raw, app.js formats for display." Band
+     ranges are copied from QuecControl's own table (3GPP-standard
+     EARFCN allocations per band, not something modem- or
+     vendor-specific). Nominal frequencies are the commonly-cited
+     rounded label for each band (e.g. "Band 71 is the 600 MHz band"),
+     not a precise per-EARFCN calculation — deliberately simpler than
+     QuecControl's full DL-center-frequency math, since that's not what
+     the requested "(LTE) B13 (700)" format actually shows. */
+  var LTE_EARFCN_BAND_RANGES = [
+    [0,599,1],[600,1199,2],[1200,1949,3],[1950,2399,4],[2400,2649,5],
+    [2650,2749,6],[2750,3449,7],[3450,3799,8],[3800,4149,9],[4150,4749,10],
+    [4750,4999,11],[5000,5179,12],[5180,5279,13],[5280,5379,14],
+    [5730,5849,17],[5850,5999,18],[6000,6149,19],[6150,6449,20],
+    [6450,6599,21],[6600,7399,22],[7500,7699,23],[7700,8039,24],
+    [8040,8689,25],[8690,9039,26],[9040,9209,27],[9210,9659,28],
+    [9660,9769,29],[9770,9869,30],[9870,9919,31],[9920,10359,32],
+    [36000,36199,33],[36200,36349,34],[36350,36949,35],[36950,37549,36],
+    [37550,37749,37],[37750,38249,38],[38250,38649,39],[38650,39649,40],
+    [39650,41589,41],[41590,43589,42],[43590,45589,43],[45590,46589,44],
+    [46590,46789,45],[46790,54539,46],[54540,55239,47],[55240,56739,48],
+    [56740,58239,49],[58240,59089,50],[59090,59139,51],[65536,66435,65],
+    [66436,67335,66],[67336,67535,67],[67536,67835,68],[67836,68335,69],
+    [68336,68585,70],[68586,68935,71],[68936,68985,72],[68986,69035,73],
+    [69036,69465,74],[69466,70315,75],[70316,70365,76]
+  ];
+
+  var LTE_BAND_NOMINAL_MHZ = {
+    1: 2100, 2: 1900, 3: 1800, 4: 1700, 5: 850, 7: 2600, 8: 900,
+    12: 700, 13: 700, 14: 700, 17: 700, 18: 800, 19: 800, 20: 800,
+    25: 1900, 26: 850, 28: 700, 29: 700, 30: 2300, 32: 1500, 34: 2000,
+    38: 2600, 39: 1900, 40: 2300, 41: 2500, 42: 3500, 43: 3700,
+    46: 5200, 48: 3600, 65: 2100, 66: 1700, 67: 700, 68: 700, 69: 2600,
+    70: 2000, 71: 600
+  };
+
+  function lteEarfcnToBand(earfcn) {
+    var e = parseInt(earfcn, 10);
+    if (isNaN(e)) return null;
+    for (var i = 0; i < LTE_EARFCN_BAND_RANGES.length; i++) {
+      var r = LTE_EARFCN_BAND_RANGES[i];
+      if (e >= r[0] && e <= r[1]) return r[2];
+    }
+    return null;
+  }
+
+  function fmtNeighborCarrier(earfcn) {
+    var band = lteEarfcnToBand(earfcn);
+    if (band === null) return '—';
+    var mhz = LTE_BAND_NOMINAL_MHZ[band];
+    return '(LTE) B' + band + (mhz ? ' (' + mhz + ')' : '');
+  }
+
+  function renderNeighborCells(state) {
+    var tbody = document.getElementById('om-neighbor-tbody');
+    if (!tbody) return; // not on this page
+
+    var cells = state.neighbor_cells;
+    if (!Array.isArray(cells) || !cells.length) {
+      tbody.innerHTML = '<tr><td colspan="4" class="om-note">No neighbor cell data available.</td></tr>';
+      return;
+    }
+
+    tbody.innerHTML = cells.map(function (c) {
+      return '<tr>' +
+        '<td>' + escapeHtml(fmtNeighborCarrier(c.earfcn)) + '</td>' +
+        '<td>' + escapeHtml(c.earfcn || '—') + '</td>' +
+        '<td>' + escapeHtml(c.pcid || '—') + '</td>' +
+        '<td>' + (typeof c.rsrp === 'number' ? c.rsrp + ' dBm' : '—') + '</td>' +
+        '</tr>';
+    }).join('');
   }
 
   /* ── LAN config (LAN page) ──────────────────────────────────────────

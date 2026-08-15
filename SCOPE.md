@@ -18,7 +18,19 @@ goal).
 - **Cellular status** — signal, registration, serving cell, carrier, carrier
   aggregation. Includes band lock and carrier scan as dedicated features
   (not just raw AT access), matching QuecControl's `band_lock.sh` /
-  `carrier_scan.sh`.
+  `carrier_scan.sh`. Neighbor Cells is a full-width table (Carrier,
+  EARFCN, PCI, RSRP) from `AT+QENG="neighbourcell"` — confirmed live
+  that "inter" (different-frequency) neighbors commonly report no
+  signal data on this hardware (`-` for every field but EARFCN), so
+  `at_poller.sh`'s `collect_neighbor_cells()` only keeps entries with a
+  genuinely numeric RSRP, same filter QuecControl's own poller uses.
+  The AT command has no band field, only EARFCN — `app.js` computes
+  band + a nominal/colloquial frequency label (`"(LTE) B13 (700)"`)
+  client-side via a copy of QuecControl's EARFCN→band range table,
+  matching this project's usual "poller stays raw, frontend formats"
+  split, and deliberately simpler than QuecControl's precise
+  per-EARFCN center-frequency math since that's not what the requested
+  display format actually shows.
 - **SIM info** — dual-SIM aware. This module has 2 slots
   (`AT+QUIMSLOT=?` confirmed live: `+QUIMSLOT: (1,2)`), but only one is
   active/queryable at a time — reading the other's ICCID/IMSI would
@@ -304,6 +316,14 @@ Confirmed on an actual RM520N-GL (2026-08-14), not assumed:
   switching back to slot 1 to restore original state (also confirmed
   clean: `+QUIMSLOT: 1`, `CPIN: READY`, ICCID matched the pre-test
   value). `AT+CNUM` returned a real subscriber number on the first try.
+- `AT+QENG="neighbourcell"` confirmed live: 3 "intra" (same-frequency)
+  neighbors with real PCID/RSRQ/RSRP/RSSI/SINR, all sharing EARFCN 800
+  (band 2, matching this session's own serving-cell/CA band elsewhere
+  in this doc — expected, since same-frequency neighbors are on the
+  serving cell's own frequency by definition), plus 6 "inter"
+  (different-frequency) neighbors that all reported `-` for every field
+  except EARFCN — confirmed the RSRP-must-be-numeric filter correctly
+  drops exactly those 6 and keeps the 3 real ones.
 
 ## Open questions
 
