@@ -794,6 +794,22 @@
     return out;
   }
 
+  /* mimo_layers is at_poller.sh's real per-carrier reading from
+     AT+QNWCFG="lte_mimo_info"/"nr5g_mimo_info" (null when polling that
+     carrier failed — see compute_ca_throughput's header comment), shown
+     as "NxN" since the field reports active DL spatial layers and this
+     hardware's live behavior (confirmed by chaining a real download
+     during testing) is symmetric — 0/1/2/4 layers observed, rendered as
+     0x0/1x1/2x2/4x4. */
+  function fmtBwCell(bwMhz, mimoLayers) {
+    if (!bwMhz) return '—';
+    var txt = bwMhz + ' MHz';
+    if (typeof mimoLayers === 'number' && mimoLayers >= 0) {
+      txt += ' (' + mimoLayers + 'x' + mimoLayers + ')';
+    }
+    return txt;
+  }
+
   function renderCarrierAggregation(state) {
     var bar = document.getElementById('om-ca-bwbar');
     var freqRow = document.getElementById('om-ca-bwbar-freq');
@@ -851,7 +867,7 @@
       return '<tr>' +
         '<td><span class="om-ca-carrier-badge ' + cls + '">' + escapeHtml(c.type || '') + '</span>' +
         '<span class="om-ca-carrier-name" title="' + escapeHtml(idTitle) + '">' + escapeHtml(fmtCarrierBand(c.band)) + '</span></td>' +
-        '<td>' + (s.bw ? s.bw + ' MHz' : '—') + '</td>' +
+        '<td>' + fmtBwCell(s.bw, c.mimo_layers) + '</td>' +
         '<td>' + sigBarCell(c.rsrp, RSRP_ZONES, RSRP_MIN, RSRP_MAX, 'dBm') + '</td>' +
         '<td>' + sigBarCell(c.sinr, SINR_ZONES, SINR_MIN, SINR_MAX, 'dB') + '</td>' +
         '<td>' + thpt + '</td>' +

@@ -222,11 +222,11 @@ collect_sim() {
 
     # +CNUM: [alpha],"<number>",<type> — alpha tag is usually empty; not
     # every carrier/SIM provisions this, ERROR or a bare OK is normal.
-    # Kept as the LAST command in the whole-cycle chain (block 28, see
+    # Kept as the LAST command in the whole-cycle chain (block 30, see
     # ALL_CMD): a chain aborts at the first ERROR, so an expected CNUM
     # failure only nulls this one field instead of losing everything
     # queried after it.
-    _cnum=$(nth_block "$_blob" 28)
+    _cnum=$(nth_block "$_blob" 30)
     F_SIM_PHONE=$(json_str "$(printf '%s' "$_cnum" | grep '^+CNUM:' | head -1 | sed 's/^+CNUM: //' | cut -d',' -f2 | tr -d '"\r\n')")
 }
 
@@ -325,6 +325,48 @@ collect_carrier() {
 # modem's real QCAINFO output.
 #   NR5G line: ...,<pci>,<rsrp>,<rsrq>,...               (no SINR reported)
 #   LTE line:  ...,<pci>,<rsrp>,<rsrq>,<rssi>,<sinr>,...  (SINR at field 10)
+
+# AT+QNWCFG="lte_mimo_info" / "nr5g_mimo_info" report one line per active
+# component carrier: <PCID>,<freq>,<layers>,<is_pcell> — confirmed live
+# for LTE over dozens of samples (idle: PCC mostly 1 with brief spikes to
+# 4, SCCs mostly 0; under a sustained ~65-70Mbps download all three CCs
+# rose to and held 2 consistently, dropping back once the transfer
+# stopped — <is_pcell> stayed rock-solid at 1 on the PCC / 0 on every SCC
+# throughout). Neither subcommand is in Quectel's official AT command
+# manual for this module family (checked directly — extracted and
+# text-searched the real PDF) — found only by querying the live
+# AT+QNWCFG=? subcommand list, which the manual doesn't fully match.
+# nr5g_mimo_info's shape is assumed identical to lte_mimo_info's but
+# UNCONFIRMED — this device had no active NR component carrier to test
+# against; it returned ERROR in every attempt this session (expected
+# when there's no NR resource to report on, same as QCAINFO/QENG's NR
+# fields going empty rather than an actual failure).
+# Builds "pci,freq,layers|pci,freq,layers|..." across both subcommands'
+# blocks (28 and 29 in ALL_CMD) for compute_ca_throughput to match
+# against each carrier's own pci/earfcn — RAT-agnostic since both LTE
+# and NR5G entries in ca_bands already carry pci/earfcn fields.
+build_mimo_lookup() {
+    _out=""
+    for _blk in 28 29; do
+        _mi=$(nth_block "$1" "$_blk")
+        _mi_lines=$(printf '%s' "$_mi" | grep -E '^\+QNWCFG: "(lte|nr5g)_mimo_info"')
+        [ -z "$_mi_lines" ] && continue
+        _oldifs="$IFS"
+        IFS='
+'
+        for _l in $_mi_lines; do
+            _r=$(printf '%s' "$_l" | sed 's/^+QNWCFG: "[a-z0-9]*_mimo_info",//')
+            _pci=$(printf '%s' "$_r" | cut -d',' -f1 | tr -d ' \r\n')
+            _freq=$(printf '%s' "$_r" | cut -d',' -f2 | tr -d ' \r\n')
+            _layers=$(printf '%s' "$_r" | cut -d',' -f3 | tr -d ' \r\n')
+            [ -z "$_pci" ] || [ -z "$_freq" ] && continue
+            _out="${_out}${_out:+|}${_pci},${_freq},${_layers}"
+        done
+        IFS="$_oldifs"
+    done
+    printf '%s' "$_out"
+}
+
 collect_carrier_aggregation() {
     F_CA_COUNT="0"
     F_CA_BANDS="[]"
@@ -371,7 +413,9 @@ collect_carrier_aggregation() {
     _raw="${_raw}]"
     F_CA_BANDS="$_raw"
 
-    _result=$(compute_ca_throughput "$_raw")
+    _mimo_lookup=$(build_mimo_lookup "$1")
+
+    _result=$(compute_ca_throughput "$_raw" "$_mimo_lookup")
     [ -z "$_result" ] && return
     F_CA_BANDS=$(printf '%s\n' "$_result" | sed -n '1p')
     F_CA_DL_EST_MBPS=$(printf '%s\n' "$_result" | sed -n '2p')
@@ -389,8 +433,13 @@ collect_carrier_aggregation() {
 # project's F_LTE_SINR/F_NR_SINR/F_LTE_RSRQ/F_NR_RSRQ are already single
 # scalar values (not QuecControl's per-antenna comma-separated strings),
 # so they're used directly as the per-carrier fallback with no antenna
-# scan needed. MIMO layer count isn't polled here either — QuecControl
-# hardcodes 2 layers regardless of detected MIMO, so this does too.
+# scan needed. Per-carrier MIMO layer count now comes from
+# build_mimo_lookup()'s live AT+QNWCFG="lte_mimo_info"/"nr5g_mimo_info"
+# reading when available (matched by pci+earfcn) — QuecControl's
+# hardcoded "always 2 layers" is now only a fallback for a carrier that
+# lookup has no entry for (polling failed, chain aborted before it, or
+# this specific pci/earfcn wasn't reported), not the default source of
+# truth.
 #
 # Computed here (not in app.js) so any page can bind to
 # ca_dl_estimated_mbps / ca_dl_maximum_mbps / ca_total_bw_mhz, or a given
@@ -398,9 +447,11 @@ collect_carrier_aggregation() {
 # no per-page throughput math needed.
 #
 # Input:  $1 = carriers JSON array, as built by collect_carrier_aggregation
+#         $2 = mimo lookup, "pci,freq,layers|pci,freq,layers|..." from
+#              build_mimo_lookup()
 # Output: 4 lines on stdout —
-#   1. carriers JSON array, each object gaining bw_mhz/dl_estimated_mbps/
-#      dl_maximum_mbps
+#   1. carriers JSON array, each object gaining bw_mhz/mimo_layers/
+#      dl_estimated_mbps/dl_maximum_mbps
 #   2. aggregate estimated downlink, Mbps, rounded up to the nearest 10
 #   3. aggregate maximum downlink, Mbps, rounded up to the nearest 10
 #   4. aggregate bandwidth, MHz
@@ -410,6 +461,7 @@ compute_ca_throughput() {
         -v fb_nr_sinr="${F_NR_SINR:-null}" \
         -v fb_lte_rsrq="${F_LTE_RSRQ:-null}" \
         -v fb_nr_rsrq="${F_NR_RSRQ:-null}" \
+        -v mimo_lookup="${2:-}" \
     '
     function lte_bw_mhz(rb,    n) {
         n = int(rb)
@@ -509,6 +561,14 @@ compute_ca_throughput() {
         TDD_DL    = 0.70
         total_est = 0; total_max = 0; total_bw = 0
         out = "["
+
+        n_ml = split(mimo_lookup, ml_entries, "|")
+        for (mi = 1; mi <= n_ml; mi++) {
+            n_mf = split(ml_entries[mi], mf, ",")
+            if (n_mf >= 3 && mf[1] != "" && mf[2] != "") {
+                mimo_layers[mf[1] "_" mf[2]] = mf[3]
+            }
+        }
     }
     {
         gsub(/^\[/, ""); gsub(/\]$/, "")
@@ -543,7 +603,23 @@ compute_ca_throughput() {
                 rsrq = numish(fb) ? fb + 0 : -9
             }
 
-            layers = 2
+            # Real per-carrier layer count when AT+QNWCFG="lte_mimo_info"/
+            # "nr5g_mimo_info" reported one for this pci+earfcn (see the
+            # build_mimo_lookup header comment above); mimo_known tracks
+            # whether that happened so the *displayed* mimo_layers field
+            # below can honestly show null when it did not, distinct from
+            # this fallback-to-2 which only feeds the throughput math.
+            # A genuine "0 layers" reading (this carrier momentarily
+            # idle/unscheduled — confirmed live: SCCs commonly read 0 at
+            # idle and rise to 2 only under sustained load) is real data,
+            # not a polling failure, so it is still used for math, floored
+            # at 1 — a true 0 would zero out both the "current estimate"
+            # *and* the "theoretical maximum" columns, and the latter is
+            # meant to reflect capability, not this particular instant.
+            ml_key = pci "_" earfcn
+            mimo_known = (ml_key in mimo_layers) && (mimo_layers[ml_key] ~ /^[0-9]+$/)
+            layers = mimo_known ? mimo_layers[ml_key] + 0 : 2
+            if (layers < 1) layers = 1
             se_est = is_nr ? nr_se(sinr) : lte_se(sinr)
             se_max = is_nr ? nr_se(35)   : lte_se(30)
 
@@ -576,6 +652,7 @@ compute_ca_throughput() {
             out = out ",\"rsrp\":" (rsrp == "" ? "null" : rsrp)
             out = out ",\"rsrq\":" (rsrq_f == "" ? "null" : rsrq_f)
             out = out ",\"sinr\":" (numish(sinr_f) ? sinr_f : "null")
+            out = out ",\"mimo_layers\":" (mimo_known ? mimo_layers[ml_key] : "null")
             out = out ",\"dl_estimated_mbps\":" c_est
             out = out ",\"dl_maximum_mbps\":" c_max
             out = out "}"
@@ -774,13 +851,21 @@ log_op "Starting — interval=${POLL_INTERVAL}s log_level=${LOG_LEVEL}"
 #  19 QNWPREFCFG=lte_band 20 QNWPREFCFG=nr5g_band
 #  21 CGDCONT 22 CGPADDR 23 CGACT 24 QGDCNT
 #  25 QMAP=LANIP 26 QMAP=MPDN_rule 27 QMAP=DHCPV4DNS
-#  28 CNUM
+#  28 QNWPREFCFG=lte_mimo_info 29 QNWPREFCFG=nr5g_mimo_info
+#  30 CNUM
 # CNUM is placed last, out of its natural SIM-info grouping, because a
 # chain aborts at the first ERROR (confirmed live) and it's the one
 # command here documented to legitimately ERROR on some SIMs — putting
 # it last means that failure only nulls sim_phone instead of losing
-# every field queried after it.
-ALL_CMD='AT+GSN;+QGMR;I;+QTEMP;+CPIN?;+CIMI;+QCCID;+QUIMSLOT?;+CEREG?;+C5GREG?;+CREG?;+QRSRP;+QRSRQ;+QSINR;+QENG="servingcell";+COPS?;+QSPN;+QCAINFO;+QNWPREFCFG="lte_band";+QNWPREFCFG="nr5g_band";+CGDCONT?;+CGPADDR;+CGACT?;+QGDCNT?;+QMAP="LANIP";+QMAP="MPDN_rule";+QMAP="DHCPV4DNS";+CNUM'
+# every field queried after it. The two mimo_info commands go right
+# before it for the same reason, in the same order: nr5g_mimo_info is
+# the one of the two confirmed live to ERROR whenever there's no active
+# NR component carrier (a common state on this LTE-heavy test
+# connection) — see build_mimo_lookup()'s header comment — so it's
+# ordered after lte_mimo_info (which every live sample this session
+# answered successfully) rather than before it or CNUM, so its failure
+# can't take out lte_mimo_info's data too.
+ALL_CMD='AT+GSN;+QGMR;I;+QTEMP;+CPIN?;+CIMI;+QCCID;+QUIMSLOT?;+CEREG?;+C5GREG?;+CREG?;+QRSRP;+QRSRQ;+QSINR;+QENG="servingcell";+COPS?;+QSPN;+QCAINFO;+QNWPREFCFG="lte_band";+QNWPREFCFG="nr5g_band";+CGDCONT?;+CGPADDR;+CGACT?;+QGDCNT?;+QMAP="LANIP";+QMAP="MPDN_rule";+QMAP="DHCPV4DNS";+QNWCFG="lte_mimo_info";+QNWCFG="nr5g_mimo_info";+CNUM'
 
 _cycle=0
 
