@@ -26,8 +26,8 @@
         <div class="om-row"><span class="om-row-label">State</span><span data-field="wan_active">—</span></div>
         <div class="om-row"><span class="om-row-label">APN</span><span data-field="wan_apn">—</span></div>
         <div class="om-row"><span class="om-row-label">IP Type</span><span data-field="wan_ip_type">—</span></div>
-        <div class="om-row"><span class="om-row-label">IPv4 Address</span><span data-field="wan_ip">—</span></div>
-        <div class="om-row"><span class="om-row-label">IPv6 Address</span><span data-field="wan_ipv6">—</span></div>
+        <div class="om-row"><span class="om-row-label">IPv4</span><span data-field="wan_ip">—</span></div>
+        <div class="om-row"><span class="om-row-label">IPv6</span><span data-field="wan_ipv6">—</span></div>
       </div>
 
       <div class="om-card">
@@ -39,21 +39,12 @@
         <p id="om-wan-reset-status" class="om-note"></p>
       </div>
 
-      <div class="om-card om-card-wide">
+      <div class="om-card">
         <h2>TTL Spoofing</h2>
-        <p class="om-note">
-          Some carriers detect tethering/hotspot use by TTL (IPv4) or hop
-          limit (IPv6) — traffic routed from another device typically
-          arrives with one less hop than traffic from the phone itself.
-          Setting a fixed value here rewrites outgoing packets so
-          everything looks like it came from this device. Commonly cited
-          starting points by carrier — verify for your specific plan,
-          this varies:
-        </p>
         <div class="om-ttl-carriers">
-          <span class="om-ttl-carrier"><span class="om-ttl-swatch" style="background:#00A8E0"></span>AT&amp;T — 65</span>
-          <span class="om-ttl-carrier"><span class="om-ttl-swatch" style="background:#E20074"></span>T-Mobile — 65</span>
-          <span class="om-ttl-carrier"><span class="om-ttl-swatch" style="background:#EE0000"></span>Verizon — 88</span>
+          <span class="om-ttl-carrier"><span class="om-ttl-swatch" style="background:#00A8E0"></span>AT&amp;T (Blue) — 65</span>
+          <span class="om-ttl-carrier"><span class="om-ttl-swatch" style="background:#E20074"></span>T-Mobile (Magenta) — 65</span>
+          <span class="om-ttl-carrier"><span class="om-ttl-swatch" style="background:#EE0000"></span>Verizon (Red) — 88</span>
         </div>
         <div class="om-form-row">
           <label for="om-wan-ttl">TTL / Hop Limit (0 = disabled, 1–255)</label>
