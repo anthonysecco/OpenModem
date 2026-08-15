@@ -294,6 +294,86 @@ body {
   margin-top: 0.5rem;
 }
 
+/* ── Carrier Aggregation (Cellular page) ── */
+.om-ca-stats {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.om-ca-stat {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.5rem 0.65rem;
+}
+
+.om-ca-stat-label {
+  display: block;
+  font-size: 0.68rem;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 0.15rem;
+}
+
+.om-ca-stat-value {
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+@media (min-width: 480px) {
+  .om-ca-stats { grid-template-columns: repeat(4, 1fr); }
+}
+
+.om-ca-bwbar {
+  display: flex;
+  height: 20px;
+  border-radius: 6px;
+  overflow: hidden;
+  gap: 2px;
+  margin-bottom: 0.5rem;
+}
+
+.om-ca-bwbar-empty {
+  flex: 1;
+  background: var(--bg);
+  border: 1px dashed var(--border);
+  border-radius: 6px;
+}
+
+.om-ca-seg {
+  min-width: 2px;
+}
+
+.om-ca-seg-0 { background: #2f6fed; }
+.om-ca-seg-1 { background: #1f9e75; }
+.om-ca-seg-2 { background: #d98b1f; }
+.om-ca-seg-3 { background: #8b5cf6; }
+
+.om-ca-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 0.9rem;
+  margin-bottom: 0.75rem;
+  font-size: 0.78rem;
+  color: var(--text-dim);
+}
+
+.om-ca-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.om-ca-legend-dot {
+  width: 0.6rem;
+  height: 0.6rem;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+
 /* ── Neighbor Cells table (Cellular page) ── */
 .om-table-wrap {
   overflow-x: auto;

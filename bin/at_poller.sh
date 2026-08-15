@@ -260,35 +260,284 @@ collect_carrier() {
     F_CARRIER_PLMN=$(json_str "$(printf '%s' "$_qspn" | grep '+QSPN:' | awk -F',' '{print $NF}' | tr -d '" \r\n')")
 }
 
-# +QCAINFO: "PCC"|"SCC",earfcn,bandwidth,"LTE BAND N",...  one line per
-# active component carrier. Count > 1 means carrier aggregation is active.
+# +QCAINFO: "PCC"|"SCC",earfcn,bandwidth,"LTE BAND N"|"NR5G BAND N",...
+# one line per active component carrier. Count > 1 means carrier
+# aggregation is active. Field layout past band (pci/rsrp/rsrq, +sinr
+# for LTE) confirmed by QuecControl against this same modem family
+# (RM520N-GL) and ported as-is; not yet independently re-verified
+# against this project's own hardware session (SCOPE.md's CA testing
+# only exercised the older type+band-only parse) — worth a live check
+# the next time real QCAINFO output is captured.
+#   NR5G line: ...,<pci>,<rsrp>,<rsrq>,...               (no SINR reported)
+#   LTE line:  ...,<pci>,<rsrp>,<rsrq>,<rssi>,<sinr>,...  (SINR at field 10)
 collect_carrier_aggregation() {
     F_CA_COUNT="0"
     F_CA_BANDS="[]"
+    F_CA_TOTAL_BW_MHZ="0"
+    F_CA_DL_EST_MBPS="null"
+    F_CA_DL_MAX_MBPS="null"
+
     _ca=$(run_at "AT+QCAINFO")
     _lines=$(printf '%s' "$_ca" | grep '^+QCAINFO:')
     [ -z "$_lines" ] && return
 
     _count=0
-    _json="["
+    _raw="["
     _first=1
     _oldifs="$IFS"
     IFS='
 '
     for _line in $_lines; do
-        _band=$(printf '%s' "$_line" | grep -oE '"LTE BAND [0-9]+"' | tr -d '"')
+        _r=$(printf '%s' "$_line" | sed 's/^+QCAINFO: //')
+        _type=$(printf '%s' "$_r" | cut -d',' -f1 | tr -d '"')
+        _band=$(printf '%s' "$_r" | cut -d',' -f4 | tr -d '"')
         [ -z "$_band" ] && continue
-        # First quoted field on the line is the component type, "PCC" or
-        # "SCC" (primary/secondary component carrier).
-        _type=$(printf '%s' "$_line" | sed 's/^+QCAINFO: "//; s/".*//')
-        [ "$_first" -eq 1 ] || _json="${_json},"
-        _json="${_json}{\"type\":$(json_str "$_type"),\"band\":$(json_str "$_band")}"
+        _earfcn=$(printf '%s' "$_r" | cut -d',' -f2)
+        _bw_raw=$(printf '%s' "$_r" | cut -d',' -f3)
+        if printf '%s' "$_band" | grep -q "NR5G"; then
+            _pci=$(printf '%s' "$_r" | cut -d',' -f5)
+            _rsrp=$(printf '%s' "$_r" | cut -d',' -f6)
+            _rsrq=$(printf '%s' "$_r" | cut -d',' -f7)
+            _sinr=""
+        else
+            _pci=$(printf '%s' "$_r" | cut -d',' -f6)
+            _rsrp=$(printf '%s' "$_r" | cut -d',' -f7)
+            _rsrq=$(printf '%s' "$_r" | cut -d',' -f8)
+            _sinr=$(printf '%s' "$_r" | cut -d',' -f10)
+        fi
+        [ "$_first" -eq 1 ] || _raw="${_raw},"
+        _raw="${_raw}{\"type\":$(json_str "$_type"),\"band\":$(json_str "$_band"),\"earfcn\":$(json_str "$_earfcn"),\"bandwidth\":$(json_str "$_bw_raw"),\"pci\":$(json_str "$_pci"),\"rsrp\":$(json_num "$_rsrp"),\"rsrq\":$(json_num "$_rsrq"),\"sinr\":$(json_num "$_sinr")}"
         _first=0
         _count=$(( _count + 1 ))
     done
     IFS="$_oldifs"
     F_CA_COUNT="$_count"
-    F_CA_BANDS="${_json}]"
+    [ "$_count" -eq 0 ] && return
+    _raw="${_raw}]"
+    F_CA_BANDS="$_raw"
+
+    _result=$(compute_ca_throughput "$_raw")
+    [ -z "$_result" ] && return
+    F_CA_BANDS=$(printf '%s\n' "$_result" | sed -n '1p')
+    F_CA_DL_EST_MBPS=$(printf '%s\n' "$_result" | sed -n '2p')
+    F_CA_DL_MAX_MBPS=$(printf '%s\n' "$_result" | sed -n '3p')
+    F_CA_TOTAL_BW_MHZ=$(printf '%s\n' "$_result" | sed -n '4p')
+    printf '%s' "$F_CA_DL_EST_MBPS" | grep -qE '^[0-9]+$' || F_CA_DL_EST_MBPS="null"
+    printf '%s' "$F_CA_DL_MAX_MBPS" | grep -qE '^[0-9]+$' || F_CA_DL_MAX_MBPS="null"
+    printf '%s' "$F_CA_TOTAL_BW_MHZ" | grep -qE '^[0-9]+(\.[0-9]+)?$' || F_CA_TOTAL_BW_MHZ="0"
+}
+
+# Estimates per-carrier and aggregate downlink throughput from CA data.
+# Fixed overhead constants and the SINR->spectral-efficiency tables are
+# ported from QuecControl's compute_throughput_estimate (confirmed
+# against real hardware there — see SCOPE.md), simplified because this
+# project's F_LTE_SINR/F_NR_SINR/F_LTE_RSRQ/F_NR_RSRQ are already single
+# scalar values (not QuecControl's per-antenna comma-separated strings),
+# so they're used directly as the per-carrier fallback with no antenna
+# scan needed. MIMO layer count isn't polled here either — QuecControl
+# hardcodes 2 layers regardless of detected MIMO, so this does too.
+#
+# Computed here (not in app.js) so any page can bind to
+# ca_dl_estimated_mbps / ca_dl_maximum_mbps / ca_total_bw_mhz, or a given
+# carrier's dl_estimated_mbps / dl_maximum_mbps, via a plain data-field —
+# no per-page throughput math needed.
+#
+# Input:  $1 = carriers JSON array, as built by collect_carrier_aggregation
+# Output: 4 lines on stdout —
+#   1. carriers JSON array, each object gaining bw_mhz/dl_estimated_mbps/
+#      dl_maximum_mbps
+#   2. aggregate estimated downlink, Mbps, rounded up to the nearest 10
+#   3. aggregate maximum downlink, Mbps, rounded up to the nearest 10
+#   4. aggregate bandwidth, MHz
+compute_ca_throughput() {
+    printf '%s' "$1" | awk \
+        -v fb_lte_sinr="${F_LTE_SINR:-null}" \
+        -v fb_nr_sinr="${F_NR_SINR:-null}" \
+        -v fb_lte_rsrq="${F_LTE_RSRQ:-null}" \
+        -v fb_nr_rsrq="${F_NR_RSRQ:-null}" \
+    '
+    function lte_bw_mhz(rb,    n) {
+        n = int(rb)
+        if (n == 6)   return 1.4
+        if (n == 15)  return 3
+        if (n == 25)  return 5
+        if (n == 50)  return 10
+        if (n == 75)  return 15
+        if (n == 100) return 20
+        return 0
+    }
+    function nr_bw_mhz(idx,    n) {
+        n = int(idx)
+        if (n == 0)  return 5
+        if (n == 1)  return 10
+        if (n == 2)  return 15
+        if (n == 3)  return 20
+        if (n == 4)  return 25
+        if (n == 5)  return 30
+        if (n == 6)  return 40
+        if (n == 7)  return 50
+        if (n == 8)  return 60
+        if (n == 9)  return 70
+        if (n == 10) return 80
+        if (n == 11) return 90
+        if (n == 12) return 100
+        if (n == 13) return 200
+        if (n == 14) return 400
+        if (n == 15) return 35
+        if (n == 16) return 45
+        return 0
+    }
+    function lte_se(sinr) {
+        if (sinr >= 22) return 5.55
+        if (sinr >= 19) return 4.52
+        if (sinr >= 16) return 3.90
+        if (sinr >= 13) return 3.32
+        if (sinr >= 11) return 2.73
+        if (sinr >=  9) return 2.41
+        if (sinr >=  7) return 1.91
+        if (sinr >=  5) return 1.48
+        if (sinr >=  3) return 1.18
+        if (sinr >=  1) return 0.88
+        if (sinr >= -1) return 0.60
+        return 0.23
+    }
+    function nr_se(sinr) {
+        if (sinr >= 28) return 7.41
+        if (sinr >= 24) return 5.55
+        if (sinr >= 21) return 4.52
+        if (sinr >= 18) return 3.90
+        if (sinr >= 16) return 3.32
+        if (sinr >= 14) return 2.73
+        if (sinr >= 13) return 2.41
+        if (sinr >= 11) return 1.91
+        if (sinr >=  9) return 1.48
+        if (sinr >=  7) return 1.18
+        if (sinr >=  5) return 0.88
+        if (sinr >=  3) return 0.60
+        return 0.38
+    }
+    function rsrq_penalty(rsrq) {
+        if (rsrq >= -9)  return 1.00
+        if (rsrq <= -19) return 0.65
+        return 1.00 + (rsrq - (-9)) * 0.035
+    }
+    function nr_is_tdd(b) {
+        if (b==1||b==2||b==3||b==5||b==7||b==8||b==12||b==13||b==14||
+            b==18||b==20||b==25||b==26||b==28||b==30||b==65||b==66||
+            b==70||b==71||b==74||b==75||b==76) return 0
+        return 1
+    }
+    function numish(v) { return (v != "" && v != "null") }
+    function json_field(rec, fname,    pat, pos, end, val, c) {
+        pat = "\"" fname "\":"
+        pos = index(rec, pat)
+        if (pos == 0) return ""
+        pos += length(pat)
+        if (substr(rec, pos, 1) == "\"") {
+            pos++
+            end = index(substr(rec, pos), "\"")
+            if (end == 0) return ""
+            return substr(rec, pos, end - 1)
+        }
+        val = ""
+        while (pos <= length(rec)) {
+            c = substr(rec, pos, 1)
+            if (c == "," || c == "}" || c == "]") break
+            val = val c
+            pos++
+        }
+        return val
+    }
+    BEGIN {
+        SCHED_EFF = 0.75
+        PROTO_EFF = 0.70
+        TDD_DL    = 0.70
+        total_est = 0; total_max = 0; total_bw = 0
+        out = "["
+    }
+    {
+        gsub(/^\[/, ""); gsub(/\]$/, "")
+        n = split($0, carriers, /\},\{/)
+        for (i = 1; i <= n; i++) {
+            rec = carriers[i]
+            if (substr(rec, 1, 1) != "{") rec = "{" rec
+            if (substr(rec, length(rec), 1) != "}") rec = rec "}"
+
+            type_str = json_field(rec, "type")
+            band_str = json_field(rec, "band")
+            earfcn   = json_field(rec, "earfcn")
+            bw_raw   = json_field(rec, "bandwidth")
+            pci      = json_field(rec, "pci")
+            rsrp     = json_field(rec, "rsrp")
+            rsrq_f   = json_field(rec, "rsrq")
+            sinr_f   = json_field(rec, "sinr")
+
+            is_nr = (index(band_str, "NR5G") > 0)
+            bw = is_nr ? nr_bw_mhz(bw_raw) : lte_bw_mhz(bw_raw)
+
+            if (numish(sinr_f)) {
+                sinr = sinr_f + 0
+            } else {
+                fb = is_nr ? fb_nr_sinr : fb_lte_sinr
+                sinr = numish(fb) ? fb + 0 : 5
+            }
+            if (numish(rsrq_f)) {
+                rsrq = rsrq_f + 0
+            } else {
+                fb = is_nr ? fb_nr_rsrq : fb_lte_rsrq
+                rsrq = numish(fb) ? fb + 0 : -9
+            }
+
+            layers = 2
+            se_est = is_nr ? nr_se(sinr) : lte_se(sinr)
+            se_max = is_nr ? nr_se(35)   : lte_se(30)
+
+            est = 0; max = 0
+            if (bw > 0) {
+                est = se_est * bw * layers * SCHED_EFF * PROTO_EFF
+                max = se_max * bw * layers * SCHED_EFF * PROTO_EFF
+                if (is_nr) {
+                    band_num = 0; s = band_str
+                    while (match(s, /[0-9]+/)) {
+                        band_num = substr(s, RSTART, RLENGTH) + 0
+                        s = substr(s, RSTART + RLENGTH)
+                    }
+                    if (nr_is_tdd(band_num)) { est = est * TDD_DL; max = max * TDD_DL }
+                }
+                est = est * rsrq_penalty(rsrq)
+                total_bw += bw
+            }
+            total_est += est
+            total_max += max
+            c_est = int(est + 0.5)
+            c_max = int(max + 0.5)
+
+            if (i > 1) out = out ","
+            out = out "{\"type\":\"" type_str "\",\"band\":\"" band_str "\""
+            out = out ",\"earfcn\":" (earfcn == "" ? "null" : "\"" earfcn "\"")
+            out = out ",\"bandwidth\":" (bw_raw == "" ? "null" : "\"" bw_raw "\"")
+            out = out ",\"bw_mhz\":" (bw > 0 ? bw : "null")
+            out = out ",\"pci\":" (pci == "" ? "null" : "\"" pci "\"")
+            out = out ",\"rsrp\":" (rsrp == "" ? "null" : rsrp)
+            out = out ",\"rsrq\":" (rsrq_f == "" ? "null" : rsrq_f)
+            out = out ",\"sinr\":" (numish(sinr_f) ? sinr_f : "null")
+            out = out ",\"dl_estimated_mbps\":" c_est
+            out = out ",\"dl_maximum_mbps\":" c_max
+            out = out "}"
+        }
+    }
+    END {
+        out = out "]"
+        print out
+        est10 = int((total_est + 9.999) / 10) * 10
+        max10 = int((total_max + 9.999) / 10) * 10
+        if (est10 < 0) est10 = 0
+        if (max10 < 0) max10 = 0
+        print est10
+        print max10
+        print total_bw
+    }
+    '
 }
 
 # +QENG: "neighbourcell intra"|"neighbourcell inter","LTE",<earfcn>,
@@ -446,6 +695,9 @@ write_state() {
   "carrier_plmn": ${F_CARRIER_PLMN},
   "ca_count": ${F_CA_COUNT},
   "ca_bands": ${F_CA_BANDS},
+  "ca_total_bw_mhz": ${F_CA_TOTAL_BW_MHZ},
+  "ca_dl_estimated_mbps": ${F_CA_DL_EST_MBPS},
+  "ca_dl_maximum_mbps": ${F_CA_DL_MAX_MBPS},
   "neighbor_cells": ${F_NEIGHBOR_CELLS},
   "band_pref_lte": ${F_BAND_PREF_LTE},
   "band_pref_nr5g": ${F_BAND_PREF_NR5G},

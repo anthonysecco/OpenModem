@@ -91,12 +91,8 @@
   function fmtReg(v) { return REG_LABELS[v] !== undefined ? REG_LABELS[v] : null; }
   function fmtBool(v) { return v === true ? 'Active' : v === false ? 'Inactive' : null; }
   function fmtBands(v) { return (typeof v === 'string' && v.length) ? v.split(':').join(', ') : v; }
-  // ca_bands is [{type:"PCC"|"SCC", band:"LTE BAND N"}, ...] — PCC first
-  // (it's always listed first by the modem), then each SCC.
-  function fmtCaBands(v) {
-    if (!Array.isArray(v) || !v.length) return null;
-    return v.map(function (c) { return c.type + ': ' + c.band; }).join(', ');
-  }
+  function fmtMhz(v) { return (typeof v === 'number') ? v + ' MHz' : null; }
+  function fmtMbps(v) { return (typeof v === 'number') ? v + ' Mbps' : null; }
   function fmtDnsMode(v) {
     return v === 'local' ? 'Local (Modem DNS)' : v === 'carrier' ? 'Carrier (PDP Context)' : null;
   }
@@ -115,7 +111,8 @@
     signal_lte_rsrp: fmtDbm, signal_lte_rsrq: fmtDbm, signal_lte_sinr: fmtDbm,
     signal_nr_rsrp: fmtDbm, signal_nr_rsrq: fmtDbm, signal_nr_sinr: fmtDbm,
     wan_active: fmtBool,
-    ca_bands: fmtCaBands,
+    ca_total_bw_mhz: fmtMhz,
+    ca_dl_estimated_mbps: fmtMbps, ca_dl_maximum_mbps: fmtMbps,
     band_pref_lte: fmtBands, band_pref_nr5g: fmtBands,
     lan_dns_mode: fmtDnsMode,
     wan_data_rx: fmtBytes, wan_data_tx: fmtBytes,
@@ -162,6 +159,7 @@
           renderState(state);
           renderSimSlots(state);
           renderNeighborCells(state);
+          renderCarrierAggregation(state);
           setLastPolledAt(state._polled_at);
         }
         var intervalMs = (state._poll_interval_s ? state._poll_interval_s * 1000 : DEFAULT_POLL_MS);
@@ -733,6 +731,64 @@
       });
     });
     tbody.innerHTML = rows.join('');
+  }
+
+  /* ── Carrier Aggregation (Cellular page) ─────────────────────────────
+     ca_bands carries the richer per-carrier shape at_poller.sh's
+     collect_carrier_aggregation/compute_ca_throughput now writes:
+     bw_mhz and dl_estimated_mbps/dl_maximum_mbps are computed
+     server-side, so this is purely rendering — no throughput math here.
+     Carrier color is assigned by array position (PCC first, then each
+     SCC in modem-reported order) and reused for both the bandwidth bar
+     segment and its legend dot. */
+  var CA_SEG_CLASSES = ['om-ca-seg-0', 'om-ca-seg-1', 'om-ca-seg-2', 'om-ca-seg-3'];
+
+  function renderCarrierAggregation(state) {
+    var bar = document.getElementById('om-ca-bwbar');
+    var legend = document.getElementById('om-ca-legend');
+    var tbody = document.getElementById('om-ca-tbody');
+    if (!bar || !legend || !tbody) return; // not on this page
+
+    var carriers = state.ca_bands;
+    if (!Array.isArray(carriers) || !carriers.length) {
+      bar.innerHTML = '<div class="om-ca-bwbar-empty"></div>';
+      legend.innerHTML = '';
+      tbody.innerHTML = '<tr><td colspan="7" class="om-note">No carrier aggregation active.</td></tr>';
+      return;
+    }
+
+    var totalBw = carriers.reduce(function (sum, c) {
+      return sum + (typeof c.bw_mhz === 'number' ? c.bw_mhz : 0);
+    }, 0);
+
+    bar.innerHTML = carriers.map(function (c, i) {
+      var bw = typeof c.bw_mhz === 'number' ? c.bw_mhz : 0;
+      var pct = totalBw > 0 ? Math.max((bw / totalBw) * 100, 2) : 100 / carriers.length;
+      var cls = CA_SEG_CLASSES[i % CA_SEG_CLASSES.length];
+      return '<div class="om-ca-seg ' + cls + '" style="width:' + pct.toFixed(1) + '%"></div>';
+    }).join('');
+
+    legend.innerHTML = carriers.map(function (c, i) {
+      var cls = CA_SEG_CLASSES[i % CA_SEG_CLASSES.length];
+      var bwLabel = typeof c.bw_mhz === 'number' ? c.bw_mhz + ' MHz' : '—';
+      return '<span class="om-ca-legend-item"><span class="om-ca-legend-dot ' + cls + '"></span>' +
+        escapeHtml(c.type || '') + ': ' + escapeHtml(c.band || '') + ' (' + bwLabel + ')</span>';
+    }).join('');
+
+    tbody.innerHTML = carriers.map(function (c) {
+      var est = typeof c.dl_estimated_mbps === 'number' ? c.dl_estimated_mbps : null;
+      var max = typeof c.dl_maximum_mbps === 'number' ? c.dl_maximum_mbps : null;
+      var thpt = (est !== null && max !== null) ? (est + ' / ' + max + ' Mbps') : '—';
+      return '<tr>' +
+        '<td>' + escapeHtml(c.type || '—') + '</td>' +
+        '<td>' + escapeHtml(c.band || '—') + '</td>' +
+        '<td>' + escapeHtml(c.earfcn || '—') + '</td>' +
+        '<td>' + escapeHtml(c.pci || '—') + '</td>' +
+        '<td>' + (typeof c.rsrp === 'number' ? c.rsrp + ' dBm' : '—') + '</td>' +
+        '<td>' + (typeof c.sinr === 'number' ? c.sinr + ' dB' : '—') + '</td>' +
+        '<td>' + thpt + '</td>' +
+        '</tr>';
+    }).join('');
   }
 
   /* ── LAN config (LAN page) ──────────────────────────────────────────

@@ -49,8 +49,36 @@
       </div>
       <div class="om-card om-card-wide">
         <h2>Carrier Aggregation</h2>
-        <div class="om-row"><span class="om-row-label">Components</span><span data-field="ca_count">—</span></div>
-        <div class="om-row"><span class="om-row-label">PCC / SCC</span><span data-field="ca_bands">—</span></div>
+        <div class="om-ca-stats">
+          <div class="om-ca-stat">
+            <span class="om-ca-stat-label">Carriers</span>
+            <span class="om-ca-stat-value" data-field="ca_count">—</span>
+          </div>
+          <div class="om-ca-stat">
+            <span class="om-ca-stat-label">DL Bandwidth</span>
+            <span class="om-ca-stat-value" data-field="ca_total_bw_mhz">—</span>
+          </div>
+          <div class="om-ca-stat">
+            <span class="om-ca-stat-label">Est. Downlink</span>
+            <span class="om-ca-stat-value" data-field="ca_dl_estimated_mbps">—</span>
+          </div>
+          <div class="om-ca-stat">
+            <span class="om-ca-stat-label">Max Downlink</span>
+            <span class="om-ca-stat-value" data-field="ca_dl_maximum_mbps">—</span>
+          </div>
+        </div>
+        <div id="om-ca-bwbar" class="om-ca-bwbar"></div>
+        <div id="om-ca-legend" class="om-ca-legend"></div>
+        <div class="om-table-wrap">
+          <table class="om-table">
+            <thead>
+              <tr><th>Type</th><th>Band</th><th>EARFCN</th><th>PCI</th><th>RSRP</th><th>SINR</th><th>Est / Max</th></tr>
+            </thead>
+            <tbody id="om-ca-tbody">
+              <tr><td colspan="7" class="om-note">Loading…</td></tr>
+            </tbody>
+          </table>
+        </div>
       </div>
       <div class="om-card om-card-wide">
         <h2>Neighbor Cells</h2>
