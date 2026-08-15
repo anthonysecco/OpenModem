@@ -108,6 +108,7 @@
     i = Math.min(i, units.length - 1);
     return (v / Math.pow(1024, i)).toFixed(i === 0 ? 0 : 2) + ' ' + units[i];
   }
+  function fmtSimSlot(v) { return v === 1 ? 'SIM1' : v === 2 ? 'SIM2' : null; }
 
   var FORMATTERS = {
     reg_lte: fmtReg, reg_nr: fmtReg, reg_creg: fmtReg,
@@ -117,7 +118,8 @@
     ca_bands: fmtCaBands,
     band_pref_lte: fmtBands, band_pref_nr5g: fmtBands,
     lan_dns_mode: fmtDnsMode,
-    wan_data_rx: fmtBytes, wan_data_tx: fmtBytes
+    wan_data_rx: fmtBytes, wan_data_tx: fmtBytes,
+    sim_active_slot: fmtSimSlot
   };
 
   function renderState(state) {
@@ -158,6 +160,7 @@
         }
         if (!state._error) {
           renderState(state);
+          renderSimSlots(state);
           setLastPolledAt(state._polled_at);
         }
         var intervalMs = (state._poll_interval_s ? state._poll_interval_s * 1000 : DEFAULT_POLL_MS);
@@ -956,6 +959,61 @@
     fetchWanInternet();
   }
 
+  /* ── SIM slot cards (SIM page) ───────────────────────────────────────
+     This module has 2 SIM slots but only one is active/queryable at a
+     time (AT+QUIMSLOT selects which) — sim_status/sim_iccid/sim_imsi/
+     sim_phone always describe whichever slot sim_active_slot names,
+     never both, since reading the inactive slot would require an
+     actual disruptive switch (see sim_action.sh). Called from
+     refreshState() on every poll tick (not gated behind an initX()
+     page guard) so both cards and the toggle's highlighted button stay
+     truthful to the modem's real state — there's no "pending edit" to
+     protect here the way LAN/Band Lock's forms have, since clicking a
+     slot button fires the switch immediately rather than staging one. */
+  function renderSimSlots(state) {
+    if (!document.getElementById('om-sim1-status')) return; // not on this page
+
+    var active = state.sim_active_slot;
+    [1, 2].forEach(function (n) {
+      var isActive = active === n;
+      var vals = isActive
+        ? { status: state.sim_status, iccid: state.sim_iccid, imsi: state.sim_imsi, phone: state.sim_phone }
+        : { status: null, iccid: null, imsi: null, phone: null };
+      ['status', 'iccid', 'imsi', 'phone'].forEach(function (key) {
+        var el = document.getElementById('om-sim' + n + '-' + key);
+        if (el) el.textContent = (vals[key] === null || vals[key] === undefined || vals[key] === '') ? '—' : vals[key];
+      });
+      var noteEl = document.getElementById('om-sim' + n + '-note');
+      if (noteEl) noteEl.textContent = isActive ? '' : 'Not currently active — switch to this SIM to view its details.';
+    });
+
+    setToggleActive('om-sim-slot-toggle', 'data-slot', active === 1 || active === 2 ? String(active) : null);
+  }
+
+  function applySimSlot(slot) {
+    var statusEl = document.getElementById('om-sim-slot-status');
+    if (!window.confirm('Switch to SIM' + slot + '? This briefly disconnects the modem (including this web UI) while it reinitializes.')) return;
+
+    statusEl.textContent = 'Switching…';
+    fetch('/cgi-bin/sim_action.sh?action=set_slot&slot=' + slot)
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        statusEl.textContent = data.success ? data.message : ('Failed: ' + data.error);
+      })
+      .catch(function (err) { statusEl.textContent = 'Failed: ' + err; });
+  }
+
+  function initSimSlotToggle() {
+    var group = document.getElementById('om-sim-slot-toggle');
+    if (!group) return; // not on this page
+    var buttons = group.querySelectorAll('button');
+    for (var i = 0; i < buttons.length; i++) {
+      (function (btn) {
+        btn.addEventListener('click', function () { applySimSlot(btn.getAttribute('data-slot')); });
+      })(buttons[i]);
+    }
+  }
+
   window.OM = { init: initShell };
 
   document.addEventListener('DOMContentLoaded', function () {
@@ -969,5 +1027,6 @@
     initLanConfig();
     initWanConfig();
     initWanInternet();
+    initSimSlotToggle();
   });
 })();

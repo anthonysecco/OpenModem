@@ -200,7 +200,7 @@ for page in style.css app.js index.html cellular.html sim.html wan.html lan.html
 done
 
 echo "  Downloading CGI scripts..."
-for cgi in state.sh update.sh at_cmd.sh band_lock.sh carrier_scan.sh lan_action.sh wan_action.sh internet_info.sh; do
+for cgi in state.sh update.sh at_cmd.sh band_lock.sh carrier_scan.sh lan_action.sh wan_action.sh internet_info.sh sim_action.sh; do
     download "$REPO/www/cgi-bin/$cgi" "$INSTALL_DIR/www/cgi-bin/$cgi" || FAIL=1
 done
 

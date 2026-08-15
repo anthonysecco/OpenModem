@@ -19,7 +19,26 @@ goal).
   aggregation. Includes band lock and carrier scan as dedicated features
   (not just raw AT access), matching QuecControl's `band_lock.sh` /
   `carrier_scan.sh`.
-- **SIM info** — SIM status/details.
+- **SIM info** — dual-SIM aware. This module has 2 slots
+  (`AT+QUIMSLOT=?` confirmed live: `+QUIMSLOT: (1,2)`), but only one is
+  active/queryable at a time — reading the other's ICCID/IMSI would
+  require an actual `AT+QUIMSLOT=N` switch, which is genuinely
+  disruptive (confirmed live: triggers a full USB re-enumeration on the
+  AT/diag interface, not just a SIM reinit — `adb` briefly lost the
+  device entirely mid-test). So the SIM page shows two cards (SIM1/
+  SIM2, each with Status/ICCID/IMSI/Phone Number), but only the
+  currently-active slot's card is ever populated with live data — the
+  inactive one shows a "not currently active" note rather than stale or
+  fabricated values. A third card shows which slot is active and a
+  toggle to switch, via `www/cgi-bin/sim_action.sh`'s `set_slot` (an
+  immediate confirm-then-act button, not a batched/staged setting —
+  there's nothing to protect against a background poll clobbering,
+  unlike LAN's forms). Phone number comes from `AT+CNUM` (confirmed
+  live, real number returned) — not every carrier/SIM provisions this,
+  so it degrades to "—" like everything else here rather than being
+  hidden. On this specific test device, slot 2 has no physical SIM
+  (`+CME ERROR: 10`, confirmed while testing the switch) — the code
+  handles that as a normal case, not an error state.
 - **System** — device info, raw AT command terminal, reboot/power actions.
 - **WAN status/actions** — richer WAN status (IP type, IPv6 address,
   cumulative data usage from `AT+QGDCNT?`, with a reset action) plus TTL
@@ -271,6 +290,20 @@ Confirmed on an actual RM520N-GL (2026-08-14), not assumed:
   WAN page, and that `openmodem-iptables.service` actually re-applies
   `TTL_VALUE` and the port-8080 rule after a real power cycle (not just
   `systemctl start`).
+- Dual-SIM tested live end-to-end via `adb shell`/`at_command.sh`
+  directly (not yet through `sim_action.sh`'s actual CGI endpoint):
+  `AT+QUIMSLOT=?` confirms 2-slot support; switching to slot 2
+  (`AT+QUIMSLOT=2`) returned `OK` in ~0.35s, but `adb devices` then
+  reported no device for several seconds and reconnected with a
+  **different USB `transport_id`** — a real re-enumeration, not just a
+  SIM reinit. `openmodem-broker`/`-poller`/`-httpd` were all still
+  `active` afterward with no manual restart needed, and the poller's
+  `state_merged.json` was fresh — full self-recovery within ~5s.
+  Slot 2 had no physical SIM on this device (`AT+CPIN?` →
+  `+CME ERROR: 10`, `AT+QCCID`/`AT+CIMI` → similar), confirmed while
+  switching back to slot 1 to restore original state (also confirmed
+  clean: `+QUIMSLOT: 1`, `CPIN: READY`, ICCID matched the pre-test
+  value). `AT+CNUM` returned a real subscriber number on the first try.
 
 ## Open questions
 

@@ -16,9 +16,34 @@
 
   <main class="om-main">
     <div class="om-cards">
-      <div class="om-card"><h2>SIM Status</h2><p data-field="sim_status">—</p></div>
-      <div class="om-card"><h2>ICCID</h2><p data-field="sim_iccid">—</p></div>
-      <div class="om-card"><h2>IMSI</h2><p data-field="sim_imsi">—</p></div>
+      <div class="om-card">
+        <h2>Active SIM</h2>
+        <div class="om-row"><span class="om-row-label">Currently Active</span><span data-field="sim_active_slot">—</span></div>
+        <div class="om-toggle-group" id="om-sim-slot-toggle">
+          <button type="button" data-slot="1">SIM1</button>
+          <button type="button" data-slot="2">SIM2</button>
+        </div>
+        <p class="om-note">Switching SIM slots briefly disconnects the modem (including this web UI) while it reinitializes.</p>
+        <p id="om-sim-slot-status" class="om-note"></p>
+      </div>
+
+      <div class="om-card">
+        <h2>SIM1</h2>
+        <div class="om-row"><span class="om-row-label">Status</span><span id="om-sim1-status">—</span></div>
+        <div class="om-row"><span class="om-row-label">ICCID</span><span id="om-sim1-iccid">—</span></div>
+        <div class="om-row"><span class="om-row-label">IMSI</span><span id="om-sim1-imsi">—</span></div>
+        <div class="om-row"><span class="om-row-label">Phone Number</span><span id="om-sim1-phone">—</span></div>
+        <p class="om-note" id="om-sim1-note"></p>
+      </div>
+
+      <div class="om-card">
+        <h2>SIM2</h2>
+        <div class="om-row"><span class="om-row-label">Status</span><span id="om-sim2-status">—</span></div>
+        <div class="om-row"><span class="om-row-label">ICCID</span><span id="om-sim2-iccid">—</span></div>
+        <div class="om-row"><span class="om-row-label">IMSI</span><span id="om-sim2-imsi">—</span></div>
+        <div class="om-row"><span class="om-row-label">Phone Number</span><span id="om-sim2-phone">—</span></div>
+        <p class="om-note" id="om-sim2-note"></p>
+      </div>
     </div>
     <p class="om-updated">Updated <span data-field="_polled_at">—</span></p>
   </main>

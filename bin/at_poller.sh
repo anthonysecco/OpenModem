@@ -146,8 +146,21 @@ collect_device() {
     fi
 }
 
+
+# This module supports 2 SIM slots (AT+QUIMSLOT=? confirmed live:
+# "+QUIMSLOT: (1,2)") but only one is active/queryable at a time — the
+# other's ICCID/IMSI can't be read without an actual AT+QUIMSLOT=N
+# switch, which is genuinely disruptive (confirmed live: triggers a
+# full USB re-enumeration on the AT/diag interface, not just a SIM
+# reinit — broker/poller/httpd self-recovered within ~5s without
+# intervention, but it's a real interruption, not a quick reinit). So
+# ICCID/IMSI/status/phone here describe whichever slot sim_active_slot
+# says is active, never both — see SCOPE.md and www/cgi-bin/
+# sim_action.sh (the disruptive AT+QUIMSLOT=N switch itself).
 collect_sim() {
     F_SIM_STATUS="null"; F_SIM_IMSI="null"; F_SIM_ICCID="null"
+    F_SIM_ACTIVE_SLOT="null"; F_SIM_PHONE="null"
+
     _cpin=$(run_at "AT+CPIN?")
     F_SIM_STATUS=$(json_str "$(printf '%s' "$_cpin" | grep '+CPIN:' | sed 's/+CPIN: //' | tr -d ' \r\n')")
 
@@ -156,6 +169,14 @@ collect_sim() {
 
     _ccid=$(run_at "AT+QCCID")
     F_SIM_ICCID=$(json_str "$(printf '%s' "$_ccid" | grep '+QCCID:' | sed 's/+QCCID: //' | tr -d ' \r\n')")
+
+    _slot=$(run_at "AT+QUIMSLOT?")
+    F_SIM_ACTIVE_SLOT=$(json_num "$(printf '%s' "$_slot" | grep '+QUIMSLOT:' | sed 's/+QUIMSLOT: //' | tr -d ' \r\n')")
+
+    # +CNUM: [alpha],"<number>",<type> — alpha tag is usually empty; not
+    # every carrier/SIM provisions this, ERROR or a bare OK is normal.
+    _cnum=$(run_at "AT+CNUM")
+    F_SIM_PHONE=$(json_str "$(printf '%s' "$_cnum" | grep '^+CNUM:' | head -1 | sed 's/^+CNUM: //' | cut -d',' -f2 | tr -d '"\r\n')")
 }
 
 collect_registration() {
@@ -364,6 +385,8 @@ write_state() {
   "sim_status": ${F_SIM_STATUS},
   "sim_imsi": ${F_SIM_IMSI},
   "sim_iccid": ${F_SIM_ICCID},
+  "sim_active_slot": ${F_SIM_ACTIVE_SLOT},
+  "sim_phone": ${F_SIM_PHONE},
   "reg_lte": ${F_REG_LTE},
   "reg_nr": ${F_REG_NR},
   "reg_creg": ${F_REG_CREG},
