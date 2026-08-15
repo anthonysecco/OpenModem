@@ -107,6 +107,19 @@ body {
   border: 1px solid var(--border);
   border-radius: 10px;
   padding: 1rem;
+  display: flex;
+  flex-direction: column;
+}
+
+/* A card's primary action button (not one nested inside a button group
+   like .om-toggle-group/.om-band-actions/.om-button-stack) sits at the
+   bottom-left of the card — margin-top:auto claims the leading space so
+   it lands flush at the bottom regardless of how much content is above
+   it, which also keeps Apply buttons aligned across a grid row of
+   cards stretched to equal height (.om-cards' grid default). */
+.om-card > button {
+  margin-top: auto;
+  align-self: flex-start;
 }
 
 .om-card h2 {
@@ -253,11 +266,6 @@ body {
   border: 1px solid var(--border);
 }
 
-#om-bandlock-apply {
-  margin-top: 0.25rem;
-}
-
-#om-bandlock-status,
 #om-scan-status {
   margin-top: 0.5rem;
 }
@@ -396,6 +404,66 @@ body {
 
 .om-term-input-row button {
   flex-shrink: 0;
+}
+
+/* ── Shared "Apply changes" bar (settings pages) ── */
+.om-apply-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+  background: var(--surface);
+  border: 1px solid var(--accent);
+  border-radius: 10px;
+  padding: 0.75rem 1rem;
+  margin-bottom: 0.75rem;
+}
+
+.om-apply-bar-label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.om-apply-bar button {
+  font: inherit;
+  padding: 0.5rem 0.9rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--accent);
+  color: #fff;
+  cursor: pointer;
+}
+
+.om-apply-bar button:active { opacity: 0.85; }
+
+/* ── LAN page: mode/DNS toggles ── */
+.om-toggle-group {
+  display: flex;
+  width: fit-content;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+  margin: 0.4rem 0;
+}
+
+.om-toggle-group button {
+  font: inherit;
+  padding: 0.4rem 0.9rem;
+  border: none;
+  background: var(--bg);
+  color: var(--text-dim);
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+
+.om-toggle-group button + button {
+  border-left: 1px solid var(--border);
+}
+
+.om-toggle-group button.active {
+  background: var(--accent);
+  color: #fff;
 }
 
 /* ── Desktop layout ── */

@@ -97,6 +97,9 @@
     if (!Array.isArray(v) || !v.length) return null;
     return v.map(function (c) { return c.type + ': ' + c.band; }).join(', ');
   }
+  function fmtDnsMode(v) {
+    return v === 'local' ? 'Local (Modem DNS)' : v === 'carrier' ? 'Carrier (PDP Context)' : null;
+  }
 
   var FORMATTERS = {
     reg_lte: fmtReg, reg_nr: fmtReg, reg_creg: fmtReg,
@@ -104,7 +107,8 @@
     signal_nr_rsrp: fmtDbm, signal_nr_rsrq: fmtDbm, signal_nr_sinr: fmtDbm,
     wan_active: fmtBool,
     ca_bands: fmtCaBands,
-    band_pref_lte: fmtBands, band_pref_nr5g: fmtBands
+    band_pref_lte: fmtBands, band_pref_nr5g: fmtBands,
+    lan_dns_mode: fmtDnsMode
   };
 
   function renderState(state) {
@@ -414,6 +418,26 @@
     }
   }
 
+  /* ── Shared "Apply changes" bar (settings pages) ────────────────────
+     Cellular (Band Lock) and LAN each have exactly one settings-apply
+     button, shown only while something differs from the last-loaded/
+     last-applied baseline, rather than a button per card. This module
+     only owns show/hide + the click binding; each page tracks its own
+     baseline and owns the confirm()/fetch/status-text logic, since
+     "what changed" and "how to apply it" differ per page. Only one of
+     initBandLock()/initLanConfig() proceeds past its own page-specific
+     guard on any given page, so binding the shared #om-apply-btn from
+     both is safe — only one is ever actually on the page at a time. */
+  function applyBarToggle(dirty) {
+    var bar = document.getElementById('om-apply-bar');
+    if (bar) bar.style.display = dirty ? '' : 'none';
+  }
+
+  function bindApplyButton(handler) {
+    var btn = document.getElementById('om-apply-btn');
+    if (btn) btn.addEventListener('click', handler);
+  }
+
   /* ── Band lock (Cellular page) ─────────────────────────────────────
      One checkbox per band, matching QuecControl's bandlock.html rather
      than a free-text comma list. Band universes are the modem's own
@@ -462,6 +486,17 @@
     return out;
   }
 
+  var bandLockBaseline = null;
+
+  function bandLockSnapshot() {
+    return { lte: getBandGridSelected('om-bandlock-lte-grid'), nr: getBandGridSelected('om-bandlock-nr-grid') };
+  }
+
+  function checkBandLockDirty() {
+    if (!bandLockBaseline) return;
+    applyBarToggle(JSON.stringify(bandLockSnapshot()) !== JSON.stringify(bandLockBaseline));
+  }
+
   function loadCurrentBandLock() {
     fetch('/cgi-bin/band_lock.sh?action=get')
       .then(function (r) { return r.json(); })
@@ -471,53 +506,64 @@
         // treat that the same as everything being selected.
         setBandGridChecked('om-bandlock-lte-grid', data.lte_bands || LTE_BANDS);
         setBandGridChecked('om-bandlock-nr-grid', data.nr_bands || NR_BANDS);
+        bandLockBaseline = bandLockSnapshot();
+        applyBarToggle(false);
       })
       .catch(function () { /* leave grids at their default (unchecked) state */ });
   }
 
+  function bandLockApply() {
+    var statusEl = document.getElementById('om-apply-status');
+    var btn = document.getElementById('om-apply-btn');
+    var lte = getBandGridSelected('om-bandlock-lte-grid');
+    var nr = getBandGridSelected('om-bandlock-nr-grid');
+    if (!lte.length && !nr.length) {
+      statusEl.textContent = 'Select at least one band.';
+      return;
+    }
+    if (!window.confirm('This changes the band lock. The network may briefly reconnect. Continue?')) return;
+
+    btn.disabled = true;
+    statusEl.textContent = 'Applying…';
+    var qs = [];
+    if (lte.length) qs.push('lte_bands=' + encodeURIComponent(lte.join(',')));
+    if (nr.length) qs.push('nr_bands=' + encodeURIComponent(nr.join(',')));
+
+    fetch('/cgi-bin/band_lock.sh?action=set&' + qs.join('&'))
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        statusEl.textContent = data.success ? data.message : ('Failed: ' + data.error);
+        if (data.success) {
+          bandLockBaseline = bandLockSnapshot();
+          applyBarToggle(false);
+        }
+      })
+      .catch(function (err) {
+        statusEl.textContent = 'Failed: ' + err;
+      })
+      .finally(function () { btn.disabled = false; });
+  }
+
   function initBandLock() {
-    var btn = document.getElementById('om-bandlock-apply');
-    if (!btn) return;
-    var statusEl = document.getElementById('om-bandlock-status');
+    var grid = document.getElementById('om-bandlock-lte-grid');
+    if (!grid) return;
 
     renderBandGrid('om-bandlock-lte-grid', LTE_BANDS, 'B');
     renderBandGrid('om-bandlock-nr-grid', NR_BANDS, 'n');
+    grid.addEventListener('change', checkBandLockDirty);
+    document.getElementById('om-bandlock-nr-grid').addEventListener('change', checkBandLockDirty);
     loadCurrentBandLock();
 
     var lteAll = document.getElementById('om-bandlock-lte-all');
     var lteNone = document.getElementById('om-bandlock-lte-none');
     var nrAll = document.getElementById('om-bandlock-nr-all');
     var nrNone = document.getElementById('om-bandlock-nr-none');
-    if (lteAll) lteAll.addEventListener('click', function () { setBandGridAll('om-bandlock-lte-grid', true); });
-    if (lteNone) lteNone.addEventListener('click', function () { setBandGridAll('om-bandlock-lte-grid', false); });
-    if (nrAll) nrAll.addEventListener('click', function () { setBandGridAll('om-bandlock-nr-grid', true); });
-    if (nrNone) nrNone.addEventListener('click', function () { setBandGridAll('om-bandlock-nr-grid', false); });
+    if (lteAll) lteAll.addEventListener('click', function () { setBandGridAll('om-bandlock-lte-grid', true); checkBandLockDirty(); });
+    if (lteNone) lteNone.addEventListener('click', function () { setBandGridAll('om-bandlock-lte-grid', false); checkBandLockDirty(); });
+    if (nrAll) nrAll.addEventListener('click', function () { setBandGridAll('om-bandlock-nr-grid', true); checkBandLockDirty(); });
+    if (nrNone) nrNone.addEventListener('click', function () { setBandGridAll('om-bandlock-nr-grid', false); checkBandLockDirty(); });
 
-    btn.addEventListener('click', function () {
-      var lte = getBandGridSelected('om-bandlock-lte-grid');
-      var nr = getBandGridSelected('om-bandlock-nr-grid');
-      if (!lte.length && !nr.length) {
-        statusEl.textContent = 'Select at least one band.';
-        return;
-      }
-      if (!window.confirm('This changes the band lock. The network may briefly reconnect. Continue?')) return;
-
-      btn.disabled = true;
-      statusEl.textContent = 'Applying…';
-      var qs = [];
-      if (lte.length) qs.push('lte_bands=' + encodeURIComponent(lte.join(',')));
-      if (nr.length) qs.push('nr_bands=' + encodeURIComponent(nr.join(',')));
-
-      fetch('/cgi-bin/band_lock.sh?action=set&' + qs.join('&'))
-        .then(function (r) { return r.json(); })
-        .then(function (data) {
-          statusEl.textContent = data.success ? data.message : ('Failed: ' + data.error);
-        })
-        .catch(function (err) {
-          statusEl.textContent = 'Failed: ' + err;
-        })
-        .finally(function () { btn.disabled = false; });
-    });
+    bindApplyButton(bandLockApply);
   }
 
   /* ── Carrier scan (Cellular page) ──────────────────────────────────
@@ -572,6 +618,212 @@
     });
   }
 
+  /* ── LAN config (LAN page) ──────────────────────────────────────────
+     Form inputs (router IP, DHCP range, mode, DNS) are populated once
+     from state.sh on page load and never re-synced by the poll ticker —
+     same reasoning as Band Lock: a background refresh mid-edit would
+     silently discard whatever the user is typing. */
+  function setToggleActive(groupId, attr, value) {
+    var group = document.getElementById(groupId);
+    if (!group) return;
+    var buttons = group.querySelectorAll('button');
+    for (var i = 0; i < buttons.length; i++) {
+      buttons[i].classList.toggle('active', buttons[i].getAttribute(attr) === value);
+    }
+  }
+
+  function getToggleActive(groupId, attr) {
+    var group = document.getElementById(groupId);
+    if (!group) return null;
+    var active = group.querySelector('button.active');
+    return active ? active.getAttribute(attr) : null;
+  }
+
+  function initToggleGroup(groupId, attr, onChange) {
+    var group = document.getElementById(groupId);
+    if (!group) return;
+    var buttons = group.querySelectorAll('button');
+    for (var i = 0; i < buttons.length; i++) {
+      (function (btn) {
+        btn.addEventListener('click', function () {
+          setToggleActive(groupId, attr, btn.getAttribute(attr));
+          if (onChange) onChange(btn.getAttribute(attr));
+        });
+      })(buttons[i]);
+    }
+  }
+
+  var IPV4_RE = /^(\d{1,3}\.){3}\d{1,3}$/;
+  function isValidIPv4(v) {
+    if (!IPV4_RE.test(v)) return false;
+    return v.split('.').every(function (o) { return Number(o) <= 255; });
+  }
+
+  function toggleMacRow() {
+    var mode = getToggleActive('om-lan-mode-toggle', 'data-mode');
+    var row = document.getElementById('om-lan-mac-row');
+    if (row) row.style.display = mode === 'passthrough' ? '' : 'none';
+  }
+
+  // In IP Passthrough the DHCP pool/gateway config this card edits is
+  // moot — the LAN client gets the raw WAN IP directly, not a lease from
+  // this pool — so hide the card rather than leave a control that does
+  // nothing visible.
+  function toggleIpCard() {
+    var mode = getToggleActive('om-lan-mode-toggle', 'data-mode');
+    var card = document.getElementById('om-lan-ip-card');
+    if (card) card.style.display = mode === 'passthrough' ? 'none' : '';
+  }
+
+  var lanBaseline = null;
+
+  function lanSnapshot() {
+    var mac = document.getElementById('om-lan-mac');
+    var routerIp = document.getElementById('om-lan-router-ip');
+    var dhcpStart = document.getElementById('om-lan-dhcp-start');
+    var dhcpEnd = document.getElementById('om-lan-dhcp-end');
+    return {
+      mode: getToggleActive('om-lan-mode-toggle', 'data-mode') || 'nat',
+      mac: mac ? mac.value.trim() : '',
+      routerIp: routerIp ? routerIp.value.trim() : '',
+      dhcpStart: dhcpStart ? dhcpStart.value.trim() : '',
+      dhcpEnd: dhcpEnd ? dhcpEnd.value.trim() : '',
+      dns: getToggleActive('om-lan-dns-toggle', 'data-dns') || 'carrier'
+    };
+  }
+
+  function checkLanDirty() {
+    if (!lanBaseline) return;
+    applyBarToggle(JSON.stringify(lanSnapshot()) !== JSON.stringify(lanBaseline));
+  }
+
+  function loadLanConfig() {
+    fetch('/cgi-bin/state.sh')
+      .then(function (r) { return r.json(); })
+      .then(function (state) {
+        var routerIp = document.getElementById('om-lan-router-ip');
+        var dhcpStart = document.getElementById('om-lan-dhcp-start');
+        var dhcpEnd = document.getElementById('om-lan-dhcp-end');
+        if (routerIp && state.lan_router_ip) routerIp.value = state.lan_router_ip;
+        if (dhcpStart && state.lan_dhcp_start) dhcpStart.value = state.lan_dhcp_start;
+        if (dhcpEnd && state.lan_dhcp_end) dhcpEnd.value = state.lan_dhcp_end;
+
+        setToggleActive('om-lan-mode-toggle', 'data-mode', state.lan_mode === 'IP Passthrough' ? 'passthrough' : 'nat');
+        toggleMacRow();
+        toggleIpCard();
+        var macEl = document.getElementById('om-lan-mac');
+        if (macEl && state.lan_mpdn_mac) macEl.value = state.lan_mpdn_mac;
+
+        setToggleActive('om-lan-dns-toggle', 'data-dns', state.lan_dns_mode === 'local' ? 'local' : 'carrier');
+
+        lanBaseline = lanSnapshot();
+        applyBarToggle(false);
+      })
+      .catch(function () { /* leave defaults in place */ });
+  }
+
+  function onModeToggleChange() {
+    toggleMacRow();
+    toggleIpCard();
+    checkLanDirty();
+  }
+
+  // Only the sections that actually differ from the loaded baseline get
+  // their AT command fired — e.g. touching the DNS toggle alone doesn't
+  // also re-push the (unchanged) DHCP pool. IP changes are gated on the
+  // card's visibility, since the pool it edits is meaningless mid-
+  // passthrough and shouldn't fire just because the mode toggle hid it
+  // without the user ever having touched the IP fields.
+  function lanApply() {
+    var statusEl = document.getElementById('om-apply-status');
+    var btn = document.getElementById('om-apply-btn');
+    var current = lanSnapshot();
+
+    var modeDirty = current.mode !== lanBaseline.mode || current.mac !== lanBaseline.mac;
+    var dnsDirty = current.dns !== lanBaseline.dns;
+    var ipCard = document.getElementById('om-lan-ip-card');
+    var ipVisible = ipCard && ipCard.style.display !== 'none';
+    var ipDirty = ipVisible && (
+      current.routerIp !== lanBaseline.routerIp ||
+      current.dhcpStart !== lanBaseline.dhcpStart ||
+      current.dhcpEnd !== lanBaseline.dhcpEnd
+    );
+
+    if (!modeDirty && !dnsDirty && !ipDirty) return;
+
+    if (ipDirty && (!isValidIPv4(current.routerIp) || !isValidIPv4(current.dhcpStart) || !isValidIPv4(current.dhcpEnd))) {
+      statusEl.textContent = 'Enter valid IP addresses.';
+      return;
+    }
+
+    var disruptive = [];
+    if (modeDirty) disruptive.push('the network mode');
+    if (ipDirty) disruptive.push('the LAN IP/DHCP range');
+    if (disruptive.length) {
+      var msg = 'Apply changes to ' + disruptive.join(' and ') + '? This may briefly disconnect the current session';
+      if (ipDirty) msg += ' — reconnect at ' + current.routerIp + ' if the router IP changed';
+      if (!window.confirm(msg + '. Continue?')) return;
+    }
+
+    btn.disabled = true;
+    statusEl.textContent = 'Applying…';
+
+    var steps = [];
+    if (modeDirty) {
+      var qs = 'action=set_mode&mode=' + current.mode;
+      if (current.mode === 'passthrough') qs += '&mac=' + encodeURIComponent(current.mac || 'FF:FF:FF:FF:FF:FF');
+      steps.push({ label: 'Mode', url: '/cgi-bin/lan_action.sh?' + qs });
+    }
+    if (dnsDirty) {
+      steps.push({ label: 'DNS', url: '/cgi-bin/lan_action.sh?action=set_dns&dns_mode=' + current.dns });
+    }
+    if (ipDirty) {
+      steps.push({
+        label: 'IP', url: '/cgi-bin/lan_action.sh?action=set_lanip&router_ip=' + encodeURIComponent(current.routerIp) +
+          '&dhcp_start=' + encodeURIComponent(current.dhcpStart) + '&dhcp_end=' + encodeURIComponent(current.dhcpEnd)
+      });
+    }
+
+    // Sequential, not parallel — set_mode can drop/reset the WAN
+    // connection, and the AT broker only serializes one in-flight
+    // request at a time anyway.
+    var results = [];
+    var chain = Promise.resolve();
+    steps.forEach(function (step) {
+      chain = chain.then(function () {
+        return fetch(step.url)
+          .then(function (r) { return r.json(); })
+          .then(function (data) {
+            results.push(step.label + ': ' + (data.success ? 'OK' : 'Failed — ' + data.error));
+          })
+          .catch(function (err) {
+            results.push(step.label + ': Failed — ' + err);
+          });
+      });
+    });
+
+    chain.then(function () {
+      statusEl.textContent = results.join('  ');
+      btn.disabled = false;
+      loadLanConfig();
+    });
+  }
+
+  function initLanConfig() {
+    if (!document.getElementById('om-lan-mode-toggle')) return; // not on this page
+
+    loadLanConfig();
+    initToggleGroup('om-lan-mode-toggle', 'data-mode', onModeToggleChange);
+    initToggleGroup('om-lan-dns-toggle', 'data-dns', checkLanDirty);
+
+    ['om-lan-router-ip', 'om-lan-dhcp-start', 'om-lan-dhcp-end', 'om-lan-mac'].forEach(function (id) {
+      var el = document.getElementById(id);
+      if (el) el.addEventListener('input', checkLanDirty);
+    });
+
+    bindApplyButton(lanApply);
+  }
+
   window.OM = { init: initShell };
 
   document.addEventListener('DOMContentLoaded', function () {
@@ -582,5 +834,6 @@
     initPowerButtons();
     initBandLock();
     initCarrierScan();
+    initLanConfig();
   });
 })();

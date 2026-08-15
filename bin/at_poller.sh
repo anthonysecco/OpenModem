@@ -269,6 +269,45 @@ collect_wan() {
     F_WAN_ACTIVE=$(json_bool "$_stat")
 }
 
+# LAN config: DHCP pool/gateway, NAT-vs-passthrough mode, DNS proxy mode —
+# all governed by AT+QMAP, same mechanism (and mostly the same query
+# forms) as QuecControl's collect_lan(). Unlike QuecControl this isn't a
+# separate slow tier: it runs every cycle like everything else, per
+# SCOPE.md's single-poll-interval design.
+collect_lan() {
+    F_LAN_ROUTER_IP="null"; F_LAN_DHCP_START="null"; F_LAN_DHCP_END="null"
+    F_LAN_MODE="null"; F_LAN_MPDN_MAC="null"; F_LAN_DNS_MODE="null"
+
+    # Confirmed live: AT+QMAP="LANIP",? returns ERROR on this hardware —
+    # the bare form (no ,?), same as MPDN_rule/DHCPV4DNS below, is the
+    # actual query. Response: +QMAP: "LANIP",<start>,<end>,<gateway>
+    # (no quotes around the IPs, unlike QuecControl's documented example).
+    _lanip=$(run_at 'AT+QMAP="LANIP"')
+    _lanip_line=$(printf '%s' "$_lanip" | grep '+QMAP: "LANIP"' | head -1 | sed 's/.*"LANIP",//')
+    if [ -n "$_lanip_line" ]; then
+        F_LAN_DHCP_START=$(json_str "$(printf '%s' "$_lanip_line" | cut -d',' -f1 | tr -d '" \r\n')")
+        F_LAN_DHCP_END=$(json_str   "$(printf '%s' "$_lanip_line" | cut -d',' -f2 | tr -d '" \r\n')")
+        F_LAN_ROUTER_IP=$(json_str  "$(printf '%s' "$_lanip_line" | cut -d',' -f3 | tr -d '" \r\n')")
+    fi
+
+    # +QMAP: "MPDN_rule",<rule>,<profile>,<vlan>,<ippt_mode>,<autoconn>[,"<mac>"]
+    _mpdn=$(run_at 'AT+QMAP="MPDN_rule"')
+    _mpdn_line=$(printf '%s' "$_mpdn" | grep '^+QMAP: "MPDN_rule",0,' | head -1 | sed 's/.*"MPDN_rule",//')
+    _ippt=$(printf '%s' "$_mpdn_line" | cut -d',' -f4 | tr -d ' \r\n')
+    case "$_ippt" in
+        1) F_LAN_MODE=$(json_str "IP Passthrough")
+           F_LAN_MPDN_MAC=$(json_str "$(printf '%s' "$_mpdn_line" | cut -d',' -f6 | tr -d '" \r\n')") ;;
+        0) F_LAN_MODE=$(json_str "NAT") ;;
+    esac
+
+    _dns=$(run_at 'AT+QMAP="DHCPV4DNS"')
+    _dns_val=$(printf '%s' "$_dns" | grep '+QMAP: "DHCPV4DNS"' | head -1 | sed 's/.*"DHCPV4DNS",//' | tr -d '" \r\n')
+    case "$_dns_val" in
+        enable)  F_LAN_DNS_MODE=$(json_str "local") ;;
+        disable) F_LAN_DNS_MODE=$(json_str "carrier") ;;
+    esac
+}
+
 write_state() {
     _polled_at="$1"
     _duration="$2"
@@ -312,7 +351,13 @@ write_state() {
   "band_pref_nr5g": ${F_BAND_PREF_NR5G},
   "wan_apn": ${F_WAN_APN},
   "wan_ip": ${F_WAN_IP},
-  "wan_active": ${F_WAN_ACTIVE}
+  "wan_active": ${F_WAN_ACTIVE},
+  "lan_router_ip": ${F_LAN_ROUTER_IP},
+  "lan_dhcp_start": ${F_LAN_DHCP_START},
+  "lan_dhcp_end": ${F_LAN_DHCP_END},
+  "lan_mode": ${F_LAN_MODE},
+  "lan_mpdn_mac": ${F_LAN_MPDN_MAC},
+  "lan_dns_mode": ${F_LAN_DNS_MODE}
 }
 EOF
 )
@@ -349,6 +394,7 @@ while true; do
     collect_carrier_aggregation
     collect_band_pref
     collect_wan
+    collect_lan
 
     _end=$(date +%s)
     write_state "$_start" "$(( _end - _start ))"

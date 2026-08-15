@@ -24,7 +24,17 @@ goal).
 - **WAN actions** — interface up/down, TTL spoofing (QuecControl's
   `wan_action.sh`).
 - **LAN config** — local network configuration (QuecControl's
-  `lan_action.sh`).
+  `lan_action.sh`). Implemented: DHCP pool/gateway IP (`AT+QMAP="LANIP"`),
+  DNS proxy mode (`AT+QMAP="DHCPV4DNS"`), and NAT vs. IP Passthrough
+  (`AT+QMAP="MPDN_rule"`) — see `at_poller.sh`'s `collect_lan()` and
+  `www/cgi-bin/lan_action.sh`. The DHCP/IP card hides itself in the UI
+  when IP Passthrough is active, since that pool config is moot in that
+  mode (the LAN client gets the raw WAN IP directly, not a pool lease).
+  Data interface selection (USB/PCIe, `AT+QCFG="data_interface"`) was
+  deliberately left out — narrower than QuecControl's full LAN page,
+  revisit if actually needed. VLAN tagging (`AT+QMAP="VLAN"`) was
+  implemented, tested against real hardware for the read side, then
+  dropped entirely — not needed for this deployment's single-device LAN.
 
 ## Out of scope
 
@@ -150,13 +160,44 @@ Confirmed on an actual RM520N-GL (2026-08-14), not assumed:
   it comes from dnsmasq's lease file on the Application Processor (a
   `dnsmasq` process bound to `192.168.225.1:53` was observed running),
   not from any AT command. That needs its own collector reading the
-  lease file directly, not more AT polling.
+  lease file directly, not more AT polling. (This is distinct from LAN
+  *config* — DHCP pool/DNS mode/NAT-passthrough — which `at_poller.sh`
+  does collect via `AT+QMAP`, see below.)
+- `at_poller.sh`'s `collect_lan()` reads are confirmed live against this
+  hardware, with one correction from what QuecControl's docs suggested:
+  `AT+QMAP="LANIP",?` returns `ERROR` on this modem — the actual query is
+  the bare form, `AT+QMAP="LANIP"` (same as `MPDN_rule`/`DHCPV4DNS`),
+  returning `+QMAP: "LANIP",<start>,<end>,<gateway>` with no quotes
+  around the IPs. `MPDN_rule` and `DHCPV4DNS` parsed correctly on the
+  first try (`lan_mode`/`lan_dns_mode` came back `"NAT"`/`"carrier"`,
+  matching this device's actual config).
+- `lan_action.sh`'s `set_mode` (NAT ↔ IP Passthrough) is confirmed
+  working end-to-end on real hardware: switching to passthrough handed
+  the exact WAN IP (as reported by `wan_ip`) straight to a LAN client
+  once it renegotiated DHCP (a plain lease *renew* wasn't enough — needed
+  a full link down/up to trigger a fresh DHCP DISCOVER), and switching
+  back to NAT correctly restored a private lease. `set_lanip` and
+  `set_dns` are written the same way but haven't themselves been
+  exercised yet — verify before relying on them, particularly
+  `set_lanip` mid-passthrough (the DHCP pool it edits is meaningless in
+  that mode, which is why the UI now hides that card while passthrough
+  is active).
+- VLAN tagging (`AT+QMAP="VLAN"`, both the poller's `collect_lan()` read
+  and `lan_action.sh`'s `vlan_add`/`vlan_remove`) was implemented and its
+  *read* side confirmed live (`+QMAP: "VLAN",0`, no other fields, with no
+  non-default VLANs configured — default-only case parsed correctly), but
+  was then dropped from the feature set entirely before the *write* side
+  (`vlan_add`/`vlan_remove`, and the response shape with a real
+  non-default VLAN present) was ever exercised. No longer present in
+  `at_poller.sh`, `lan_action.sh`, or the LAN page.
 
 ## Open questions
 
-- Exact button-level actions under WAN and LAN (which of QuecControl's
-  `wan_action.sh`/`lan_action.sh` actions carry over as-is vs. get
-  simplified). TTL spoofing specifically is still unimplemented.
+- Exact button-level actions under WAN (which of QuecControl's
+  `wan_action.sh` actions carry over as-is vs. get simplified). TTL
+  spoofing specifically is still unimplemented. LAN's equivalent question
+  is resolved — see "LAN config" above — except for data interface
+  selection, deliberately deferred.
 - LAN client list: confirm the dnsmasq lease file path on this firmware
   and write a collector for it (separate from `at_poller.sh`).
 - Factory reset was deliberately left out of Power (QuecControl has it;

@@ -15,16 +15,60 @@
   <nav class="om-sidebar" id="om-sidebar-nav"></nav>
 
   <main class="om-main">
+    <div class="om-apply-bar" id="om-apply-bar" style="display:none;">
+      <span class="om-apply-bar-label">You have unsaved changes.</span>
+      <button id="om-apply-btn" type="button">Apply Changes</button>
+      <span id="om-apply-status" class="om-note"></span>
+    </div>
     <div class="om-cards">
       <div class="om-card">
-        <h2>LAN Config</h2>
-        <p class="om-note">Not implemented yet.</p>
+        <h2>Status</h2>
+        <div class="om-row"><span class="om-row-label">Mode</span><span data-field="lan_mode">—</span></div>
+        <div class="om-row"><span class="om-row-label">Router IP</span><span data-field="lan_router_ip">—</span></div>
+        <div class="om-row"><span class="om-row-label">DHCP Start</span><span data-field="lan_dhcp_start">—</span></div>
+        <div class="om-row"><span class="om-row-label">DHCP End</span><span data-field="lan_dhcp_end">—</span></div>
+        <div class="om-row"><span class="om-row-label">DNS Mode</span><span data-field="lan_dns_mode">—</span></div>
       </div>
+
       <div class="om-card">
-        <h2>Connected Clients</h2>
-        <p class="om-note">Not implemented yet — needs a dnsmasq lease-file reader, not AT polling. See SCOPE.md.</p>
+        <h2>Network Mode</h2>
+        <div class="om-toggle-group" id="om-lan-mode-toggle">
+          <button type="button" data-mode="nat">NAT</button>
+          <button type="button" data-mode="passthrough">IP Passthrough</button>
+        </div>
+        <div class="om-form-row" id="om-lan-mac-row" style="display:none;">
+          <label for="om-lan-mac">Passthrough Target MAC</label>
+          <input type="text" id="om-lan-mac" placeholder="FF:FF:FF:FF:FF:FF" value="FF:FF:FF:FF:FF:FF" autocomplete="off">
+        </div>
+      </div>
+
+      <div class="om-card" id="om-lan-ip-card">
+        <h2>IP &amp; DHCP Range</h2>
+        <p class="om-note">Changing this disconnects the current LAN session.</p>
+        <div class="om-form-row">
+          <label for="om-lan-router-ip">Router IP</label>
+          <input type="text" id="om-lan-router-ip" placeholder="192.168.225.1" autocomplete="off">
+        </div>
+        <div class="om-form-row">
+          <label for="om-lan-dhcp-start">DHCP Start</label>
+          <input type="text" id="om-lan-dhcp-start" placeholder="192.168.225.10" autocomplete="off">
+        </div>
+        <div class="om-form-row">
+          <label for="om-lan-dhcp-end">DHCP End</label>
+          <input type="text" id="om-lan-dhcp-end" placeholder="192.168.225.200" autocomplete="off">
+        </div>
+      </div>
+
+      <div class="om-card">
+        <h2>DNS Settings</h2>
+        <div class="om-toggle-group" id="om-lan-dns-toggle">
+          <button type="button" data-dns="local">Local</button>
+          <button type="button" data-dns="carrier">Carrier</button>
+        </div>
+        <p class="om-note">Takes effect after reboot.</p>
       </div>
     </div>
+    <p class="om-updated">Updated <span data-field="_polled_at">—</span></p>
   </main>
 
   <nav class="om-tabbar" id="om-tabbar-nav"></nav>

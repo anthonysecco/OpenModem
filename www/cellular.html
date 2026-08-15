@@ -15,6 +15,11 @@
   <nav class="om-sidebar" id="om-sidebar-nav"></nav>
 
   <main class="om-main">
+    <div class="om-apply-bar" id="om-apply-bar" style="display:none;">
+      <span class="om-apply-bar-label">You have unsaved changes.</span>
+      <button id="om-apply-btn" type="button">Apply Changes</button>
+      <span id="om-apply-status" class="om-note"></span>
+    </div>
     <div class="om-cards">
       <div class="om-card">
         <h2>Signal</h2>
@@ -63,9 +68,6 @@
           <button type="button" id="om-bandlock-nr-none" class="om-secondary">None</button>
         </div>
         <div id="om-bandlock-nr-grid" class="om-band-grid"></div>
-
-        <button id="om-bandlock-apply" type="button" style="margin-top: 1rem;">Apply Band Lock</button>
-        <p id="om-bandlock-status" class="om-note"></p>
       </div>
       <div class="om-card om-card-wide">
         <h2>Carrier Scan</h2>
