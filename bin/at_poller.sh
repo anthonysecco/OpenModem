@@ -615,38 +615,48 @@ compute_ca_throughput() {
             # build_mimo_lookup header comment above); mimo_known tracks
             # whether that happened so the *displayed* mimo_layers field
             # below can honestly show null when it did not, distinct from
-            # this fallback-to-2 which only feeds the throughput math.
-            # A genuine "0 layers" reading (this carrier momentarily
-            # idle/unscheduled — confirmed live: SCCs commonly read 0 at
-            # idle and rise to 2 only under sustained load) is real data,
-            # not a polling failure, so it is still used for math, floored
-            # at 1 — a true 0 would zero out both the "current estimate"
-            # *and* the "theoretical maximum" columns, and the latter is
-            # meant to reflect capability, not this particular instant.
+            # the fallback-to-2 used only when it is unknown. A confirmed
+            # "0 layers" reading (this carrier momentarily idle/
+            # unscheduled — SCCs commonly read 0 at idle, rising to 2
+            # under sustained load) means no data is moving on this
+            # carrier right now: dl_estimated_mbps/dl_maximum_mbps are
+            # left null (rendered as "—" — the frontend thpt cell in
+            # app.js already falls back to that whenever either is
+            # non-numeric, no frontend change needed) and it contributes
+            # 0, not the fallback-2 estimate, to the aggregate totals
+            # below.
             ml_key = pci "_" earfcn
             mimo_known = (ml_key in mimo_layers) && (mimo_layers[ml_key] ~ /^[0-9]+$/)
-            layers = mimo_known ? mimo_layers[ml_key] + 0 : 2
-            if (layers < 1) layers = 1
+            zero_mimo = mimo_known && (mimo_layers[ml_key] + 0 == 0)
             se_est = is_nr ? nr_se(sinr) : lte_se(sinr)
             se_max = is_nr ? nr_se(35)   : lte_se(30)
 
             est = 0; max = 0
             if (bw > 0) {
-                est = se_est * bw * layers * SCHED_EFF * PROTO_EFF
-                max = se_max * bw * layers * SCHED_EFF * PROTO_EFF
-                if (is_nr) {
-                    band_num = 0; s = band_str
-                    while (match(s, /[0-9]+/)) {
-                        band_num = substr(s, RSTART, RLENGTH) + 0
-                        s = substr(s, RSTART + RLENGTH)
-                    }
-                    if (nr_is_tdd(band_num)) { est = est * TDD_DL; max = max * TDD_DL }
-                }
-                est = est * rsrq_penalty(rsrq)
                 total_bw += bw
+                if (!zero_mimo) {
+                    layers = mimo_known ? mimo_layers[ml_key] + 0 : 2
+                    est = se_est * bw * layers * SCHED_EFF * PROTO_EFF
+                    max = se_max * bw * layers * SCHED_EFF * PROTO_EFF
+                    if (is_nr) {
+                        band_num = 0; s = band_str
+                        while (match(s, /[0-9]+/)) {
+                            band_num = substr(s, RSTART, RLENGTH) + 0
+                            s = substr(s, RSTART + RLENGTH)
+                        }
+                        if (nr_is_tdd(band_num)) { est = est * TDD_DL; max = max * TDD_DL }
+                    }
+                    est = est * rsrq_penalty(rsrq)
+                }
             }
-            c_est = int(est + 0.5)
-            c_max = int(max + 0.5)
+            if (zero_mimo) {
+                c_est = 0; c_max = 0
+                disp_est = "null"; disp_max = "null"
+            } else {
+                c_est = int(est + 0.5)
+                c_max = int(max + 0.5)
+                disp_est = c_est; disp_max = c_max
+            }
             total_est += c_est
             total_max += c_max
 
@@ -660,8 +670,8 @@ compute_ca_throughput() {
             out = out ",\"rsrq\":" (rsrq_f == "" ? "null" : rsrq_f)
             out = out ",\"sinr\":" (numish(sinr_f) ? sinr_f : "null")
             out = out ",\"mimo_layers\":" (mimo_known ? mimo_layers[ml_key] : "null")
-            out = out ",\"dl_estimated_mbps\":" c_est
-            out = out ",\"dl_maximum_mbps\":" c_max
+            out = out ",\"dl_estimated_mbps\":" disp_est
+            out = out ",\"dl_maximum_mbps\":" disp_max
             out = out "}"
         }
     }
