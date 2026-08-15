@@ -546,6 +546,21 @@ compute_ca_throughput() {
             b==70||b==71||b==74||b==75||b==76) return 0
         return 1
     }
+    # The LTE standard band plan puts almost all TDD allocations in the
+    # 33-53 block (33-48 already assigned, 50-53 reserved/allocated) —
+    # enumerated directly here since it is the minority case for LTE
+    # (unlike nr_is_tdd above, which lists the FDD-ish bands and treats
+    # everything else as TDD by default, because the NR split runs the
+    # other way). Added specifically because it was missing: TDD_DL was
+    # only ever applied to NR TDD carriers, silently skipping the same
+    # real DL:UL time-domain-sharing derating for LTE TDD bands like 40/
+    # 41/48 — several of which are on the lte_max_layers() 4x4 list
+    # above, so those carrier estimates were overstated relative to how
+    # an equivalent NR TDD carrier on a comparable band is treated.
+    function lte_is_tdd(b) {
+        if (b>=33 && b<=53) return 1
+        return 0
+    }
     # Static per-band DL MIMO ceiling for the RM520N-GL specifically —
     # the Quectel-published hardware design doc ("RM520N Series
     # Hardware Design", Table 2: "RM520N-GL Frequency Bands & MIMO &
@@ -665,7 +680,8 @@ compute_ca_throughput() {
                 total_bw += bw
                 est = se_est * bw * layers * SCHED_EFF * PROTO_EFF
                 max = se_max * bw * layers * SCHED_EFF * PROTO_EFF
-                if (is_nr && nr_is_tdd(band_num)) { est = est * TDD_DL; max = max * TDD_DL }
+                is_tdd = is_nr ? nr_is_tdd(band_num) : lte_is_tdd(band_num)
+                if (is_tdd) { est = est * TDD_DL; max = max * TDD_DL }
                 est = est * rsrq_penalty(rsrq)
             }
             c_est = int(est + 0.5)
