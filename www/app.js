@@ -100,6 +100,14 @@
   function fmtDnsMode(v) {
     return v === 'local' ? 'Local (Modem DNS)' : v === 'carrier' ? 'Carrier (PDP Context)' : null;
   }
+  function fmtBytes(v) {
+    if (typeof v !== 'number') return null;
+    if (v === 0) return '0 B';
+    var units = ['B', 'KB', 'MB', 'GB'];
+    var i = Math.floor(Math.log(v) / Math.log(1024));
+    i = Math.min(i, units.length - 1);
+    return (v / Math.pow(1024, i)).toFixed(i === 0 ? 0 : 2) + ' ' + units[i];
+  }
 
   var FORMATTERS = {
     reg_lte: fmtReg, reg_nr: fmtReg, reg_creg: fmtReg,
@@ -108,7 +116,8 @@
     wan_active: fmtBool,
     ca_bands: fmtCaBands,
     band_pref_lte: fmtBands, band_pref_nr5g: fmtBands,
-    lan_dns_mode: fmtDnsMode
+    lan_dns_mode: fmtDnsMode,
+    wan_data_rx: fmtBytes, wan_data_tx: fmtBytes
   };
 
   function renderState(state) {
@@ -824,6 +833,84 @@
     bindApplyButton(lanApply);
   }
 
+  /* ── WAN config (WAN page) ───────────────────────────────────────────
+     TTL is the only tracked "setting" here (shares the same apply-bar
+     pattern as Band Lock/LAN); the data-usage counter reset is a
+     one-shot action like Carrier Scan, not a saved setting, so it keeps
+     its own button and doesn't touch the apply bar. */
+  var wanTtlBaseline = null;
+
+  function loadWanTtl() {
+    fetch('/cgi-bin/wan_action.sh?action=get_ttl')
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        if (!data.success) return;
+        var el = document.getElementById('om-wan-ttl');
+        if (el) el.value = data.ttl;
+        wanTtlBaseline = String(data.ttl);
+        applyBarToggle(false);
+      })
+      .catch(function () { /* leave field at its default */ });
+  }
+
+  function checkWanDirty() {
+    if (wanTtlBaseline === null) return;
+    var el = document.getElementById('om-wan-ttl');
+    applyBarToggle(!!el && el.value.trim() !== wanTtlBaseline);
+  }
+
+  function wanApply() {
+    var statusEl = document.getElementById('om-apply-status');
+    var btn = document.getElementById('om-apply-btn');
+    var el = document.getElementById('om-wan-ttl');
+    var raw = el.value.trim();
+    var n = parseInt(raw, 10);
+    if (raw === '' || isNaN(n) || n < 0 || n > 255) {
+      statusEl.textContent = 'TTL must be 0 (disabled) or 1-255.';
+      return;
+    }
+
+    btn.disabled = true;
+    statusEl.textContent = 'Applying…';
+    fetch('/cgi-bin/wan_action.sh?action=set_ttl&value=' + n)
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        statusEl.textContent = data.success ? data.message : ('Failed: ' + data.error);
+        if (data.success) {
+          wanTtlBaseline = String(n);
+          applyBarToggle(false);
+        }
+      })
+      .catch(function (err) { statusEl.textContent = 'Failed: ' + err; })
+      .finally(function () { btn.disabled = false; });
+  }
+
+  function initWanConfig() {
+    var ttlEl = document.getElementById('om-wan-ttl');
+    if (!ttlEl) return; // not on this page
+
+    loadWanTtl();
+    ttlEl.addEventListener('input', checkWanDirty);
+    bindApplyButton(wanApply);
+
+    var resetBtn = document.getElementById('om-wan-reset-counter');
+    if (resetBtn) {
+      resetBtn.addEventListener('click', function () {
+        if (!window.confirm('Reset the WAN data usage counter to zero?')) return;
+        var statusEl = document.getElementById('om-wan-reset-status');
+        resetBtn.disabled = true;
+        statusEl.textContent = 'Resetting…';
+        fetch('/cgi-bin/wan_action.sh?action=reset_counter')
+          .then(function (r) { return r.json(); })
+          .then(function (data) {
+            statusEl.textContent = data.success ? data.message : ('Failed: ' + data.error);
+          })
+          .catch(function (err) { statusEl.textContent = 'Failed: ' + err; })
+          .finally(function () { resetBtn.disabled = false; });
+      });
+    }
+  }
+
   window.OM = { init: initShell };
 
   document.addEventListener('DOMContentLoaded', function () {
@@ -835,5 +922,6 @@
     initBandLock();
     initCarrierScan();
     initLanConfig();
+    initWanConfig();
   });
 })();

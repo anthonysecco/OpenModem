@@ -15,16 +15,50 @@
   <nav class="om-sidebar" id="om-sidebar-nav"></nav>
 
   <main class="om-main">
+    <div class="om-apply-bar" id="om-apply-bar" style="display:none;">
+      <span class="om-apply-bar-label">You have unsaved changes.</span>
+      <button id="om-apply-btn" type="button">Apply Changes</button>
+      <span id="om-apply-status" class="om-note"></span>
+    </div>
     <div class="om-cards">
       <div class="om-card">
-        <h2>WAN Status</h2>
+        <h2>Status</h2>
         <div class="om-row"><span class="om-row-label">State</span><span data-field="wan_active">—</span></div>
         <div class="om-row"><span class="om-row-label">APN</span><span data-field="wan_apn">—</span></div>
+        <div class="om-row"><span class="om-row-label">IP Type</span><span data-field="wan_ip_type">—</span></div>
+        <div class="om-row"><span class="om-row-label">IPv4 Address</span><span data-field="wan_ip">—</span></div>
+        <div class="om-row"><span class="om-row-label">IPv6 Address</span><span data-field="wan_ipv6">—</span></div>
       </div>
-      <div class="om-card"><h2>IP Address</h2><p data-field="wan_ip">—</p></div>
+
       <div class="om-card">
+        <h2>Data Usage</h2>
+        <div class="om-row"><span class="om-row-label">Received</span><span data-field="wan_data_rx">—</span></div>
+        <div class="om-row"><span class="om-row-label">Sent</span><span data-field="wan_data_tx">—</span></div>
+        <p class="om-note">Cumulative since last reset or module boot.</p>
+        <button id="om-wan-reset-counter" type="button">Reset Counter</button>
+        <p id="om-wan-reset-status" class="om-note"></p>
+      </div>
+
+      <div class="om-card om-card-wide">
         <h2>TTL Spoofing</h2>
-        <p class="om-note">Not implemented yet.</p>
+        <p class="om-note">
+          Some carriers detect tethering/hotspot use by TTL (IPv4) or hop
+          limit (IPv6) — traffic routed from another device typically
+          arrives with one less hop than traffic from the phone itself.
+          Setting a fixed value here rewrites outgoing packets so
+          everything looks like it came from this device. Commonly cited
+          starting points by carrier — verify for your specific plan,
+          this varies:
+        </p>
+        <div class="om-ttl-carriers">
+          <span class="om-ttl-carrier"><span class="om-ttl-swatch" style="background:#00A8E0"></span>AT&amp;T — 65</span>
+          <span class="om-ttl-carrier"><span class="om-ttl-swatch" style="background:#E20074"></span>T-Mobile — 65</span>
+          <span class="om-ttl-carrier"><span class="om-ttl-swatch" style="background:#EE0000"></span>Verizon — 88</span>
+        </div>
+        <div class="om-form-row">
+          <label for="om-wan-ttl">TTL / Hop Limit (0 = disabled, 1–255)</label>
+          <input type="number" id="om-wan-ttl" min="0" max="255" placeholder="0">
+        </div>
       </div>
     </div>
     <p class="om-updated">Updated <span data-field="_polled_at">—</span></p>

@@ -437,6 +437,29 @@ body {
 
 .om-apply-bar button:active { opacity: 0.85; }
 
+/* ── WAN page: TTL carrier reference ── */
+.om-ttl-carriers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem 1.25rem;
+  margin: 0.5rem 0 1rem;
+  font-size: 0.8rem;
+  color: var(--text-dim);
+}
+
+.om-ttl-carrier {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.om-ttl-swatch {
+  width: 0.65rem;
+  height: 0.65rem;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
 /* ── LAN page: mode/DNS toggles ── */
 .om-toggle-group {
   display: flex;

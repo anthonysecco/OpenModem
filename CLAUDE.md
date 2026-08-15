@@ -159,11 +159,16 @@ unlock process on a fresh module — this device already had it done). From
 there: `systemctl`, `/usrdata` (writable UBI volume — everything actually
 lives here), and `/` (UBIFS, read-only by default, genuinely supports
 `mount -o remount,rw /` despite showing an `assert=read-only` mount
-option). Iterating on a `bin/*.sh` script: `adb push` it straight to
-`/usrdata/openmodem/bin/`, then `systemctl restart openmodem-broker.service`
-(or whichever unit) rather than reinstalling — much faster than round-
-tripping through GitHub and `installer.sh`. Use the *actual* `installer.sh`
-flow only to verify the install/update path itself. Raw GitHub content by
-branch (`.../main/...`) is CDN-cached for a few minutes; pin to a commit
-SHA in the URL when you need to confirm a just-pushed change is really
-what's being fetched.
+option). Deployment to the device always goes through `installer.sh`'s
+normal flow — commit and push to GitHub first, then either run
+`curl -fsSL .../installer.sh | sh` on-device or trigger it from the
+System page's Update button (`www/cgi-bin/update.sh`) — rather than
+`adb push`ing individual files straight to `/usrdata/openmodem`. This
+was the fast-iteration path early on, but it lets the device and git
+history drift apart (an entire session's worth of work went live on
+the device while sitting uncommitted in git); `installer.sh` is now the
+only deployment path, not just how the install/update flow itself gets
+verified. Raw GitHub content by branch (`.../main/...`) is CDN-cached
+for a few minutes; pin to a commit SHA in the installer URL when you
+need to be sure a just-pushed change is really what's being fetched,
+rather than assuming the branch URL already reflects it.

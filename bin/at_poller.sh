@@ -82,6 +82,33 @@ atomic_write() {
     printf '%s\n' "$1" > "${STATE_FILE}.tmp" && mv "${STATE_FILE}.tmp" "$STATE_FILE"
 }
 
+# AT+CGPADDR reports IPv6 as 16 dot-separated decimal octets (confirmed
+# live: "38.0.3.128.135.82.175.111.0.0.0.72.21.29.30.1"), not colon-hex —
+# QuecControl's own poller assumes colon notation already, which doesn't
+# match this hardware. Converts pairs of octets into hex groups (each
+# group computed as hi*256+lo so printf naturally drops leading zeros,
+# e.g. 2600:380:8752:af6f:0:48:151d:1e01 — verified against this device's
+# real assigned prefix). Returns empty on anything other than exactly 16
+# dot-separated fields (also covers the all-zero "no address" case,
+# which parses to 16 zero fields and is treated the same as absent).
+ipv6_from_octets() {
+    _oct="$1"
+    [ -z "$_oct" ] && return
+    _oldifs="$IFS"
+    IFS='.'
+    set -- $_oct
+    IFS="$_oldifs"
+    [ "$#" -eq 16 ] || return
+    _out=""
+    while [ "$#" -ge 2 ]; do
+        _grp=$(printf '%x' $(( $1 * 256 + $2 )))
+        _out="${_out}${_out:+:}${_grp}"
+        shift 2
+    done
+    [ "$_out" = "0:0:0:0:0:0:0:0" ] && return
+    printf '%s' "$_out"
+}
+
 # -- Collectors ---------------------------------------------------------
 # Each sets F_* globals (json-ready strings) from one or more AT commands.
 # Missing/unparseable fields are left as "null" rather than guessed.
@@ -257,16 +284,29 @@ collect_band_pref() {
 # emergency-only and deliberately not surfaced.
 collect_wan() {
     F_WAN_APN="null"; F_WAN_IP="null"; F_WAN_ACTIVE="false"
+    F_WAN_IP_TYPE="null"; F_WAN_IPV6="null"
+    F_WAN_DATA_TX="null"; F_WAN_DATA_RX="null"
 
     _dcont=$(run_at "AT+CGDCONT?")
-    F_WAN_APN=$(json_str "$(printf '%s' "$_dcont" | grep '^+CGDCONT: 1,' | cut -d',' -f3 | tr -d '"\r\n')")
+    _dcont_line=$(printf '%s' "$_dcont" | grep '^+CGDCONT: 1,')
+    F_WAN_APN=$(json_str "$(printf '%s' "$_dcont_line" | cut -d',' -f3 | tr -d '"\r\n')")
+    F_WAN_IP_TYPE=$(json_str "$(printf '%s' "$_dcont_line" | cut -d',' -f2 | tr -d '"\r\n')")
 
     _addr=$(run_at "AT+CGPADDR")
-    F_WAN_IP=$(json_str "$(printf '%s' "$_addr" | grep '^+CGPADDR: 1,' | cut -d',' -f2 | tr -d '"\r\n')")
+    _addr_line=$(printf '%s' "$_addr" | grep '^+CGPADDR: 1,')
+    F_WAN_IP=$(json_str "$(printf '%s' "$_addr_line" | cut -d',' -f2 | tr -d '"\r\n')")
+    F_WAN_IPV6=$(json_str "$(ipv6_from_octets "$(printf '%s' "$_addr_line" | cut -d',' -f3 | tr -d '"\r\n')")")
 
     _act=$(run_at "AT+CGACT?")
     _stat=$(printf '%s' "$_act" | grep '^+CGACT: 1,' | cut -d',' -f2 | tr -d ' \r\n')
     F_WAN_ACTIVE=$(json_bool "$_stat")
+
+    # +QGDCNT: <tx_bytes>,<rx_bytes> — cumulative since last AT+QGDCNT=0
+    # reset (or module boot), confirmed live.
+    _gdcnt=$(run_at "AT+QGDCNT?")
+    _gdcnt_line=$(printf '%s' "$_gdcnt" | grep '^+QGDCNT:' | sed 's/+QGDCNT: //')
+    F_WAN_DATA_TX=$(json_num "$(printf '%s' "$_gdcnt_line" | cut -d',' -f1 | tr -d ' \r\n')")
+    F_WAN_DATA_RX=$(json_num "$(printf '%s' "$_gdcnt_line" | cut -d',' -f2 | tr -d ' \r\n')")
 }
 
 # LAN config: DHCP pool/gateway, NAT-vs-passthrough mode, DNS proxy mode —
@@ -351,7 +391,11 @@ write_state() {
   "band_pref_nr5g": ${F_BAND_PREF_NR5G},
   "wan_apn": ${F_WAN_APN},
   "wan_ip": ${F_WAN_IP},
+  "wan_ipv6": ${F_WAN_IPV6},
+  "wan_ip_type": ${F_WAN_IP_TYPE},
   "wan_active": ${F_WAN_ACTIVE},
+  "wan_data_tx": ${F_WAN_DATA_TX},
+  "wan_data_rx": ${F_WAN_DATA_RX},
   "lan_router_ip": ${F_LAN_ROUTER_IP},
   "lan_dhcp_start": ${F_LAN_DHCP_START},
   "lan_dhcp_end": ${F_LAN_DHCP_END},
