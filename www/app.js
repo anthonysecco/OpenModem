@@ -181,14 +181,27 @@
     }
   }
 
-  /* ── Polling: adapts to the backend's actual interval ──────────────
-     Self-rescheduling setTimeout rather than a fixed setInterval, so if
-     _poll_interval_s ever changes (operator edits POLL_INTERVAL in
-     openmodem.conf and restarts the poller) the frontend picks up the
-     new cadence on its very next fetch instead of staying out of sync. */
-  var DEFAULT_POLL_MS = 10000;
-  var MIN_POLL_MS = 3000;
+  /* ── Polling: fetches fast, renders only on genuine new data ─────────
+     state.sh just cats the poller's already-written JSON file — no AT
+     command involved — so fetching it faster than POLL_INTERVAL doesn't
+     touch the AT broker/poller pipeline at all and is cheap. Earlier
+     design rescheduled each fetch exactly POLL_INTERVAL after the last
+     one; since that gives the fetch loop and the poller's write loop
+     the same period, the two free-running timers phase-lock at
+     whatever arbitrary offset existed when the page loaded (confirmed
+     live: different tabs settled at different fixed "Xs ago" floors,
+     e.g. 6s vs 8s, neither near 0, and neither ever changing). Fetching
+     well inside one poll cycle instead bounds how stale a "genuinely
+     new" detection can be to roughly FAST_POLL_MS, regardless of
+     backend cadence or any client/server clock relationship — this
+     doesn't rely on clock sync at all, only on comparing this
+     response's _polled_at to the last one seen. Renders (and the
+     ticker reset below) are gated on that comparison so redundant
+     fetches that land inside the same still-unwritten cycle don't
+     re-render identical data or reset the ticker early. */
+  var FAST_POLL_MS = 1000;
   var refreshTimer = null;
+  var lastSeenPolledAt = null;
 
   function scheduleRefresh(delayMs) {
     if (refreshTimer) clearTimeout(refreshTimer);
@@ -204,38 +217,43 @@
           statusEl.textContent = state._error ? state._message : 'Connected';
           statusEl.classList.toggle('bad', !!state._error);
         }
-        if (!state._error) {
+        if (!state._error && state._polled_at !== lastSeenPolledAt) {
+          lastSeenPolledAt = state._polled_at;
           renderState(state);
           renderSimSlots(state);
           renderCarrierAggregation(state);
-          setLastPolledAt(state._polled_at);
+          markRefreshedNow();
         }
-        var intervalMs = (state._poll_interval_s ? state._poll_interval_s * 1000 : DEFAULT_POLL_MS);
-        scheduleRefresh(Math.max(intervalMs, MIN_POLL_MS));
+        scheduleRefresh(FAST_POLL_MS);
       })
       .catch(function () {
         if (statusEl) {
           statusEl.textContent = 'Unreachable';
           statusEl.classList.add('bad');
         }
-        scheduleRefresh(DEFAULT_POLL_MS);
+        scheduleRefresh(FAST_POLL_MS);
       });
   }
 
   /* ── Live "updated Xs ago" timer ────────────────────────────────────
-     Ticks every second independent of the actual poll cadence, so the
-     dashboard visibly counts up in real time rather than only changing
-     when a fetch happens to land. */
-  var lastPolledAt = null;
+     Anchored to this browser's own clock at the moment new data was
+     detected (not the poller's _polled_at, a server timestamp for a
+     cycle that started up to _poll_duration_s before its data was
+     actually written) — set once per genuine refresh by refreshState()
+     above via markRefreshedNow(), so the display reliably resets to
+     "just now" right when new data lands and then counts up on its own
+     independent 1s tick, rather than only changing when a fetch
+     happens to land. */
+  var lastRefreshedAt = null;
 
-  function setLastPolledAt(v) { if (v) lastPolledAt = v; }
+  function markRefreshedNow() { lastRefreshedAt = Date.now() / 1000; }
 
   function tickAge() {
     var nodes = document.querySelectorAll('[data-field="_polled_at"]');
     if (!nodes.length) return;
     var text = '—';
-    if (lastPolledAt) {
-      var secs = Math.max(0, Math.round(Date.now() / 1000 - lastPolledAt));
+    if (lastRefreshedAt) {
+      var secs = Math.max(0, Math.round(Date.now() / 1000 - lastRefreshedAt));
       text = secs < 90 ? secs + 's ago' : Math.round(secs / 60) + 'm ago';
     }
     for (var i = 0; i < nodes.length; i++) nodes[i].textContent = text;
