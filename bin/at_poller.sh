@@ -433,13 +433,17 @@ collect_carrier_aggregation() {
 # project's F_LTE_SINR/F_NR_SINR/F_LTE_RSRQ/F_NR_RSRQ are already single
 # scalar values (not QuecControl's per-antenna comma-separated strings),
 # so they're used directly as the per-carrier fallback with no antenna
-# scan needed. Per-carrier MIMO layer count now comes from
-# build_mimo_lookup()'s live AT+QNWCFG="lte_mimo_info"/"nr5g_mimo_info"
-# reading when available (matched by pci+earfcn) — QuecControl's
-# hardcoded "always 2 layers" is now only a fallback for a carrier that
-# lookup has no entry for (polling failed, chain aborted before it, or
-# this specific pci/earfcn wasn't reported), not the default source of
-# truth.
+# scan needed. Per-carrier MIMO layer count comes from
+# lte_max_layers()/nr_max_layers() — a static per-band table sourced
+# from Quectel's own RM520N-GL hardware design doc (see that function's
+# header comment) — rather than the live AT+QNWCFG="lte_mimo_info"/
+# "nr5g_mimo_info" reading build_mimo_lookup() below still gathers: that
+# reading is genuinely bouncy (confirmed live: layers rising and falling
+# in real time with actual load), which made both throughput columns
+# noisy; the static ceiling trades that live responsiveness for a
+# stable, capability-based number, by request. The live reading is still
+# surfaced as each carrier's "mimo_layers" JSON field (the CA table's
+# "(NxN)" badge) — only the throughput formulas below stopped using it.
 #
 # Computed here (not in app.js) so any page can bind to
 # ca_dl_estimated_mbps / ca_dl_maximum_mbps / ca_total_bw_mhz, or a given
@@ -448,7 +452,8 @@ collect_carrier_aggregation() {
 #
 # Input:  $1 = carriers JSON array, as built by collect_carrier_aggregation
 #         $2 = mimo lookup, "pci,freq,layers|pci,freq,layers|..." from
-#              build_mimo_lookup()
+#              build_mimo_lookup() — only feeds the "mimo_layers" display
+#              field now, not the throughput math (see above)
 # Output: 4 lines on stdout —
 #   1. carriers JSON array, each object gaining bw_mhz/mimo_layers/
 #      dl_estimated_mbps/dl_maximum_mbps
@@ -541,6 +546,32 @@ compute_ca_throughput() {
             b==70||b==71||b==74||b==75||b==76) return 0
         return 1
     }
+    # Static per-band DL MIMO ceiling for the RM520N-GL specifically —
+    # the Quectel-published hardware design doc ("RM520N Series
+    # Hardware Design", Table 2: "RM520N-GL Frequency Bands & MIMO &
+    # GNSS Systems") lists exactly these bands as DL 4x4-capable; every
+    # other band this module supports is 2x2. This is the modem/spec
+    # ceiling, not a live per-site reading — it does not know whether
+    # the specific tower a device is camped on actually deploys 4
+    # antennas (many real macro sites run 2x2 even on a 4x4-capable
+    # band). Replaces the live AT+QNWCFG="lte_mimo_info"/"nr5g_mimo_info"
+    # reading as the throughput math layer-count input by request,
+    # trading that live (but genuinely bouncy — confirmed live: layers
+    # rising and falling with real load during testing) signal for a
+    # stable, capability-based number. mimo_layers in the JSON output
+    # below still reports the live reading unchanged (for the CA table
+    # per-carrier "(NxN)" badge) — only the throughput formulas below
+    # stop using it.
+    function lte_max_layers(b) {
+        if (b==1||b==2||b==3||b==4||b==7||b==25||b==30||b==38||b==40||
+            b==41||b==42||b==43||b==48||b==66) return 4
+        return 2
+    }
+    function nr_max_layers(b) {
+        if (b==1||b==2||b==3||b==7||b==25||b==30||b==38||b==40||b==41||
+            b==48||b==66||b==70||b==77||b==78||b==79) return 4
+        return 2
+    }
     function numish(v) { return (v != "" && v != "null") }
     function json_field(rec, fname,    pat, pos, end, val, c) {
         pat = "\"" fname "\":"
@@ -610,53 +641,35 @@ compute_ca_throughput() {
                 rsrq = numish(fb) ? fb + 0 : -9
             }
 
-            # Real per-carrier layer count when AT+QNWCFG="lte_mimo_info"/
-            # "nr5g_mimo_info" reported one for this pci+earfcn (see the
-            # build_mimo_lookup header comment above); mimo_known tracks
-            # whether that happened so the *displayed* mimo_layers field
-            # below can honestly show null when it did not, distinct from
-            # the fallback-to-2 used only when it is unknown. A confirmed
-            # "0 layers" reading (this carrier momentarily idle/
-            # unscheduled — SCCs commonly read 0 at idle, rising to 2
-            # under sustained load) means no data is moving on this
-            # carrier right now: dl_estimated_mbps/dl_maximum_mbps are
-            # left null (rendered as "—" — the frontend thpt cell in
-            # app.js already falls back to that whenever either is
-            # non-numeric, no frontend change needed) and it contributes
-            # 0, not the fallback-2 estimate, to the aggregate totals
-            # below.
+            # ml_key/mimo_known still identify the live AT+QNWCFG reading
+            # for this carrier, but only for the "mimo_layers" JSON field
+            # (the CA table live "(NxN)" badge) below — the throughput
+            # math now uses lte_max_layers()/nr_max_layers() static
+            # per-band ceiling instead (see that function header comment
+            # for why).
             ml_key = pci "_" earfcn
             mimo_known = (ml_key in mimo_layers) && (mimo_layers[ml_key] ~ /^[0-9]+$/)
-            zero_mimo = mimo_known && (mimo_layers[ml_key] + 0 == 0)
+
+            band_num = 0; s = band_str
+            while (match(s, /[0-9]+/)) {
+                band_num = substr(s, RSTART, RLENGTH) + 0
+                s = substr(s, RSTART + RLENGTH)
+            }
+            layers = is_nr ? nr_max_layers(band_num) : lte_max_layers(band_num)
+
             se_est = is_nr ? nr_se(sinr) : lte_se(sinr)
             se_max = is_nr ? nr_se(35)   : lte_se(30)
 
             est = 0; max = 0
             if (bw > 0) {
                 total_bw += bw
-                if (!zero_mimo) {
-                    layers = mimo_known ? mimo_layers[ml_key] + 0 : 2
-                    est = se_est * bw * layers * SCHED_EFF * PROTO_EFF
-                    max = se_max * bw * layers * SCHED_EFF * PROTO_EFF
-                    if (is_nr) {
-                        band_num = 0; s = band_str
-                        while (match(s, /[0-9]+/)) {
-                            band_num = substr(s, RSTART, RLENGTH) + 0
-                            s = substr(s, RSTART + RLENGTH)
-                        }
-                        if (nr_is_tdd(band_num)) { est = est * TDD_DL; max = max * TDD_DL }
-                    }
-                    est = est * rsrq_penalty(rsrq)
-                }
+                est = se_est * bw * layers * SCHED_EFF * PROTO_EFF
+                max = se_max * bw * layers * SCHED_EFF * PROTO_EFF
+                if (is_nr && nr_is_tdd(band_num)) { est = est * TDD_DL; max = max * TDD_DL }
+                est = est * rsrq_penalty(rsrq)
             }
-            if (zero_mimo) {
-                c_est = 0; c_max = 0
-                disp_est = "null"; disp_max = "null"
-            } else {
-                c_est = int(est + 0.5)
-                c_max = int(max + 0.5)
-                disp_est = c_est; disp_max = c_max
-            }
+            c_est = int(est + 0.5)
+            c_max = int(max + 0.5)
             total_est += c_est
             total_max += c_max
 
@@ -670,8 +683,8 @@ compute_ca_throughput() {
             out = out ",\"rsrq\":" (rsrq_f == "" ? "null" : rsrq_f)
             out = out ",\"sinr\":" (numish(sinr_f) ? sinr_f : "null")
             out = out ",\"mimo_layers\":" (mimo_known ? mimo_layers[ml_key] : "null")
-            out = out ",\"dl_estimated_mbps\":" disp_est
-            out = out ",\"dl_maximum_mbps\":" disp_max
+            out = out ",\"dl_estimated_mbps\":" c_est
+            out = out ",\"dl_maximum_mbps\":" c_max
             out = out "}"
         }
     }
