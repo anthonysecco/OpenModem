@@ -334,6 +334,40 @@ body {
   margin-top: 0.5rem;
 }
 
+/* ── Signal quality bar (shared) ──
+   Renders app.js's sigBarCell() output — used today only by Carrier
+   Aggregation's RSRP/SINR columns, but not named after that page since
+   any future signal display should reuse this exact markup/coloring
+   rather than inventing its own. Fill width/color are set per-instance
+   via inline style since they come from a continuous value→zone lookup
+   (app.js's RSRP_ZONES/SINR_ZONES), not a small fixed class set. */
+.om-sigbar {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-width: 100px;
+}
+
+.om-sigbar-track {
+  flex: 1;
+  height: 5px;
+  min-width: 40px;
+  background: var(--border);
+  border-radius: 3px;
+}
+
+.om-sigbar-fill {
+  height: 100%;
+  border-radius: 3px;
+}
+
+.om-sigbar-val {
+  font-size: 0.72rem;
+  font-weight: 600;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
 /* ── Carrier Aggregation (Cellular page) ── */
 .om-ca-stats {
   display: grid;
@@ -427,36 +461,6 @@ body {
 .om-ca-carrier-name {
   cursor: help;
   border-bottom: 1px dotted var(--text-dim);
-}
-
-/* Inline RSRP/SINR bar — fill width/color set per-row via inline
-   style since the color comes from a continuous value→zone lookup,
-   not a small fixed set like the carrier segment colors above. */
-.om-ca-sigbar {
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-  min-width: 100px;
-}
-
-.om-ca-sigbar-track {
-  flex: 1;
-  height: 5px;
-  min-width: 40px;
-  background: var(--border);
-  border-radius: 3px;
-}
-
-.om-ca-sigbar-fill {
-  height: 100%;
-  border-radius: 3px;
-}
-
-.om-ca-sigbar-val {
-  font-size: 0.72rem;
-  font-weight: 600;
-  white-space: nowrap;
-  flex-shrink: 0;
 }
 
 /* ── Data tables (Cellular page) ── */

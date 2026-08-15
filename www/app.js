@@ -72,6 +72,55 @@
     if (tabbar) tabbar.innerHTML = links;
   }
 
+  /* ── Signal quality thresholds (RSRP/SINR) ───────────────────────────
+     Single canonical source for what counts as excellent/good/fair/poor
+     signal, so every UI element that shows RSRP or SINR — today just
+     Carrier Aggregation's table, but Signal/Neighbor-cell-style displays
+     later too — colors and scales against the exact same breakpoints
+     instead of each defining its own. Thresholds/colors ported from
+     QuecControl's RSRP_ZONES/SINR_ZONES (3GPP TS 36.133/38.133 for
+     RSRP, TS 36.214/38.215 for SINR). sigPct clamps to [2,97] so a bar
+     fill is always visible even at the extreme ends of the range. */
+  var RSRP_MIN = -140, RSRP_MAX = -75;
+  var SINR_MIN = -10, SINR_MAX = 30;
+  var RSRP_ZONES = [
+    { thresh: -80, bar: '#34d399' },
+    { thresh: -90, bar: '#6ee7b7' },
+    { thresh: -100, bar: '#fcd34d' },
+    { thresh: -999, bar: '#fca5a5' }
+  ];
+  var SINR_ZONES = [
+    { thresh: 20, bar: '#34d399' },
+    { thresh: 13, bar: '#6ee7b7' },
+    { thresh: 0, bar: '#fcd34d' },
+    { thresh: -999, bar: '#fca5a5' }
+  ];
+
+  function sigZoneColor(val, zones) {
+    for (var i = 0; i < zones.length; i++) {
+      if (val >= zones[i].thresh) return zones[i].bar;
+    }
+    return zones[zones.length - 1].bar;
+  }
+
+  function sigPct(val, min, max) {
+    return Math.max(2, Math.min(97, Math.round(((val - min) / (max - min)) * 100)));
+  }
+
+  /* Shared inline bar markup for any RSRP/SINR value — pass the right
+     zone table/range/unit (RSRP_ZONES/RSRP_MIN/RSRP_MAX/'dBm' or
+     SINR_ZONES/SINR_MIN/SINR_MAX/'dB') and it renders identically
+     wherever it's used. */
+  function sigBarCell(val, zones, min, max, unit) {
+    if (typeof val !== 'number') return '—';
+    var color = sigZoneColor(val, zones);
+    var pct = sigPct(val, min, max);
+    return '<div class="om-sigbar">' +
+      '<div class="om-sigbar-track"><div class="om-sigbar-fill" style="width:' + pct + '%;background:' + color + '"></div></div>' +
+      '<span class="om-sigbar-val" style="color:' + color + '">' + val + ' ' + unit + '</span>' +
+      '</div>';
+  }
+
   /* ── State binding ───────────────────────────────────────────────
      Any element with data-field="some_key" gets its textContent set to
      state[some_key], run through FORMATTERS[some_key] if one exists
@@ -711,46 +760,6 @@
      modem's own reported order (PCC first, then each SCC) — same split
      QuecControl itself uses. */
   var CA_SEG_CLASSES = ['om-ca-seg-0', 'om-ca-seg-1', 'om-ca-seg-2', 'om-ca-seg-3'];
-
-  /* RSRP/SINR zone-colored inline bars — thresholds and colors ported
-     from QuecControl's RSRP_ZONES/SINR_ZONES (3GPP TS 36.133/38.133 for
-     RSRP, TS 36.214/38.215 for SINR). sigPct clamps to [2,97] so the
-     fill is always visible even at the extreme ends of the range. */
-  var RSRP_MIN = -140, RSRP_MAX = -75;
-  var SINR_MIN = -10, SINR_MAX = 30;
-  var RSRP_ZONES = [
-    { thresh: -80, bar: '#34d399' },
-    { thresh: -90, bar: '#6ee7b7' },
-    { thresh: -100, bar: '#fcd34d' },
-    { thresh: -999, bar: '#fca5a5' }
-  ];
-  var SINR_ZONES = [
-    { thresh: 20, bar: '#34d399' },
-    { thresh: 13, bar: '#6ee7b7' },
-    { thresh: 0, bar: '#fcd34d' },
-    { thresh: -999, bar: '#fca5a5' }
-  ];
-
-  function sigZoneColor(val, zones) {
-    for (var i = 0; i < zones.length; i++) {
-      if (val >= zones[i].thresh) return zones[i].bar;
-    }
-    return zones[zones.length - 1].bar;
-  }
-
-  function sigPct(val, min, max) {
-    return Math.max(2, Math.min(97, Math.round(((val - min) / (max - min)) * 100)));
-  }
-
-  function sigBarCell(val, zones, min, max, unit) {
-    if (typeof val !== 'number') return '—';
-    var color = sigZoneColor(val, zones);
-    var pct = sigPct(val, min, max);
-    return '<div class="om-ca-sigbar">' +
-      '<div class="om-ca-sigbar-track"><div class="om-ca-sigbar-fill" style="width:' + pct + '%;background:' + color + '"></div></div>' +
-      '<span class="om-ca-sigbar-val" style="color:' + color + '">' + val + ' ' + unit + '</span>' +
-      '</div>';
-  }
 
   function renderCarrierAggregation(state) {
     var bar = document.getElementById('om-ca-bwbar');
