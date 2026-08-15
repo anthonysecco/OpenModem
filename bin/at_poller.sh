@@ -452,8 +452,15 @@ collect_carrier_aggregation() {
 # Output: 4 lines on stdout —
 #   1. carriers JSON array, each object gaining bw_mhz/mimo_layers/
 #      dl_estimated_mbps/dl_maximum_mbps
-#   2. aggregate estimated downlink, Mbps, rounded up to the nearest 10
-#   3. aggregate maximum downlink, Mbps, rounded up to the nearest 10
+#   2. aggregate estimated downlink, Mbps — the exact sum of each
+#      carrier's own (already-rounded) dl_estimated_mbps above, not a
+#      separately-rounded total, so this can never drift from what the
+#      per-carrier rows in the CA table add up to. (Previously rounded
+#      the raw pre-rounding sum *up* to the nearest 10, which could
+#      inflate the aggregate well past the sum of the displayed rows —
+#      e.g. a raw total of 61.7 rounding up to 70 while the rows
+#      individually rounded to 46+6+10=62 — confirmed live and fixed.)
+#   3. aggregate maximum downlink, Mbps — same fix, sum of dl_maximum_mbps
 #   4. aggregate bandwidth, MHz
 compute_ca_throughput() {
     printf '%s' "$1" | awk \
@@ -638,10 +645,10 @@ compute_ca_throughput() {
                 est = est * rsrq_penalty(rsrq)
                 total_bw += bw
             }
-            total_est += est
-            total_max += max
             c_est = int(est + 0.5)
             c_max = int(max + 0.5)
+            total_est += c_est
+            total_max += c_max
 
             if (i > 1) out = out ","
             out = out "{\"type\":\"" type_str "\",\"band\":\"" band_str "\""
@@ -661,12 +668,10 @@ compute_ca_throughput() {
     END {
         out = out "]"
         print out
-        est10 = int((total_est + 9.999) / 10) * 10
-        max10 = int((total_max + 9.999) / 10) * 10
-        if (est10 < 0) est10 = 0
-        if (max10 < 0) max10 = 0
-        print est10
-        print max10
+        if (total_est < 0) total_est = 0
+        if (total_max < 0) total_max = 0
+        print total_est
+        print total_max
         print total_bw
     }
     '
