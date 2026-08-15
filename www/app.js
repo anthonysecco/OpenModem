@@ -912,30 +912,24 @@
   }
 
   /* ── Internet card (WAN page) ────────────────────────────────────────
-     The one place OpenModem talks to the internet directly rather than
-     through the modem — a plain browser fetch to ipinfo.io, same as
-     QuecControl's wan.html. Not part of state.sh/at_poller.sh: this is
-     read-only, third-party, and has nothing to do with the AT device,
-     so it gets its own dedicated fetch/refresh cycle instead of being
-     shoehorned into the poller. Every field here comes from that one
-     ipinfo.io response, not the modem's own wan_ip/wan_ipv6 (Status
-     card already shows those) — ipinfo.io only ever returns a single
-     "ip" for whichever protocol the browser's request actually used,
-     so it's routed into the IPv4 or IPv6 row by its shape rather than
-     assumed, leaving the other row blank rather than guessed. org
-     comes back as "AS7018 AT&T Services, Inc." — split on the first
-     space into ASN + ISP rather than shown as one blob, since the card
-     has separate rows for each. */
-  var WAN_INTERNET_REFRESH_MS = 300000;
-
+     ipinfo.io is queried by the modem itself (www/cgi-bin/
+     internet_info.sh, curl over the modem's own WAN connection) and
+     fetched once on page load — not the browser, and not polled on an
+     interval. Every field here comes from that one ipinfo.io response,
+     not the modem's own wan_ip/wan_ipv6 (Status card already shows
+     those) — ipinfo.io only ever returns a single "ip" for whichever
+     protocol the request actually used, so it's routed into the IPv4 or
+     IPv6 row by its shape rather than assumed, leaving the other row
+     blank rather than guessed. org comes back as "AS7018 AT&T
+     Services, Inc." — split on the first space into ASN + ISP rather
+     than shown as one blob, since the card has separate rows for each. */
   function fetchWanInternet() {
     var statusEl = document.getElementById('om-wan-inet-status');
-    fetch('https://ipinfo.io/json', { headers: { 'Accept': 'application/json' } })
-      .then(function (r) {
-        if (!r.ok) throw new Error('HTTP ' + r.status);
-        return r.json();
-      })
+    fetch('/cgi-bin/internet_info.sh')
+      .then(function (r) { return r.json(); })
       .then(function (data) {
+        if (data.error) throw new Error(data.error);
+
         var org = data.org || '';
         var m = org.match(/^(AS\d+)\s*(.*)$/);
         document.getElementById('om-wan-inet-isp').textContent = m ? (m[2] || '—') : (org || '—');
@@ -960,7 +954,6 @@
   function initWanInternet() {
     if (!document.getElementById('om-wan-inet-isp')) return; // not on this page
     fetchWanInternet();
-    setInterval(fetchWanInternet, WAN_INTERNET_REFRESH_MS);
   }
 
   window.OM = { init: initShell };
