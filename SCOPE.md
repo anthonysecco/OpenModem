@@ -18,23 +18,12 @@ goal).
 - **Cellular status** — signal, registration, serving cell, carrier, carrier
   aggregation. Includes band lock and carrier scan as dedicated features
   (not just raw AT access), matching QuecControl's `band_lock.sh` /
-  `carrier_scan.sh`. Neighbor Cells is a full-width table (EARFCN, PCI,
-  Tech, Band, RSRP) from `AT+QENG="neighbourcell"` — confirmed live
-  that "inter" (different-frequency) neighbors commonly report no
-  signal data on this hardware (`-` for every field but EARFCN), so
-  `at_poller.sh`'s `collect_neighbor_cells()` only keeps entries with a
-  genuinely numeric RSRP, same filter QuecControl's own poller uses.
-  Rows are grouped by EARFCN, each group (and the groups themselves)
-  ordered by strongest RSRP first — computed client-side in `app.js`'s
-  `renderNeighborCells()`, poller output stays an unsorted flat array.
-  "Tech" reads a per-entry `rat` field (defaulting to `"LTE"` — this AT
-  command only ever returns LTE neighbors on this hardware) rather than
-  a hardcoded column, so a future NR neighbor source could populate it
-  without a table rework. The AT command has no band field, only
-  EARFCN — "Band" (`"B2 (1900)"`, no tech prefix since that's its own
-  column) is computed from it client-side via a copy of QuecControl's
-  EARFCN→band range table plus each band's commonly-cited nominal
-  frequency, not a precise per-EARFCN calculation.
+  `carrier_scan.sh`. Band Lock is collapsed by default behind a
+  QuecControl-style disclosure toggle (`app.js`'s generic
+  `initCollapsible()`) rather than an always-visible card — the band
+  data itself still loads eagerly on page load either way, only
+  visibility is gated. Neighbor Cells (`AT+QENG="neighbourcell"`) was
+  implemented, then removed by explicit request — see "Out of scope".
 - **SIM info** — dual-SIM aware. This module has 2 slots
   (`AT+QUIMSLOT=?` confirmed live: `+QUIMSLOT: (1,2)`), but only one is
   active/queryable at a time — reading the other's ICCID/IMSI would
@@ -101,6 +90,14 @@ goal).
 
 ## Out of scope
 
+- **Neighbor Cells** (`AT+QENG="neighbourcell"`) — implemented as a
+  full-width table (EARFCN/PCI/Tech/Band/RSRP) and confirmed live
+  against real hardware (see "Verified against real hardware" — that
+  bullet is kept as historical record of the finding, same as VLAN
+  tagging below it), then dropped entirely by explicit request in favor
+  of narrowing the Cellular page to Carrier Aggregation/Band
+  Lock/Carrier Scan. No longer present in `at_poller.sh`, `app.js`, or
+  the Cellular page.
 - **Scout (ping/latency tests)** — QuecControl's `ping.sh`/`force_poll.sh`.
   Actively tests internet connectivity; dropped because OpenModem is
   narrowing away from features that assume a working internet connection.
@@ -476,3 +473,26 @@ and read directly from its GitHub repo, not guessed at):
 - Carrier scan's confirm-before-scanning dialog (data will be disrupted
   for up to 2 minutes) already existed from the previous round; wording
   tightened slightly, no functional change.
+- **Carrier Aggregation card redesigned to match QuecControl's layout**
+  (stat summary, bandwidth bar, per-carrier table), styled with
+  OpenModem's own palette rather than QuecControl's dark-theme colors —
+  see the "Redesign Carrier Aggregation card" commit for the throughput
+  estimate this introduced. The bandwidth bar was then updated again to
+  label each segment with its actual DL frequency range (not just a
+  proportional color block), ported from QuecControl's
+  `LTE_BAND_TABLE`/`nrArfcnToMhz` (`app.js`'s `carrierCenterFreqMhz()`)
+  — LTE uses the exact per-band DL-low/step/EARFCN-offset table (3GPP TS
+  36.101), NR the exact piecewise ARFCN formula (3GPP TS 38.104), both
+  intentionally DL-only since this card is downlink-focused throughout.
+  Segments are sorted left-to-right by ascending center frequency
+  (matching QuecControl); the per-carrier table below stays in the
+  modem's own reported order (PCC first, then each SCC), same split
+  QuecControl itself uses. The old dot+text legend was dropped in favor
+  of the frequency labels doing that job directly, matching
+  QuecControl's own current direction. The per-carrier table's columns
+  now match QuecControl's set (Carrier/BW/EARFCN/PCI/RSRP/SINR/DL
+  Est-Max) with a colored PCC/SCC badge in the Carrier column, though
+  intentionally without QuecControl's inline mini progress-bars in RSRP/
+  SINR/throughput cells — kept to plain text, consistent with this
+  project's other data tables (Neighbor Cells, when it existed, was the
+  same).

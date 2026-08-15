@@ -158,7 +158,6 @@
         if (!state._error) {
           renderState(state);
           renderSimSlots(state);
-          renderNeighborCells(state);
           renderCarrierAggregation(state);
           setLastPolledAt(state._polled_at);
         }
@@ -555,10 +554,28 @@
       .finally(function () { btn.disabled = false; });
   }
 
+  /* ── Collapsible card sections ────────────────────────────────────────
+     Generic toggle: clicking the header expands/collapses the body,
+     collapsed by default (matches QuecControl's Band Management
+     section). Content underneath still loads/populates eagerly
+     regardless of collapsed state — this only ever toggles visibility,
+     there's no lazy-load gate. */
+  function initCollapsible(toggleId, bodyId) {
+    var toggle = document.getElementById(toggleId);
+    var body = document.getElementById(bodyId);
+    if (!toggle || !body) return;
+    toggle.addEventListener('click', function () {
+      var open = body.classList.toggle('open');
+      toggle.classList.toggle('open', open);
+      toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+    });
+  }
+
   function initBandLock() {
     var grid = document.getElementById('om-bandlock-lte-grid');
     if (!grid) return;
 
+    initCollapsible('om-bandlock-toggle', 'om-bandlock-body');
     renderBandGrid('om-bandlock-lte-grid', LTE_BANDS, 'B');
     renderBandGrid('om-bandlock-nr-grid', NR_BANDS, 'n');
     grid.addEventListener('change', checkBandLockDirty);
@@ -629,108 +646,55 @@
     });
   }
 
-  /* ── Neighbor cells (Cellular page) ──────────────────────────────────
-     AT+QENG="neighbourcell" only ever returns LTE entries on this
-     hardware — "Tech" defaults to "LTE" via c.rat, kept as a real field
-     read rather than a hardcoded string so a future NR neighbor source
-     (a different AT command) could populate "5G NR" without a table
-     rework. Rows are grouped by EARFCN (same-frequency neighbors sit
-     together), each group ordered by its own strongest RSRP, and
-     groups themselves ordered by their strongest RSRP too — so the
-     single best neighbor overall is always the first row, and every
-     group's members are internally sorted the same way.
-
-     The AT command has no band field, only EARFCN — Band is computed
-     from it here ("B2 (1900)", no tech prefix since that's its own
-     column now) via a copy of QuecControl's EARFCN→band range table
-     (3GPP-standard allocations, not modem-specific) plus each band's
-     commonly-cited nominal/colloquial frequency, not a precise
-     per-EARFCN calculation. */
-  var LTE_EARFCN_BAND_RANGES = [
-    [0,599,1],[600,1199,2],[1200,1949,3],[1950,2399,4],[2400,2649,5],
-    [2650,2749,6],[2750,3449,7],[3450,3799,8],[3800,4149,9],[4150,4749,10],
-    [4750,4999,11],[5000,5179,12],[5180,5279,13],[5280,5379,14],
-    [5730,5849,17],[5850,5999,18],[6000,6149,19],[6150,6449,20],
-    [6450,6599,21],[6600,7399,22],[7500,7699,23],[7700,8039,24],
-    [8040,8689,25],[8690,9039,26],[9040,9209,27],[9210,9659,28],
-    [9660,9769,29],[9770,9869,30],[9870,9919,31],[9920,10359,32],
-    [36000,36199,33],[36200,36349,34],[36350,36949,35],[36950,37549,36],
-    [37550,37749,37],[37750,38249,38],[38250,38649,39],[38650,39649,40],
-    [39650,41589,41],[41590,43589,42],[43590,45589,43],[45590,46589,44],
-    [46590,46789,45],[46790,54539,46],[54540,55239,47],[55240,56739,48],
-    [56740,58239,49],[58240,59089,50],[59090,59139,51],[65536,66435,65],
-    [66436,67335,66],[67336,67535,67],[67536,67835,68],[67836,68335,69],
-    [68336,68585,70],[68586,68935,71],[68936,68985,72],[68986,69035,73],
-    [69036,69465,74],[69466,70315,75],[70316,70365,76]
-  ];
-
-  var LTE_BAND_NOMINAL_MHZ = {
-    1: 2100, 2: 1900, 3: 1800, 4: 1700, 5: 850, 7: 2600, 8: 900,
-    12: 700, 13: 700, 14: 700, 17: 700, 18: 800, 19: 800, 20: 800,
-    25: 1900, 26: 850, 28: 700, 29: 700, 30: 2300, 32: 1500, 34: 2000,
-    38: 2600, 39: 1900, 40: 2300, 41: 2500, 42: 3500, 43: 3700,
-    46: 5200, 48: 3600, 65: 2100, 66: 1700, 67: 700, 68: 700, 69: 2600,
-    70: 2000, 71: 600
+  /* ── Carrier center-frequency calculation (Cellular page) ────────────
+     Ported from QuecControl's LTE_BAND_TABLE / nrArfcnToMhz so the CA
+     bandwidth bar can label segments with the carrier's actual DL
+     frequency range, not just a proportional color block. LTE: exact
+     per-band DL-low/step/EARFCN-offset (3GPP TS 36.101 Table 5.7.3-1).
+     NR: exact piecewise-linear ARFCN formula (3GPP TS 38.104 Table
+     5.4.2.1-1) — no lookup table needed. Both intentionally DL-only
+     (no UL segment split) since this card is downlink-focused
+     throughout (Est/Max Downlink, DL Bandwidth). */
+  var LTE_BAND_TABLE = {
+    1: [2110,0.1,0], 2: [1930,0.1,600], 3: [1805,0.1,1200], 4: [2110,0.1,1950],
+    5: [869,0.1,2400], 7: [2620,0.1,2750], 8: [925,0.1,3450], 12: [729,0.1,5010],
+    13: [746,0.1,5180], 14: [758,0.1,5280], 17: [734,0.1,5730], 18: [860,0.1,5850],
+    19: [875,0.1,6000], 20: [791,0.1,6150], 25: [1930,0.1,8040], 26: [859,0.1,8690],
+    28: [758,0.1,9210], 29: [717,0.1,9660], 30: [2350,0.1,9770], 38: [2570,0.1,36000],
+    39: [1880,0.1,36200], 40: [2300,0.1,36350], 41: [2496,0.1,36950], 42: [3400,0.1,37550],
+    43: [3600,0.1,37750], 46: [5150,0.1,46790], 48: [3550,0.1,55240], 65: [2110,0.1,65536],
+    66: [2110,0.1,66436], 71: [617,0.1,68586]
   };
 
-  function lteEarfcnToBand(earfcn) {
-    var e = parseInt(earfcn, 10);
-    if (isNaN(e)) return null;
-    for (var i = 0; i < LTE_EARFCN_BAND_RANGES.length; i++) {
-      var r = LTE_EARFCN_BAND_RANGES[i];
-      if (e >= r[0] && e <= r[1]) return r[2];
-    }
-    return null;
+  function nrArfcnToMhz(arfcn) {
+    var a = parseInt(arfcn, 10);
+    if (isNaN(a)) return null;
+    if (a <= 600000) return 0.005 * a;
+    if (a <= 2016666) return 3000 + 0.015 * (a - 600000);
+    return 24250.08 + 0.060 * (a - 2016667);
   }
 
-  function fmtNeighborBand(earfcn) {
-    var band = lteEarfcnToBand(earfcn);
-    if (band === null) return '—';
-    var mhz = LTE_BAND_NOMINAL_MHZ[band];
-    return 'B' + band + (mhz ? ' (' + mhz + ')' : '');
+  function bandNumberFromLabel(band) {
+    var m = /(\d+)\s*$/.exec(band || '');
+    return m ? parseInt(m[1], 10) : null;
   }
 
-  function renderNeighborCells(state) {
-    var tbody = document.getElementById('om-neighbor-tbody');
-    if (!tbody) return; // not on this page
+  function fmtCarrierBand(band) {
+    if (!band) return '—';
+    var num = bandNumberFromLabel(band);
+    if (num === null) return band;
+    return /NR5G/i.test(band) ? ('NR5G n' + num) : ('LTE B' + num);
+  }
 
-    var cells = state.neighbor_cells;
-    if (!Array.isArray(cells) || !cells.length) {
-      tbody.innerHTML = '<tr><td colspan="5" class="om-note">No neighbor cell data available.</td></tr>';
-      return;
+  function carrierCenterFreqMhz(c) {
+    var earfcn = parseInt(c.earfcn, 10);
+    if (/NR5G/i.test(c.band || '')) {
+      return (!isNaN(earfcn) && earfcn > 0) ? nrArfcnToMhz(earfcn) : null;
     }
-
-    var groups = {};
-    var order = [];
-    cells.forEach(function (c) {
-      var key = c.earfcn || '';
-      if (!groups[key]) { groups[key] = []; order.push(key); }
-      groups[key].push(c);
-    });
-
-    var byRsrpDesc = function (a, b) { return (b.rsrp || -999) - (a.rsrp || -999); };
-    var sortedGroups = order
-      .map(function (key) {
-        var entries = groups[key].slice().sort(byRsrpDesc);
-        return { entries: entries, best: entries[0].rsrp || -999 };
-      })
-      .sort(function (a, b) { return b.best - a.best; });
-
-    var rows = [];
-    sortedGroups.forEach(function (g) {
-      g.entries.forEach(function (c) {
-        rows.push(
-          '<tr>' +
-          '<td>' + escapeHtml(c.earfcn || '—') + '</td>' +
-          '<td>' + escapeHtml(c.pcid || '—') + '</td>' +
-          '<td>' + escapeHtml(c.rat || 'LTE') + '</td>' +
-          '<td>' + escapeHtml(fmtNeighborBand(c.earfcn)) + '</td>' +
-          '<td>' + (typeof c.rsrp === 'number' ? c.rsrp + ' dBm' : '—') + '</td>' +
-          '</tr>'
-        );
-      });
-    });
-    tbody.innerHTML = rows.join('');
+    var bandNum = bandNumberFromLabel(c.band);
+    var bt = bandNum !== null ? LTE_BAND_TABLE[bandNum] : null;
+    if (!bt) return null;
+    return (!isNaN(earfcn) && earfcn > 0) ? (bt[0] + (earfcn - bt[2]) * bt[1]) : bt[0];
   }
 
   /* ── Carrier Aggregation (Cellular page) ─────────────────────────────
@@ -739,49 +703,71 @@
      bw_mhz and dl_estimated_mbps/dl_maximum_mbps are computed
      server-side, so this is purely rendering — no throughput math here.
      Carrier color is assigned by array position (PCC first, then each
-     SCC in modem-reported order) and reused for both the bandwidth bar
-     segment and its legend dot. */
+     SCC in modem-reported order) and reused for the bar segment, its
+     frequency label, and the table row's type badge.
+
+     The bandwidth bar is sorted left-to-right by ascending center
+     frequency (matching QuecControl), but the table below stays in the
+     modem's own reported order (PCC first, then each SCC) — same split
+     QuecControl itself uses. */
   var CA_SEG_CLASSES = ['om-ca-seg-0', 'om-ca-seg-1', 'om-ca-seg-2', 'om-ca-seg-3'];
 
   function renderCarrierAggregation(state) {
     var bar = document.getElementById('om-ca-bwbar');
-    var legend = document.getElementById('om-ca-legend');
+    var freqRow = document.getElementById('om-ca-bwbar-freq');
     var tbody = document.getElementById('om-ca-tbody');
-    if (!bar || !legend || !tbody) return; // not on this page
+    if (!bar || !freqRow || !tbody) return; // not on this page
 
     var carriers = state.ca_bands;
     if (!Array.isArray(carriers) || !carriers.length) {
       bar.innerHTML = '<div class="om-ca-bwbar-empty"></div>';
-      legend.innerHTML = '';
+      freqRow.innerHTML = '';
       tbody.innerHTML = '<tr><td colspan="7" class="om-note">No carrier aggregation active.</td></tr>';
       return;
     }
 
-    var totalBw = carriers.reduce(function (sum, c) {
-      return sum + (typeof c.bw_mhz === 'number' ? c.bw_mhz : 0);
-    }, 0);
-
-    bar.innerHTML = carriers.map(function (c, i) {
+    var withFreq = carriers.map(function (c, i) {
       var bw = typeof c.bw_mhz === 'number' ? c.bw_mhz : 0;
-      var pct = totalBw > 0 ? Math.max((bw / totalBw) * 100, 2) : 100 / carriers.length;
-      var cls = CA_SEG_CLASSES[i % CA_SEG_CLASSES.length];
-      return '<div class="om-ca-seg ' + cls + '" style="width:' + pct.toFixed(1) + '%"></div>';
+      var center = carrierCenterFreqMhz(c);
+      return {
+        c: c, i: i, bw: bw,
+        low: center !== null ? Math.round(center - bw / 2) : null,
+        high: center !== null ? Math.round(center + bw / 2) : null,
+        center: center
+      };
+    });
+
+    var totalBw = withFreq.reduce(function (sum, s) { return sum + s.bw; }, 0);
+
+    var sorted = withFreq.slice().sort(function (a, b) {
+      var ac = a.center === null ? Infinity : a.center;
+      var bc = b.center === null ? Infinity : b.center;
+      return ac - bc;
+    });
+
+    function segWidthPct(s) {
+      return totalBw > 0 ? Math.max((s.bw / totalBw) * 100, 2) : 100 / sorted.length;
+    }
+
+    bar.innerHTML = sorted.map(function (s) {
+      var cls = CA_SEG_CLASSES[s.i % CA_SEG_CLASSES.length];
+      return '<div class="om-ca-seg ' + cls + '" style="width:' + segWidthPct(s).toFixed(1) + '%"></div>';
     }).join('');
 
-    legend.innerHTML = carriers.map(function (c, i) {
-      var cls = CA_SEG_CLASSES[i % CA_SEG_CLASSES.length];
-      var bwLabel = typeof c.bw_mhz === 'number' ? c.bw_mhz + ' MHz' : '—';
-      return '<span class="om-ca-legend-item"><span class="om-ca-legend-dot ' + cls + '"></span>' +
-        escapeHtml(c.type || '') + ': ' + escapeHtml(c.band || '') + ' (' + bwLabel + ')</span>';
+    freqRow.innerHTML = sorted.map(function (s) {
+      var label = (s.low !== null && s.high !== null) ? (s.low + '–' + s.high) : '—';
+      return '<div class="om-ca-bwbar-freq-seg" style="width:' + segWidthPct(s).toFixed(1) + '%">' + label + '</div>';
     }).join('');
 
-    tbody.innerHTML = carriers.map(function (c) {
+    tbody.innerHTML = withFreq.map(function (s) {
+      var c = s.c;
+      var cls = CA_SEG_CLASSES[s.i % CA_SEG_CLASSES.length];
       var est = typeof c.dl_estimated_mbps === 'number' ? c.dl_estimated_mbps : null;
       var max = typeof c.dl_maximum_mbps === 'number' ? c.dl_maximum_mbps : null;
       var thpt = (est !== null && max !== null) ? (est + ' / ' + max + ' Mbps') : '—';
       return '<tr>' +
-        '<td>' + escapeHtml(c.type || '—') + '</td>' +
-        '<td>' + escapeHtml(c.band || '—') + '</td>' +
+        '<td><span class="om-ca-carrier-badge ' + cls + '">' + escapeHtml(c.type || '') + '</span>' + escapeHtml(fmtCarrierBand(c.band)) + '</td>' +
+        '<td>' + (s.bw ? s.bw + ' MHz' : '—') + '</td>' +
         '<td>' + escapeHtml(c.earfcn || '—') + '</td>' +
         '<td>' + escapeHtml(c.pci || '—') + '</td>' +
         '<td>' + (typeof c.rsrp === 'number' ? c.rsrp + ' dBm' : '—') + '</td>' +

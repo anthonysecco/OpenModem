@@ -539,42 +539,6 @@ compute_ca_throughput() {
     '
 }
 
-# +QENG: "neighbourcell intra"|"neighbourcell inter","LTE",<earfcn>,
-# <pcid>,<rsrq>,<rsrp>,<rssi>,<sinr>,... — no band field, only EARFCN
-# (band/nominal-frequency label is computed client-side in app.js, same
-# split as every other display-only formatting in this project). On
-# this hardware "inter" (different-frequency) neighbors commonly report
-# "-" for every field but EARFCN — confirmed live — so entries are kept
-# only when RSRP actually parses as a number, same filter QuecControl's
-# own poller uses for the same reason.
-collect_neighbor_cells() {
-    F_NEIGHBOR_CELLS="[]"
-    _nb=$(run_at 'AT+QENG="neighbourcell"')
-    _lines=$(printf '%s' "$_nb" | grep '^+QENG: "neighbourcell')
-    [ -z "$_lines" ] && return
-
-    _json="["
-    _first=1
-    _oldifs="$IFS"
-    IFS='
-'
-    for _line in $_lines; do
-        _fields=$(printf '%s' "$_line" | sed 's/.*"LTE",//')
-        _earfcn=$(printf '%s' "$_fields" | cut -d',' -f1 | tr -d ' \r\n')
-        _pcid=$(printf '%s'   "$_fields" | cut -d',' -f2 | tr -d ' \r\n')
-        _rsrq=$(printf '%s'   "$_fields" | cut -d',' -f3 | tr -d ' \r\n')
-        _rsrp=$(printf '%s'   "$_fields" | cut -d',' -f4 | tr -d ' \r\n')
-
-        printf '%s' "$_rsrp" | grep -qE '^-?[0-9]+$' || continue
-
-        [ "$_first" -eq 1 ] || _json="${_json},"
-        _json="${_json}{\"earfcn\":$(json_str "$_earfcn"),\"pcid\":$(json_str "$_pcid"),\"rsrq\":$(json_num "$_rsrq"),\"rsrp\":$(json_num "$_rsrp")}"
-        _first=0
-    done
-    IFS="$_oldifs"
-    F_NEIGHBOR_CELLS="${_json}]"
-}
-
 collect_band_pref() {
     F_BAND_PREF_LTE="null"; F_BAND_PREF_NR5G="null"
     _lte=$(run_at 'AT+QNWPREFCFG="lte_band"')
@@ -697,7 +661,6 @@ write_state() {
   "ca_total_bw_mhz": ${F_CA_TOTAL_BW_MHZ},
   "ca_dl_estimated_mbps": ${F_CA_DL_EST_MBPS},
   "ca_dl_maximum_mbps": ${F_CA_DL_MAX_MBPS},
-  "neighbor_cells": ${F_NEIGHBOR_CELLS},
   "band_pref_lte": ${F_BAND_PREF_LTE},
   "band_pref_nr5g": ${F_BAND_PREF_NR5G},
   "wan_apn": ${F_WAN_APN},
@@ -747,7 +710,6 @@ while true; do
     collect_serving_cell
     collect_carrier
     collect_carrier_aggregation
-    collect_neighbor_cells
     collect_band_pref
     collect_wan
     collect_lan
