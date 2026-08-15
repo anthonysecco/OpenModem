@@ -149,6 +149,27 @@ ipv6_from_octets() {
     printf '%s' "$_out"
 }
 
+# AT+QENG="servingcell"'s <UL_bandwidth>/<DL_bandwidth> use a 0-5 index
+# scheme ("0 1.4MHz / 1 3MHz / 2 5MHz / 3 10MHz / 4 15MHz / 5 20MHz",
+# confirmed live: index 5 there matched QCAINFO's own 100-PRB code for
+# the same PCC's DL bandwidth at the same moment) — a *different*
+# encoding than QCAINFO's PRB-count style (6/15/25/50/75/100), which
+# compute_ca_throughput's lte_bw_mhz()/nr_bw_mhz() already decode. Only
+# used for the PCC's UL bandwidth (QCAINFO never carries UL fields for
+# the PCC line, only for SCCs), since that is the one piece of real
+# UL data this specific AT command adds beyond what QCAINFO covers.
+qeng_bw_mhz() {
+    case "$1" in
+        0) printf '1.4' ;;
+        1) printf '3' ;;
+        2) printf '5' ;;
+        3) printf '10' ;;
+        4) printf '15' ;;
+        5) printf '20' ;;
+        *) printf '' ;;
+    esac
+}
+
 # -- Collectors ---------------------------------------------------------
 # Each sets F_* globals (json-ready strings) from one or more AT commands.
 # Missing/unparseable fields are left as "null" rather than guessed.
@@ -275,6 +296,7 @@ collect_serving_cell() {
     F_CELL_STATE="null"; F_CELL_RAT="null"
     F_CELL_MCC="null"; F_CELL_MNC="null"; F_CELL_ID="null"
     F_CELL_PCID="null"; F_CELL_EARFCN="null"; F_CELL_BAND="null"; F_CELL_TAC="null"
+    F_CELL_UL_BW_MHZ="null"
 
     _serv=$(nth_block "$1" 15)
     _line=$(printf '%s' "$_serv" | grep '+QENG:.*"servingcell"' | head -1)
@@ -302,6 +324,9 @@ collect_serving_cell() {
     F_CELL_EARFCN=$(json_str "$(printf '%s' "$_rest" | cut -d',' -f5 | tr -d ' \r\n')")
     F_CELL_BAND=$(json_str   "$(printf '%s' "$_rest" | cut -d',' -f6 | tr -d ' \r\n')")
     F_CELL_TAC=$(json_str    "$(printf '%s' "$_rest" | cut -d',' -f9 | tr -d ' \r\n')")
+
+    _ul_bw_code=$(printf '%s' "$_rest" | cut -d',' -f7 | tr -d ' \r\n')
+    F_CELL_UL_BW_MHZ=$(json_num "$(qeng_bw_mhz "$_ul_bw_code")")
 }
 
 collect_carrier() {
@@ -391,19 +416,41 @@ collect_carrier_aggregation() {
         [ -z "$_band" ] && continue
         _earfcn=$(printf '%s' "$_r" | cut -d',' -f2)
         _bw_raw=$(printf '%s' "$_r" | cut -d',' -f3)
+        _ul_configured=""; _ul_bw_raw=""; _ul_earfcn=""
         if printf '%s' "$_band" | grep -q "NR5G"; then
             _pci=$(printf '%s' "$_r" | cut -d',' -f5)
             _rsrp=$(printf '%s' "$_r" | cut -d',' -f6)
             _rsrq=$(printf '%s' "$_r" | cut -d',' -f7)
             _sinr=""
+            # NR5G's own field layout here (state/UL/RSRP positions) is
+            # NOT independently confirmed live on this hardware, unlike
+            # the LTE branch below (this device has never carried an
+            # active NR component carrier through this whole project) —
+            # so UL fields are deliberately left unset for NR rather than
+            # guessed at an offset nothing has verified.
         else
             _pci=$(printf '%s' "$_r" | cut -d',' -f6)
             _rsrp=$(printf '%s' "$_r" | cut -d',' -f7)
             _rsrq=$(printf '%s' "$_r" | cut -d',' -f8)
             _sinr=$(printf '%s' "$_r" | cut -d',' -f10)
+            # <UL_configured>,<UL_bandwidth>,<UL_EARFCN> — SCC-only per
+            # Quectel's manual (PCC's QCAINFO line never carries them;
+            # its real UL bandwidth comes from QENG="servingcell"
+            # instead, see F_CELL_UL_BW_MHZ) and only meaningful when
+            # UL_configured=1 — confirmed live: a 3-CC session had one
+            # SCC with ul_configured=0 (no uplink grant on that carrier
+            # at all, normal with more than 2 active CCs) and another
+            # with ul_configured=1 and real ul_bandwidth/ul_earfcn values
+            # that cross-checked against QENG's separately-reported PCC
+            # bandwidth for the same cycle.
+            _ul_configured=$(printf '%s' "$_r" | cut -d',' -f11 | tr -d ' \r\n')
+            if [ "$_ul_configured" = "1" ]; then
+                _ul_bw_raw=$(printf '%s' "$_r" | cut -d',' -f12 | tr -d ' \r\n')
+                _ul_earfcn=$(printf '%s' "$_r" | cut -d',' -f13 | tr -d ' \r\n')
+            fi
         fi
         [ "$_first" -eq 1 ] || _raw="${_raw},"
-        _raw="${_raw}{\"type\":$(json_str "$_type"),\"band\":$(json_str "$_band"),\"earfcn\":$(json_str "$_earfcn"),\"bandwidth\":$(json_str "$_bw_raw"),\"pci\":$(json_str "$_pci"),\"rsrp\":$(json_num "$_rsrp"),\"rsrq\":$(json_num "$_rsrq"),\"sinr\":$(json_num "$_sinr")}"
+        _raw="${_raw}{\"type\":$(json_str "$_type"),\"band\":$(json_str "$_band"),\"earfcn\":$(json_str "$_earfcn"),\"bandwidth\":$(json_str "$_bw_raw"),\"pci\":$(json_str "$_pci"),\"rsrp\":$(json_num "$_rsrp"),\"rsrq\":$(json_num "$_rsrq"),\"sinr\":$(json_num "$_sinr"),\"ul_bandwidth_raw\":$(json_str "$_ul_bw_raw"),\"ul_earfcn\":$(json_str "$_ul_earfcn")}"
         _first=0
         _count=$(( _count + 1 ))
     done
@@ -456,7 +503,13 @@ collect_carrier_aggregation() {
 #              field now, not the throughput math (see above)
 # Output: 4 lines on stdout —
 #   1. carriers JSON array, each object gaining bw_mhz/mimo_layers/
-#      dl_estimated_mbps/dl_maximum_mbps
+#      ul_bw_mhz/dl_estimated_mbps/dl_maximum_mbps. ul_bw_mhz is real
+#      polled data, not assumed equal to bw_mhz: the PCC's comes from
+#      F_CELL_UL_BW_MHZ (AT+QENG="servingcell", passed in as
+#      pcc_ul_bw_mhz below since QCAINFO never carries UL fields for
+#      the PCC line); each SCC's comes from its own QCAINFO
+#      ul_bandwidth_raw field, left null when that SCC has no uplink
+#      grant at all (confirmed live: normal with 3+ active carriers).
 #   2. aggregate estimated downlink, Mbps — the exact sum of each
 #      carrier's own (already-rounded) dl_estimated_mbps above, not a
 #      separately-rounded total, so this can never drift from what the
@@ -474,6 +527,7 @@ compute_ca_throughput() {
         -v fb_lte_rsrq="${F_LTE_RSRQ:-null}" \
         -v fb_nr_rsrq="${F_NR_RSRQ:-null}" \
         -v mimo_lookup="${2:-}" \
+        -v pcc_ul_bw_mhz="${F_CELL_UL_BW_MHZ:-null}" \
     '
     function lte_bw_mhz(rb,    n) {
         n = int(rb)
@@ -631,17 +685,33 @@ compute_ca_throughput() {
             if (substr(rec, 1, 1) != "{") rec = "{" rec
             if (substr(rec, length(rec), 1) != "}") rec = rec "}"
 
-            type_str = json_field(rec, "type")
-            band_str = json_field(rec, "band")
-            earfcn   = json_field(rec, "earfcn")
-            bw_raw   = json_field(rec, "bandwidth")
-            pci      = json_field(rec, "pci")
-            rsrp     = json_field(rec, "rsrp")
-            rsrq_f   = json_field(rec, "rsrq")
-            sinr_f   = json_field(rec, "sinr")
+            type_str  = json_field(rec, "type")
+            band_str  = json_field(rec, "band")
+            earfcn    = json_field(rec, "earfcn")
+            bw_raw    = json_field(rec, "bandwidth")
+            pci       = json_field(rec, "pci")
+            rsrp      = json_field(rec, "rsrp")
+            rsrq_f    = json_field(rec, "rsrq")
+            sinr_f    = json_field(rec, "sinr")
+            ul_bw_raw = json_field(rec, "ul_bandwidth_raw")
+            ul_earfcn = json_field(rec, "ul_earfcn")
 
             is_nr = (index(band_str, "NR5G") > 0)
             bw = is_nr ? nr_bw_mhz(bw_raw) : lte_bw_mhz(bw_raw)
+
+            # Real polled UL bandwidth — never assumed equal to bw. PCC:
+            # from AT+QENG="servingcell" (pcc_ul_bw_mhz, already decoded
+            # MHz — QCAINFO carries no UL fields for the PCC line at
+            # all). SCC: from its own QCAINFO ul_bandwidth_raw field (set
+            # only when that SCC actually has an uplink grant — see
+            # collect_carrier_aggregation), decoded the same way as bw.
+            if (type_str == "PCC") {
+                ul_bw = numish(pcc_ul_bw_mhz) ? pcc_ul_bw_mhz + 0 : 0
+            } else if (numish(ul_bw_raw)) {
+                ul_bw = is_nr ? nr_bw_mhz(ul_bw_raw) : lte_bw_mhz(ul_bw_raw)
+            } else {
+                ul_bw = 0
+            }
 
             if (numish(sinr_f)) {
                 sinr = sinr_f + 0
@@ -694,6 +764,8 @@ compute_ca_throughput() {
             out = out ",\"earfcn\":" (earfcn == "" ? "null" : "\"" earfcn "\"")
             out = out ",\"bandwidth\":" (bw_raw == "" ? "null" : "\"" bw_raw "\"")
             out = out ",\"bw_mhz\":" (bw > 0 ? bw : "null")
+            out = out ",\"ul_bw_mhz\":" (ul_bw > 0 ? ul_bw : "null")
+            out = out ",\"ul_earfcn\":" (ul_earfcn == "" ? "null" : "\"" ul_earfcn "\"")
             out = out ",\"pci\":" (pci == "" ? "null" : "\"" pci "\"")
             out = out ",\"rsrp\":" (rsrp == "" ? "null" : rsrp)
             out = out ",\"rsrq\":" (rsrq_f == "" ? "null" : rsrq_f)
