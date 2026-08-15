@@ -9,8 +9,21 @@
 # start services. Also used as the "Update" action on the System page —
 # re-running this script is how an update happens (see
 # www/cgi-bin/update.sh).
-
-REPO="https://raw.githubusercontent.com/anthonysecco/OpenModem/main"
+#
+# REPO defaults to the main branch, but every file this script downloads
+# (bin/www/cgi-bin, everything under "Downloading files from GitHub"
+# below) comes from REPO — fetching *this script* from a commit-SHA URL
+# does NOT pin those, since REPO itself was still hardcoded to main.
+# Confirmed live: pinning only installer.sh's own URL kept serving a
+# stale main-branch app.js for several minutes after a push, because
+# raw.githubusercontent.com's branch URL has its own separate CDN cache
+# from the SHA URL. Set OPENMODEM_INSTALL_REF to a full commit-SHA REPO
+# URL to actually pin everything and skip that wait — env var has to be
+# attached to the `sh` side of the pipe, not the `curl` side, since only
+# the process actually running this script needs to see it:
+#   curl -fsSL https://raw.githubusercontent.com/anthonysecco/OpenModem/<sha>/installer.sh \
+#     | OPENMODEM_INSTALL_REF="https://raw.githubusercontent.com/anthonysecco/OpenModem/<sha>" sh
+REPO="${OPENMODEM_INSTALL_REF:-https://raw.githubusercontent.com/anthonysecco/OpenModem/main}"
 INSTALL_DIR="/usrdata/openmodem"
 CONFIG_DIR="$INSTALL_DIR/config"
 CONF_FILE="$CONFIG_DIR/openmodem.conf"

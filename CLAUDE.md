@@ -169,6 +169,17 @@ history drift apart (an entire session's worth of work went live on
 the device while sitting uncommitted in git); `installer.sh` is now the
 only deployment path, not just how the install/update flow itself gets
 verified. Raw GitHub content by branch (`.../main/...`) is CDN-cached
-for a few minutes; pin to a commit SHA in the installer URL when you
-need to be sure a just-pushed change is really what's being fetched,
-rather than assuming the branch URL already reflects it.
+for a few minutes; pinning just the installer URL to a commit SHA does
+**not** avoid this — `installer.sh`'s `REPO` var (what every file it
+downloads is fetched from) was hardcoded to `.../main` regardless of
+what URL fetched the script itself, confirmed live when a pinned
+`installer.sh` fetch still installed a several-minutes-stale `app.js`.
+Fixed by making `REPO` default to `.../main` but respect an
+`OPENMODEM_INSTALL_REF` env var override — to genuinely pin an entire
+deploy to a commit, set that on the `sh` side of the pipe (the process
+that actually runs the script), not the `curl` side:
+`curl -fsSL .../<sha>/installer.sh | OPENMODEM_INSTALL_REF="https://raw.githubusercontent.com/anthonysecco/OpenModem/<sha>" sh`.
+Without that override, just wait out the branch cache (poll
+`https://raw.githubusercontent.com/anthonysecco/OpenModem/main/<path>`
+for the expected content) rather than assuming a pinned installer URL
+alone made the wait unnecessary.
