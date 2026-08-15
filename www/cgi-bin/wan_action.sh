@@ -6,38 +6,41 @@
 #     at_poller.sh's wan_data_tx/wan_data_rx report.
 #
 # GET ?action=get_ttl
-#     Returns the persisted TTL/hop-limit override value.
+#     Returns the persisted TTL/hop-limit override value (config/
+#     openmodem.conf's TTL_VALUE key).
 #
 # GET ?action=set_ttl&value=N
-#     N=0 disables spoofing; N=1-255 sets it. See below for why this
-#     doesn't touch iptables directly.
+#     N=0 disables spoofing; N=1-255 sets it. Deletes the specific old
+#     rule (by value, not a chain flush — see below) before inserting
+#     the new one, then persists TTL_VALUE so bin/apply_iptables.sh
+#     re-applies it after a reboot.
 #
-# TTL spoofing is NOT implemented as OpenModem's own iptables rule.
-# This device already has a separate, pre-existing package —
-# SimpleFirewall (/usrdata/simplefirewall/) — with its own
-# ttl-override.service independently managing the exact same mechanism
-# (a POSTROUTING mangle TTL/HL rule on the rmnet+ WWAN interfaces,
-# confirmed live: iptables -t mangle -I POSTROUTING -o rmnet+ -j TTL
-# --ttl-set N / ip6tables ... -j HL --hl-set N). The TTL target doesn't
-# stop rule processing, so two independently-managed rules silently
-# fight over the last word on every packet — confirmed by testing:
-# flushing SimpleFirewall's live TTL=88 rule during development and
-# re-adding a different value would have left both rules stacked, with
-# whichever is later in the chain quietly winning regardless of what
-# either UI shows. Rather than risk that, this is deliberately a
-# front-end for SimpleFirewall's existing mechanism: it reads/writes
-# /usrdata/simplefirewall/ttlvalue and drives its ttl-override script,
-# instead of managing iptables independently. This makes the feature
-# dependent on SimpleFirewall being present on the device — see
-# SCOPE.md.
+# TTL spoofing is OpenModem's own iptables/ip6tables mangle rule now —
+# it was originally a front-end for a pre-existing third-party package
+# on this device (SimpleFirewall's ttl-override.service), but that
+# introduced a hard dependency the project doesn't want (see SCOPE.md:
+# "no additional software installed on the modem" is a core constraint,
+# and SimpleFirewall requires bash, which nothing else here does).
+# SimpleFirewall has been fully removed by installer.sh; this script and
+# bin/apply_iptables.sh (boot-time re-application) replace both halves
+# of what it did — TTL override and, separately, the web-UI port
+# protection it also provided (see apply_iptables.sh's own comment).
+#
+# Deliberately never flushes the whole mangle/POSTROUTING chain
+# (`iptables -t mangle -F POSTROUTING`, which is what SimpleFirewall's
+# own script and QuecControl's original wan_action.sh both do) — on this
+# hardware that chain also carries two Qualcomm baseband rules
+# (qcom_qos_reset_POSTROUTING/qcom_qos_filter_POSTROUTING), unrelated to
+# TTL, that a blind flush silently deletes. Confirmed live: flushing to
+# clean up a test rule wiped them too. Uses a targeted delete of just
+# the rule this script itself owns instead.
 
 echo "Content-Type: application/json"
 echo "Cache-Control: no-cache, no-store, must-revalidate"
 echo ""
 
 AT_CMD="/usrdata/openmodem/bin/at_command.sh"
-TTL_OVERRIDE="/usrdata/simplefirewall/ttl-override"
-TTL_VALUE_FILE="/usrdata/simplefirewall/ttlvalue"
+CONF_FILE="/usrdata/openmodem/config/openmodem.conf"
 
 ACTION=""
 VALUE=""
@@ -48,6 +51,11 @@ fi
 [ -z "$ACTION" ] && ACTION="invalid"
 
 json_esc() { printf '%s' "$1" | tr -d '\r\n' | sed 's/\\/\\\\/g; s/"/\\"/g'; }
+
+current_ttl() {
+    _val=$(grep '^TTL_VALUE=' "$CONF_FILE" 2>/dev/null | tail -1 | cut -d= -f2 | tr -d ' \r\n')
+    echo "$_val" | grep -qE '^[0-9]+$' && echo "$_val" || echo "0"
+}
 
 case "$ACTION" in
 
@@ -66,13 +74,7 @@ case "$ACTION" in
     ;;
 
   get_ttl)
-    if [ ! -f "$TTL_VALUE_FILE" ]; then
-        echo '{"success":true,"ttl":0}'
-        exit 0
-    fi
-    TTL=$(grep -o '[0-9]\{1,3\}' "$TTL_VALUE_FILE" | head -1)
-    [ -z "$TTL" ] && TTL=0
-    printf '{"success":true,"ttl":%s}\n' "$TTL"
+    printf '{"success":true,"ttl":%s}\n' "$(current_ttl)"
     ;;
 
   set_ttl)
@@ -80,20 +82,30 @@ case "$ACTION" in
         echo '{"success":false,"error":"TTL must be 0 (disabled) or 1-255"}'
         exit 1
     fi
-    if [ ! -x "$TTL_OVERRIDE" ]; then
-        echo '{"success":false,"error":"SimpleFirewall ttl-override not found on this device"}'
-        exit 1
+
+    OLD=$(current_ttl)
+    if [ "$OLD" -gt 0 ]; then
+        iptables  -t mangle -D POSTROUTING -o rmnet+ -j TTL --ttl-set "$OLD" 2>/dev/null
+        ip6tables -t mangle -D POSTROUTING -o rmnet+ -j HL  --hl-set  "$OLD" 2>/dev/null
     fi
 
-    # Stop FIRST, while ttlvalue still holds the currently-applied value
-    # — ttl-override's stop action deletes the iptables rule matching
-    # whatever's in that file right now. Overwriting the file before
-    # stopping would make it try to delete a rule for the *new* value,
-    # which was never inserted, leaving the old rule stuck and stacking
-    # a second one on top of it.
-    "$TTL_OVERRIDE" stop >/dev/null 2>&1
-    echo "$VALUE" > "$TTL_VALUE_FILE"
-    START_OUT=$("$TTL_OVERRIDE" start 2>&1)
+    if [ "$VALUE" -gt 0 ]; then
+        if ! iptables -t mangle -I POSTROUTING -o rmnet+ -j TTL --ttl-set "$VALUE"; then
+            echo '{"success":false,"error":"iptables command failed"}'
+            exit 1
+        fi
+        ip6tables -t mangle -I POSTROUTING -o rmnet+ -j HL --hl-set "$VALUE" 2>/dev/null
+    fi
+
+    mkdir -p "$(dirname "$CONF_FILE")"
+    _tmp="${CONF_FILE}.tmp"
+    if [ -f "$CONF_FILE" ]; then
+        grep -v '^TTL_VALUE=' "$CONF_FILE" > "$_tmp"
+    else
+        : > "$_tmp"
+    fi
+    echo "TTL_VALUE=${VALUE}" >> "$_tmp"
+    mv "$_tmp" "$CONF_FILE"
 
     if [ "$VALUE" = "0" ]; then
         echo '{"success":true,"message":"TTL spoofing disabled."}'

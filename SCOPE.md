@@ -24,27 +24,32 @@ goal).
 - **WAN status/actions** — richer WAN status (IP type, IPv6 address,
   cumulative data usage from `AT+QGDCNT?`, with a reset action) plus TTL
   spoofing, adapted from QuecControl's `wan_action.sh`. TTL spoofing is
-  **not** OpenModem's own iptables rule — this device already has a
-  separate pre-existing package, SimpleFirewall
-  (`/usrdata/simplefirewall/`), with its own `ttl-override.service`
-  independently managing the same mechanism (a POSTROUTING mangle
-  TTL/HL rule on `rmnet+`). Two independent managers of that rule fight
-  silently (the TTL target doesn't stop rule processing, so whichever
-  rule sits later in the chain wins on every packet, regardless of which
-  UI last touched it — confirmed by testing: flushing SimpleFirewall's
-  live rule and reapplying a different value would have left both
-  stacked). `www/cgi-bin/wan_action.sh` is deliberately a front-end for
-  SimpleFirewall's existing mechanism instead: it reads/writes
-  `/usrdata/simplefirewall/ttlvalue` and drives its `ttl-override`
-  script (`stop` while the file still holds the *old* value, write the
-  new value, `start`) rather than managing iptables directly. This makes
-  the feature dependent on SimpleFirewall being present on the device.
-  **`installer.sh`'s cleanup list does not cover SimpleFirewall** — it
-  only removes QuecControl/SimpleAdmin/OpenModem — so a fresh device
-  without it pre-installed would have no working TTL spoofing backend;
-  revisit whether `installer.sh` should also manage SimpleFirewall (or
-  whether OpenModem should have its own independent iptables path as a
-  fallback) if this ships to devices where it isn't already present.
+  OpenModem's own iptables/ip6tables mangle rule (`www/cgi-bin/
+  wan_action.sh`'s `set_ttl`/`get_ttl`, persisted to `openmodem.conf`'s
+  `TTL_VALUE` and re-applied at boot by `bin/apply_iptables.sh` via a
+  new `openmodem-iptables.service`). It was originally a front-end for
+  SimpleFirewall, a separate pre-existing package on the dev device with
+  its own `ttl-override.service` managing the identical mechanism — but
+  that introduced a hard third-party dependency (and the project's only
+  bash requirement) that contradicts `CLAUDE.md`'s "no additional
+  software installed on the modem" constraint, so `installer.sh` now
+  removes SimpleFirewall entirely instead of depending on it (see
+  "Install / update" and "Verified against real hardware" below).
+  `wan_action.sh`'s `set_ttl` deletes the specific old rule by value
+  before inserting the new one — deliberately never a full `-F
+  POSTROUTING` flush, which would also silently wipe two unrelated
+  Qualcomm baseband rules (`qcom_qos_reset_POSTROUTING`/
+  `qcom_qos_filter_POSTROUTING`) sharing that chain on this hardware;
+  confirmed live when an earlier flush-based cleanup step did exactly
+  that. `bin/apply_iptables.sh` also now owns the web-UI port (8080)
+  protection SimpleFirewall used to provide (allow from
+  `bridge0`/`eth0`/`tailscale0`, drop elsewhere) — scoped to just that
+  one port, not the three others (80/8088/443) SimpleFirewall blocked,
+  since those belonged to other tools this project doesn't run.
+  `installer.sh` also migrates any value already sitting in
+  SimpleFirewall's `ttlvalue` file into `openmodem.conf`'s `TTL_VALUE`
+  before removing it, so an operator's existing TTL spoofing survives
+  the switch instead of silently reverting to disabled.
   Interface up/down (`AT+CGACT=0,1` / `1,1`) is still unimplemented.
 - **LAN config** — local network configuration (QuecControl's
   `lan_action.sh`). Implemented: DHCP pool/gateway IP (`AT+QMAP="LANIP"`),
@@ -86,19 +91,24 @@ goal).
   `openmodem-broker`/`openmodem-poller`/`openmodem-httpd` systemd units,
   start them.
 - Before installing, it removes any prior **QuecControl**, **SimpleAdmin**,
-  or **OpenModem** install (services, systemd units, `/usrdata/*`,
-  `/tmp/*` runtime state) so only one admin UI runs on the device at a
-  time. All names are confirmed against a real device (see "Verified
-  against real hardware" below) — SimpleAdmin (from
+  **SimpleFirewall**, or **OpenModem** install (services, systemd units,
+  `/usrdata/*`, `/tmp/*` runtime state) so only one admin UI runs on the
+  device at a time. All names are confirmed against a real device (see
+  "Verified against real hardware" below) — SimpleAdmin (from
   `iamromulan/quectel-rgmii-toolkit`) runs `simpleadmin_httpd.service` +
   `simpleadmin_generate_status.service` out of `/usrdata/simpleadmin`,
   plus a separate `socat-at-bridge` toolkit (`socat-smd11*`/`socat-smd7*`
   units out of `/usrdata/socat-at-bridge`) that bridges `/dev/smd11` to
   pty pairs for it — that has to be removed too, not just SimpleAdmin
   itself, since it and our own `at_broker.sh` would otherwise both try to
-  own `/dev/smd11` at once. Tailscale and simplefirewall (also part of
-  that toolkit) are deliberately left alone — nothing here conflicts with
-  them and removing them wasn't asked for.
+  own `/dev/smd11` at once. SimpleFirewall (also part of that toolkit —
+  `simplefirewall.service` + `ttl-override.service`, out of
+  `/usrdata/simplefirewall`) is removed too: it independently managed
+  the same iptables rules OpenModem now owns itself (TTL spoofing and
+  web-UI port protection — see "WAN status/actions" above), and two
+  independent managers of the same rules silently conflict. Tailscale is
+  the only thing from that toolkit still deliberately left alone —
+  unrelated, nothing here conflicts with it.
 - **Update** is just "run the installer again": the System page's Update
   button calls `www/cgi-bin/update.sh?action=start&confirm=1`, which
   requires client-side confirmation first (a `window.confirm()` warning
@@ -223,24 +233,29 @@ Confirmed on an actual RM520N-GL (2026-08-14), not assumed:
   this hardware; `ipv6_from_octets()` converts pairs of octets to hex
   groups, verified to produce `2600:380:8752:af6f:0:48:151d:1e01`,
   matching the actual `/64` prefix a LAN client received via SLAAC.
-- TTL spoofing (`wan_action.sh`'s `get_ttl`/`set_ttl`) is confirmed
-  working end-to-end via direct `adb shell` testing of the stop→write→
-  start sequence against SimpleFirewall's real `ttl-override` script:
-  swapping 88→65 produced exactly one active rule at each step, no
-  stacking. Not yet exercised through the actual CGI endpoint/UI.
-  Discovering the pre-existing SimpleFirewall rule mid-testing (and
-  briefly flushing it, then restoring it) is what surfaced the
-  installer.sh gap noted under "WAN status/actions" above.
+- TTL spoofing went through two designs this session. First, a
+  front-end for SimpleFirewall's pre-existing `ttl-override` script —
+  confirmed working via direct `adb shell` testing of its stop→write→
+  start sequence (swapping 88→65 produced exactly one active rule at
+  each step, no stacking) — but discovering that live SimpleFirewall
+  rule mid-testing (and briefly flushing it, then restoring it) surfaced
+  both the hard third-party dependency and the flush-risk to Qualcomm's
+  QoS rules described under "WAN status/actions" above, so it was
+  replaced with OpenModem's own iptables rule instead, and SimpleFirewall
+  was removed from the device entirely rather than kept as a dependency.
+  The new implementation (`wan_action.sh`'s targeted-delete `set_ttl`,
+  `bin/apply_iptables.sh`'s boot-time re-application, `installer.sh`'s
+  port-8080 protection + SimpleFirewall removal) has **not** itself been
+  exercised through the actual CGI endpoint/UI or a real reboot yet —
+  only the underlying iptables command shapes were verified in isolation
+  during the SimpleFirewall-era testing above. Verify: `set_ttl` via the
+  WAN page, and that `openmodem-iptables.service` actually re-applies
+  `TTL_VALUE` and the port-8080 rule after a real power cycle (not just
+  `systemctl start`).
 
 ## Open questions
 
-- Whether `installer.sh` should manage SimpleFirewall (stop/disable its
-  service so OpenModem is the one write path, matching the "only one
-  admin tool at a time" policy already applied to QuecControl/
-  SimpleAdmin) or whether TTL spoofing should fall back to its own
-  independent iptables rule when SimpleFirewall isn't present — see
-  "WAN status/actions" above. Interface up/down for WAN is still
-  unimplemented.
+- Interface up/down for WAN is still unimplemented.
 - LAN client list: confirm the dnsmasq lease file path on this firmware
   and write a collector for it (separate from `at_poller.sh`).
 - Factory reset was deliberately left out of Power (QuecControl has it;
