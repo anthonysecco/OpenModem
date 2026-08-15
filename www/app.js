@@ -761,6 +761,21 @@
      QuecControl itself uses. */
   var CA_SEG_CLASSES = ['om-ca-seg-0', 'om-ca-seg-1', 'om-ca-seg-2', 'om-ca-seg-3'];
 
+  /* Table always shows at least this many rows, padded with empty
+     placeholder rows when fewer carriers are active — keeps the card's
+     height (and everything below it on the page) from jumping around
+     as carrier aggregation adds/drops component carriers between polls.
+     More rows are added freely above this floor; it's a minimum, not a
+     cap. */
+  var MIN_CA_ROWS = 5;
+  var CA_EMPTY_ROW = '<tr class="om-ca-row-empty"><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>';
+
+  function padCaRows(rows) {
+    var out = rows.slice();
+    while (out.length < MIN_CA_ROWS) out.push(CA_EMPTY_ROW);
+    return out;
+  }
+
   function renderCarrierAggregation(state) {
     var bar = document.getElementById('om-ca-bwbar');
     var freqRow = document.getElementById('om-ca-bwbar-freq');
@@ -771,7 +786,7 @@
     if (!Array.isArray(carriers) || !carriers.length) {
       bar.innerHTML = '<div class="om-ca-bwbar-empty"></div>';
       freqRow.innerHTML = '';
-      tbody.innerHTML = '<tr><td colspan="5" class="om-note">No carrier aggregation active.</td></tr>';
+      tbody.innerHTML = padCaRows(['<tr><td colspan="5" class="om-note">No carrier aggregation active.</td></tr>']).join('');
       return;
     }
 
@@ -808,7 +823,7 @@
       return '<div class="om-ca-bwbar-freq-seg" style="width:' + segWidthPct(s).toFixed(1) + '%">' + label + '</div>';
     }).join('');
 
-    tbody.innerHTML = withFreq.map(function (s) {
+    var caRows = withFreq.map(function (s) {
       var c = s.c;
       var cls = CA_SEG_CLASSES[s.i % CA_SEG_CLASSES.length];
       var est = typeof c.dl_estimated_mbps === 'number' ? c.dl_estimated_mbps : null;
@@ -823,7 +838,8 @@
         '<td>' + sigBarCell(c.sinr, SINR_ZONES, SINR_MIN, SINR_MAX, 'dB') + '</td>' +
         '<td>' + thpt + '</td>' +
         '</tr>';
-    }).join('');
+    });
+    tbody.innerHTML = padCaRows(caRows).join('');
   }
 
   /* ── LAN config (LAN page) ──────────────────────────────────────────

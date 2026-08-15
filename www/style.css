@@ -496,6 +496,14 @@ body {
   border-bottom: none;
 }
 
+/* Placeholder rows padding Carrier Aggregation's table out to its
+   minimum row count — same height as a real row, just visually quiet
+   so an empty slot doesn't read as an error. */
+.om-ca-row-empty td {
+  color: var(--text-dim);
+  opacity: 0.5;
+}
+
 /* ── AT Terminal ──
    Deliberately dark in both light and dark host themes, like a real
    terminal emulator — modeled on QuecControl's system.html terminal. */
