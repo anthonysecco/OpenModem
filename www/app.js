@@ -917,9 +917,15 @@
      QuecControl's wan.html. Not part of state.sh/at_poller.sh: this is
      read-only, third-party, and has nothing to do with the AT device,
      so it gets its own dedicated fetch/refresh cycle instead of being
-     shoehorned into the poller. org comes back as "AS7018 AT&T
-     Services, Inc." — split on the first space into ASN + ISP rather
-     than shown as one blob, since the card has separate rows for each. */
+     shoehorned into the poller. Every field here comes from that one
+     ipinfo.io response, not the modem's own wan_ip/wan_ipv6 (Status
+     card already shows those) — ipinfo.io only ever returns a single
+     "ip" for whichever protocol the browser's request actually used,
+     so it's routed into the IPv4 or IPv6 row by its shape rather than
+     assumed, leaving the other row blank rather than guessed. org
+     comes back as "AS7018 AT&T Services, Inc." — split on the first
+     space into ASN + ISP rather than shown as one blob, since the card
+     has separate rows for each. */
   var WAN_INTERNET_REFRESH_MS = 300000;
 
   function fetchWanInternet() {
@@ -930,12 +936,16 @@
         return r.json();
       })
       .then(function (data) {
-        document.getElementById('om-wan-inet-ip').textContent = data.ip || '—';
-
         var org = data.org || '';
         var m = org.match(/^(AS\d+)\s*(.*)$/);
-        document.getElementById('om-wan-inet-asn').textContent = m ? m[1] : '—';
         document.getElementById('om-wan-inet-isp').textContent = m ? (m[2] || '—') : (org || '—');
+        document.getElementById('om-wan-inet-asn').textContent = m ? m[1] : '—';
+
+        document.getElementById('om-wan-inet-hostname').textContent = data.hostname || '—';
+
+        var ip = data.ip || '';
+        document.getElementById('om-wan-inet-ipv4').textContent = (ip && ip.indexOf(':') === -1) ? ip : '—';
+        document.getElementById('om-wan-inet-ipv6').textContent = (ip && ip.indexOf(':') !== -1) ? ip : '—';
 
         var geo = [data.city, data.region, data.country].filter(function (v) { return v; });
         document.getElementById('om-wan-inet-geo').textContent = geo.length ? geo.join(', ') : '—';
@@ -948,7 +958,7 @@
   }
 
   function initWanInternet() {
-    if (!document.getElementById('om-wan-inet-ip')) return; // not on this page
+    if (!document.getElementById('om-wan-inet-isp')) return; // not on this page
     fetchWanInternet();
     setInterval(fetchWanInternet, WAN_INTERNET_REFRESH_MS);
   }
