@@ -848,7 +848,7 @@
      More rows are added freely above this floor; it's a minimum, not a
      cap. */
   var MIN_CA_ROWS = 5;
-  var CA_EMPTY_ROW = '<tr class="om-ca-row-empty"><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>';
+  var CA_EMPTY_ROW = '<tr class="om-ca-row-empty"><td>—</td><td>—</td><td>—</td><td>—</td></tr>';
 
   function padCaRows(rows) {
     var out = rows.slice();
@@ -882,7 +882,7 @@
     if (!Array.isArray(carriers) || !carriers.length) {
       bar.innerHTML = '<div class="om-ca-bwbar-empty"></div>';
       freqRow.innerHTML = '';
-      tbody.innerHTML = padCaRows(['<tr><td colspan="5" class="om-note">No carrier aggregation active.</td></tr>']).join('');
+      tbody.innerHTML = padCaRows(['<tr><td colspan="4" class="om-note">No carrier aggregation active.</td></tr>']).join('');
       return;
     }
 
@@ -943,9 +943,6 @@
     var caRows = withFreq.map(function (s) {
       var c = s.c;
       var cls = CA_SEG_CLASSES[s.i % CA_SEG_CLASSES.length];
-      var est = typeof c.dl_estimated_mbps === 'number' ? c.dl_estimated_mbps : null;
-      var max = typeof c.dl_maximum_mbps === 'number' ? c.dl_maximum_mbps : null;
-      var thpt = (est !== null && max !== null) ? (est + ' / ' + max + ' Mbps') : '—';
       var idTitle = 'EARFCN ' + (c.earfcn || '—') + ' · PCI ' + (c.pci || '—');
       return '<tr>' +
         '<td><span class="om-ca-carrier-badge ' + cls + '">' + escapeHtml(c.type || '') + '</span>' +
@@ -953,7 +950,6 @@
         '<td>' + fmtBwCell(s.bw, c.mimo_layers) + '</td>' +
         '<td>' + sigBarCell(c.rsrp, RSRP_ZONES, RSRP_MIN, RSRP_MAX, 'dBm') + '</td>' +
         '<td>' + sigBarCell(c.sinr, SINR_ZONES, SINR_MIN, SINR_MAX, 'dB') + '</td>' +
-        '<td>' + thpt + '</td>' +
         '</tr>';
     });
     tbody.innerHTML = padCaRows(caRows).join('');
