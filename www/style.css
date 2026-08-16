@@ -109,6 +109,12 @@ body {
   padding: 1rem;
   display: flex;
   flex-direction: column;
+  /* Grid items default to min-width:auto (their content's intrinsic
+     minimum), not 0 — without this, a wide child (e.g. the CA table)
+     pushes this whole grid item wider instead of ever triggering its
+     own .om-table-wrap { overflow-x: auto }, dragging the entire page
+     into horizontal scroll instead of just scrolling the table. */
+  min-width: 0;
 }
 
 /* A card's primary action button (not one nested inside a button group
@@ -366,6 +372,19 @@ body {
   font-weight: 600;
   white-space: nowrap;
   flex-shrink: 0;
+}
+
+/* Below the same width this app already treats as "mobile" (the
+   sidebar/tabbar breakpoint further down), the signal bar's 100px
+   min-width — ×2 per CA table row (RSRP + SINR) — was the single
+   biggest reason that table forced the whole Carrier Aggregation card
+   into horizontal scroll on a phone. The bar track carries no
+   information the colored value text doesn't already convey (same
+   zone color drives both), so drop the track and let the cell shrink
+   to just the value. */
+@media (max-width: 767px) {
+  .om-sigbar { min-width: 0; }
+  .om-sigbar-track { display: none; }
 }
 
 /* ── Carrier Aggregation (Cellular page) ── */
