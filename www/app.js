@@ -940,13 +940,19 @@
       return '<div class="om-ca-bwbar-freq-seg" style="width:' + segWidthPct(seg).toFixed(1) + '%">' + (seg.isUl ? 'UL ' : 'DL ') + label + '</div>';
     }).join('');
 
-    var caRows = withFreq.map(function (s) {
+    var caRows = withFreq.map(function (s, idx) {
       var c = s.c;
       var cls = CA_SEG_CLASSES[s.i % CA_SEG_CLASSES.length];
-      var idTitle = 'EARFCN ' + (c.earfcn || '—') + ' · PCI ' + (c.pci || '—');
-      return '<tr>' +
-        '<td><span class="om-ca-carrier-badge ' + cls + '">' + escapeHtml(c.type || '') + '</span>' +
-        '<span class="om-ca-carrier-name" title="' + escapeHtml(idTitle) + '">' + escapeHtml(fmtCarrierBand(c.band)) + '</span></td>' +
+      var nameCls = 'om-ca-name-' + (s.i % CA_SEG_CLASSES.length);
+      var idTitle = (c.type || '') + ' · EARFCN ' + (c.earfcn || '—') + ' · PCI ' + (c.pci || '—');
+      // A small top-border divider whenever type changes from the row
+      // above (PCC -> SCC in the modem's normal reported order, but
+      // driven by the actual data rather than assuming exactly one
+      // leading PCC row) groups the carriers without needing the
+      // PCC/SCC text label this replaced.
+      var groupCls = (idx > 0 && withFreq[idx - 1].c.type !== c.type) ? ' om-ca-row-group-start' : '';
+      return '<tr class="' + groupCls.trim() + '">' +
+        '<td><span class="om-ca-carrier-name ' + nameCls + '" title="' + escapeHtml(idTitle) + '">' + escapeHtml(fmtCarrierBand(c.band)) + '</span></td>' +
         '<td>' + fmtBwCell(s.bw, c.mimo_layers) + '</td>' +
         '<td>' + sigBarCell(c.rsrp, RSRP_ZONES, RSRP_MIN, RSRP_MAX, 'dBm') + '</td>' +
         '<td>' + sigBarCell(c.sinr, SINR_ZONES, SINR_MIN, SINR_MAX, 'dB') + '</td>' +
