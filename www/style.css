@@ -467,27 +467,32 @@ body {
   text-overflow: ellipsis;
 }
 
-/* Band name text itself carries the per-carrier color that used to
-   live on a separate "PCC"/"SCC" pill (removed — that identity is
-   still one hover away, folded into this element's title tooltip
-   below, same as EARFCN/PCI already were). Same hex values as
-   .om-ca-seg-0..3 so a row's text color matches its bar segment. */
-.om-ca-name-0 { color: #2f6fed; }
-.om-ca-name-1 { color: #1f9e75; }
-.om-ca-name-2 { color: #d98b1f; }
-.om-ca-name-3 { color: #8b5cf6; }
-
+/* The pill treatment that used to sit on a separate "PCC"/"SCC" badge
+   (removed — that identity is still one hover away, folded into this
+   element's title tooltip, same as EARFCN/PCI already were) now
+   applies directly to the band name text itself. Same hex values as
+   .om-ca-seg-0..3 so a row's pill color matches its bar segment. */
 .om-ca-carrier-name {
-  font-weight: 600;
+  display: inline-block;
+  padding: 0.1rem 0.4rem;
+  border-radius: 4px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: #fff;
   cursor: help;
-  border-bottom: 1px dotted var(--text-dim);
 }
+.om-ca-name-0 { background: #2f6fed; }
+.om-ca-name-1 { background: #1f9e75; }
+.om-ca-name-2 { background: #d98b1f; }
+.om-ca-name-3 { background: #8b5cf6; }
 
-/* Small delineation between the PCC row and the SCC rows below it —
-   set on whichever row's type first differs from the row above it
-   (see caRows in app.js), not hardcoded to "row 2 onward". */
+/* Delineation between the PCC row (always first) and the SCC rows
+   below it — set on whichever row's type first differs from the row
+   above it (see caRows in app.js), not hardcoded to "row 2 onward".
+   Thicker than the table's normal 1px row borders on purpose, this is
+   the one divider meant to stand out. */
 .om-ca-row-group-start td {
-  border-top: 2px solid var(--border);
+  border-top: 3px solid var(--border);
 }
 
 /* ── Data tables (Cellular page) ── */
