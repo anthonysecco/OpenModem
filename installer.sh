@@ -90,7 +90,7 @@ for svc in \
     socat-smd11 socat-smd11-to-ttyIN socat-smd11-from-ttyIN \
     socat-smd7 socat-smd7-to-ttyIN2 socat-smd7-from-ttyIN2 socat-killsmd7bridge \
     simplefirewall ttl-override \
-    openmodem-poller openmodem-broker openmodem-httpd openmodem-iptables
+    openmodem-poller openmodem-broker openmodem-httpd openmodem-iptables openmodem-netpoller
 do
     systemctl stop "$svc" 2>/dev/null
     systemctl disable "$svc" 2>/dev/null
@@ -139,6 +139,7 @@ systemctl daemon-reload 2>/dev/null
 pkill -f "httpd.*8080"        2>/dev/null
 pkill -f "at_broker.sh"       2>/dev/null
 pkill -f "at_poller.sh"       2>/dev/null
+pkill -f "net_poller.sh"      2>/dev/null
 pkill -f "socat-armel-static" 2>/dev/null
 pkill -f "build_modem_status" 2>/dev/null
 
@@ -212,7 +213,7 @@ download() {
 FAIL=0
 
 echo "  Downloading bin scripts..."
-for script in at_broker.sh at_command.sh at_poller.sh apply_iptables.sh; do
+for script in at_broker.sh at_command.sh at_poller.sh apply_iptables.sh net_poller.sh; do
     download "$REPO/bin/$script" "$INSTALL_DIR/bin/$script" || FAIL=1
 done
 
@@ -222,7 +223,7 @@ for page in style.css app.js index.html cellular.html sim.html wan.html lan.html
 done
 
 echo "  Downloading CGI scripts..."
-for cgi in state.sh update.sh at_cmd.sh band_lock.sh carrier_scan.sh lan_action.sh wan_action.sh internet_info.sh sim_action.sh network_action.sh; do
+for cgi in state.sh update.sh at_cmd.sh band_lock.sh carrier_scan.sh lan_action.sh wan_action.sh internet_info.sh sim_action.sh network_action.sh net_state.sh; do
     download "$REPO/www/cgi-bin/$cgi" "$INSTALL_DIR/www/cgi-bin/$cgi" || FAIL=1
 done
 
@@ -330,6 +331,21 @@ RemainAfterExit=yes
 WantedBy=multi-user.target
 EOF
 
+cat > /tmp/openmodem-netpoller.service << 'EOF'
+[Unit]
+Description=OpenModem Connectivity Poller (ICMP + 204 check)
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/bin/sh /usrdata/openmodem/bin/net_poller.sh
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
 echo "  Service files created."
 
 # --- Install systemd services ---
@@ -337,18 +353,20 @@ echo "[6/7] Installing systemd autostart..."
 
 # Still read-write from step 1's remount.
 echo "  Installing service files to /lib/systemd/system/..."
-cp /tmp/openmodem-broker.service   /lib/systemd/system/
-cp /tmp/openmodem-poller.service   /lib/systemd/system/
-cp /tmp/openmodem-httpd.service    /lib/systemd/system/
-cp /tmp/openmodem-iptables.service /lib/systemd/system/
+cp /tmp/openmodem-broker.service    /lib/systemd/system/
+cp /tmp/openmodem-poller.service    /lib/systemd/system/
+cp /tmp/openmodem-httpd.service     /lib/systemd/system/
+cp /tmp/openmodem-iptables.service  /lib/systemd/system/
+cp /tmp/openmodem-netpoller.service /lib/systemd/system/
 
 systemctl daemon-reload
 
 echo "  Creating autostart symlinks..."
-ln -sf /lib/systemd/system/openmodem-broker.service   /lib/systemd/system/multi-user.target.wants/
-ln -sf /lib/systemd/system/openmodem-poller.service   /lib/systemd/system/multi-user.target.wants/
-ln -sf /lib/systemd/system/openmodem-httpd.service    /lib/systemd/system/multi-user.target.wants/
-ln -sf /lib/systemd/system/openmodem-iptables.service /lib/systemd/system/multi-user.target.wants/
+ln -sf /lib/systemd/system/openmodem-broker.service    /lib/systemd/system/multi-user.target.wants/
+ln -sf /lib/systemd/system/openmodem-poller.service    /lib/systemd/system/multi-user.target.wants/
+ln -sf /lib/systemd/system/openmodem-httpd.service     /lib/systemd/system/multi-user.target.wants/
+ln -sf /lib/systemd/system/openmodem-iptables.service  /lib/systemd/system/multi-user.target.wants/
+ln -sf /lib/systemd/system/openmodem-netpoller.service /lib/systemd/system/multi-user.target.wants/
 
 echo "  Remounting / as read-only..."
 mount -o remount,ro /
@@ -357,11 +375,14 @@ rm -f /tmp/openmodem-broker.service
 rm -f /tmp/openmodem-poller.service
 rm -f /tmp/openmodem-httpd.service
 rm -f /tmp/openmodem-iptables.service
+rm -f /tmp/openmodem-netpoller.service
 
 # --- Start services ---
 echo "[7/7] Starting services..."
 
 systemctl start openmodem-iptables.service
+
+systemctl start openmodem-netpoller.service
 
 systemctl start openmodem-broker.service
 
@@ -441,8 +462,14 @@ else
     echo "  FAIL Firewall/TTL rules: FAILED"
 fi
 
+if pgrep -f "net_poller.sh" > /dev/null; then
+    echo "  OK Connectivity poller: RUNNING"
+else
+    echo "  FAIL Connectivity poller: FAILED"
+fi
+
 echo ""
-echo "  Start:   systemctl start openmodem-broker.service openmodem-poller.service openmodem-httpd.service openmodem-iptables.service"
-echo "  Stop:    systemctl stop openmodem-httpd.service openmodem-poller.service openmodem-broker.service openmodem-iptables.service"
-echo "  Restart: systemctl restart openmodem-broker.service openmodem-poller.service openmodem-httpd.service openmodem-iptables.service"
-echo "  Status:  systemctl status openmodem-broker.service openmodem-poller.service openmodem-httpd.service openmodem-iptables.service"
+echo "  Start:   systemctl start openmodem-broker.service openmodem-poller.service openmodem-httpd.service openmodem-iptables.service openmodem-netpoller.service"
+echo "  Stop:    systemctl stop openmodem-httpd.service openmodem-poller.service openmodem-broker.service openmodem-iptables.service openmodem-netpoller.service"
+echo "  Restart: systemctl restart openmodem-broker.service openmodem-poller.service openmodem-httpd.service openmodem-iptables.service openmodem-netpoller.service"
+echo "  Status:  systemctl status openmodem-broker.service openmodem-poller.service openmodem-httpd.service openmodem-iptables.service openmodem-netpoller.service"

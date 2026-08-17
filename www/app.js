@@ -435,6 +435,76 @@
     applyRingDot('signal_nr_sinr', SINR_ZONES, state);
   }
 
+  /* ── Connectivity card (Dashboard) ───────────────────────────────────
+     Binary online/offline, not a live-changing measurement like RSRP/
+     RSRQ/SINR, so these dots stay a static halo (flash=false) — same
+     reasoning as Registration's dot in applyRegRingDot above. Colors
+     reuse the site's fixed green/red/gray status vocabulary rather than
+     the signal-quality gradient, since there's no in-between tier here. */
+  function connStatusColor(status) {
+    if (status === 'online') return '#34c777';
+    if (status === 'offline') return '#e05a4e';
+    return '#5c5c5e';
+  }
+
+  function connStatusText(status) {
+    if (status === 'online') return 'Online';
+    if (status === 'offline') return 'Offline';
+    return '—';
+  }
+
+  function renderConnectivityCard(netState) {
+    var icmpTextEl = document.getElementById('om-conn-icmp-text');
+    if (!icmpTextEl) return; // not on this page
+
+    var icmpStatus = netState.icmp_status;
+    var avg = netState.icmp_avg_rtt_ms;
+    icmpTextEl.textContent = (typeof avg === 'number' ? avg + ' ms · ' : '') + connStatusText(icmpStatus);
+    var icmpDotEl = document.getElementById('om-conn-icmp-dot');
+    if (icmpDotEl) setRingDotColor(icmpDotEl, connStatusColor(icmpStatus), false);
+
+    var check204Status = netState.check204_status;
+    var check204TextEl = document.getElementById('om-conn-check204-text');
+    if (check204TextEl) check204TextEl.textContent = connStatusText(check204Status);
+    var check204DotEl = document.getElementById('om-conn-check204-dot');
+    if (check204DotEl) setRingDotColor(check204DotEl, connStatusColor(check204Status), false);
+  }
+
+  /* ── Connectivity polling: separate endpoint, separate cadence ───────
+     net_poller.sh writes net_state.json on its own schedule (as fast as
+     every NET_ICMP_INTERVAL seconds, decoupled from POLL_INTERVAL) — see
+     that script's header for why it's a standalone daemon. Mirrors
+     refreshState()'s own fetch-faster-than-backend / gate-on-_polled_at
+     pattern (same phase-lock pitfall applies here as there — see that
+     function's comment) rather than reusing refreshState's timer
+     directly, since the two endpoints update independently. Guarded on
+     the card actually being present so pages without it don't poll at
+     all, not just skip rendering. */
+  var NET_FAST_POLL_MS = 2000;
+  var netRefreshTimer = null;
+  var lastSeenNetPolledAt = null;
+
+  function scheduleNetRefresh(delayMs) {
+    if (netRefreshTimer) clearTimeout(netRefreshTimer);
+    netRefreshTimer = setTimeout(refreshNetState, delayMs);
+  }
+
+  function refreshNetState() {
+    if (!document.getElementById('om-conn-icmp-text')) return; // not on this page
+    fetch('/cgi-bin/net_state.sh')
+      .then(function (r) { return r.json(); })
+      .then(function (netState) {
+        if (!netState._error && netState._polled_at !== lastSeenNetPolledAt) {
+          lastSeenNetPolledAt = netState._polled_at;
+          renderConnectivityCard(netState);
+        }
+        scheduleNetRefresh(NET_FAST_POLL_MS);
+      })
+      .catch(function () {
+        scheduleNetRefresh(NET_FAST_POLL_MS);
+      });
+  }
+
   /* ── Polling: fetches fast, renders only on genuine new data ─────────
      state.sh just cats the poller's already-written JSON file — no AT
      command involved — so fetching it faster than POLL_INTERVAL doesn't
@@ -1912,6 +1982,7 @@
 
   document.addEventListener('DOMContentLoaded', function () {
     refreshState();
+    refreshNetState();
     setInterval(tickAge, 1000);
     initUpdateButton();
     initAtTerminal();
