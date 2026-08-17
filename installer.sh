@@ -192,7 +192,16 @@ download() {
     _url="$1"
     _dest="$2"
     echo "    $_dest"
-    curl -fsSL -o "$_dest" "$_url"
+    # -4: force IPv4. Confirmed live (2026-08-17, after a modem reset)
+    # that this device's cellular WAN can reach raw.githubusercontent.com
+    # over IPv4 in ~0.3-5s but times out over IPv6 (curl's default
+    # Happy-Eyeballs racing doesn't fall back fast enough within a
+    # single download's window) — github.com and objects.githubusercontent.com
+    # both answered fine meanwhile, so this isn't a general outage, just
+    # a broken/blackholed IPv6 path to Fastly's raw.githubusercontent.com
+    # range specifically over this carrier connection. Forcing IPv4
+    # sidesteps it rather than depending on Happy-Eyeballs recovering in time.
+    curl -4 -fsSL -o "$_dest" "$_url"
     if [ $? -ne 0 ]; then
         echo "  ERROR: Failed to download $_url"
         return 1
