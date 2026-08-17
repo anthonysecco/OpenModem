@@ -224,6 +224,38 @@ body {
   align-self: center;
 }
 
+/* 5-minute trend sparklines (Dashboard) — same thin-vertical-bar
+   technique as .om-sig-bar/.om-topbar-sigbar, just many more of them and
+   flex-sized (flex:1 1 0, not a fixed px width) so however many samples
+   are currently in the window (fewer than the full 60 right after a
+   fresh boot/restart) still spread evenly across the card's width
+   instead of leaving a gap. */
+.om-spark-label {
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 0.7rem;
+  margin: 0.6rem 0 0.3rem;
+}
+
+.om-spark-label:first-child {
+  margin-top: 0;
+}
+
+.om-spark {
+  display: flex;
+  align-items: flex-end;
+  gap: 1px;
+  height: 48px;
+  padding: 0.25rem 0;
+}
+
+.om-spark-bar {
+  flex: 1 1 0;
+  min-width: 2px;
+  border-radius: 1px 1px 0 0;
+}
+
 /* Groups a value with its status dot (see .om-ring-dot below) so the
    pair reads as .om-row's single "right side" flex item — without
    this, a bare 3rd child (label / value / dot) would space-between

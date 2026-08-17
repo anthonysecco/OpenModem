@@ -28,12 +28,15 @@ NET_CHECK204_URL=http://connectivitycheck.gstatic.com/generate_204
 NET_CHECK204_HEALTHY_INTERVAL=60
 NET_CHECK204_RETRY_INTERVAL=10
 NET_CHECK204_RECOVER_SUCCESSES=2
+HISTORY_WINDOW_SAMPLES=60
 [ -f "$CONF_FILE" ] && . "$CONF_FILE"
 
 RUN_DIR="/tmp/openmodem"
 LOG_FILE="$RUN_DIR/net_poller.log"
 STATE_FILE="$RUN_DIR/net_state.json"
 CHECK204_FILE="$RUN_DIR/net_check204_status"
+HISTORY_FILE="$RUN_DIR/history_net.json"
+HISTORY_SCRATCH="$RUN_DIR/history_net_scratch"
 LOG_MAX_BYTES=262144
 LOG_SLOTS=2
 
@@ -153,6 +156,24 @@ summarize_icmp_window() {
     fi
 }
 
+# -- 5-minute latency/jitter history ring buffer -----------------------
+# Same shape as at_poller.sh's append_signal_history: HISTORY_SCRATCH is
+# newline-delimited JSON objects (trim = `tail -n HISTORY_WINDOW_SAMPLES`,
+# no array parsing needed), HISTORY_FILE (served by
+# www/cgi-bin/history_net.sh) is rebuilt from the trimmed scratch and
+# atomic-written every cycle. Lives in icmp_loop, not check204_loop,
+# since icmp_loop already runs every NET_ICMP_INTERVAL and already has
+# _icmp_avg/_icmp_jitter computed for this cycle — no separate timer needed.
+append_net_history() {
+    _hts="$1"
+    _line="{\"t\":${_hts},\"latency_ms\":$(json_num_or_null "$_icmp_avg"),\"jitter_ms\":$(json_num_or_null "$_icmp_jitter")}"
+    { [ -f "$HISTORY_SCRATCH" ] && cat "$HISTORY_SCRATCH"; printf '%s\n' "$_line"; } \
+        | tail -n "$HISTORY_WINDOW_SAMPLES" > "${HISTORY_SCRATCH}.tmp" && mv "${HISTORY_SCRATCH}.tmp" "$HISTORY_SCRATCH"
+
+    _arr=$(awk 'NR>1{printf ","} {printf "%s", $0} END{print ""}' "$HISTORY_SCRATCH")
+    printf '[%s]\n' "$_arr" > "${HISTORY_FILE}.tmp" && mv "${HISTORY_FILE}.tmp" "$HISTORY_FILE"
+}
+
 icmp_loop() {
     _window=""
     while :; do
@@ -174,8 +195,10 @@ icmp_loop() {
         _check204_status=""
         [ -f "$CHECK204_FILE" ] && _check204_status=$(cat "$CHECK204_FILE" 2>/dev/null)
 
-        _json='{"_polled_at":'"$(date +%s)"',"icmp_target":'"$(json_str_or_null "$NET_ICMP_TARGET")"',"icmp_status":'"$(json_status "$_icmp_status")"',"icmp_avg_rtt_ms":'"$(json_num_or_null "$_icmp_avg")"',"icmp_jitter_ms":'"$(json_num_or_null "$_icmp_jitter")"',"check204_status":'"$(json_status "$_check204_status")"'}'
+        _cycle_t=$(date +%s)
+        _json='{"_polled_at":'"$_cycle_t"',"icmp_target":'"$(json_str_or_null "$NET_ICMP_TARGET")"',"icmp_status":'"$(json_status "$_icmp_status")"',"icmp_avg_rtt_ms":'"$(json_num_or_null "$_icmp_avg")"',"icmp_jitter_ms":'"$(json_num_or_null "$_icmp_jitter")"',"check204_status":'"$(json_status "$_check204_status")"'}'
         printf '%s\n' "$_json" > "${STATE_FILE}.tmp" && mv "${STATE_FILE}.tmp" "$STATE_FILE"
+        append_net_history "$_cycle_t"
 
         log_dbg "icmp=$_icmp_status avg=${_icmp_avg}ms jitter=${_icmp_jitter}ms check204=$_check204_status window=[$_window]"
         rotate_log

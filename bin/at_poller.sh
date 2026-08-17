@@ -16,12 +16,15 @@
 CONF_FILE="/usrdata/openmodem/config/openmodem.conf"
 LOG_LEVEL=1
 POLL_INTERVAL=10
+HISTORY_WINDOW_SAMPLES=60
 [ -f "$CONF_FILE" ] && . "$CONF_FILE"
 
 AT_CMD_BIN="/usrdata/openmodem/bin/at_command.sh"
 RUN_DIR="/tmp/openmodem"
 LOG_FILE="$RUN_DIR/poller.log"
 STATE_FILE="$RUN_DIR/state_merged.json"
+HISTORY_FILE="$RUN_DIR/history_signal.json"
+HISTORY_SCRATCH="$RUN_DIR/history_signal_scratch"
 LOG_MAX_BYTES=262144
 LOG_SLOTS=2
 
@@ -120,6 +123,29 @@ json_bool() {
 
 atomic_write() {
     printf '%s\n' "$1" > "${STATE_FILE}.tmp" && mv "${STATE_FILE}.tmp" "$STATE_FILE"
+}
+
+# -- 5-minute signal history ring buffer -----------------------------------
+# HISTORY_SCRATCH holds one JSON object per line (newline-delimited, not a
+# JSON array itself) — trimming a fixed-size window is then just
+# `tail -n HISTORY_WINDOW_SAMPLES`, no JSON array parsing/splitting needed.
+# HISTORY_FILE (what the front end actually polls, via
+# www/cgi-bin/history_signal.sh) is rebuilt fresh from that trimmed scratch
+# every cycle and atomic-written the same write-to-.tmp-then-mv way as
+# STATE_FILE above. At the default POLL_INTERVAL=5s and
+# HISTORY_WINDOW_SAMPLES=60, that's a 5-minute trailing window; both are
+# config keys (config/openmodem.conf) so they stay in sync if either
+# changes. Accumulates every cycle regardless of whether any browser has
+# the Dashboard open — a page opening for the first time still sees the
+# preceding 5 minutes via history_signal.sh's initial fetch.
+append_signal_history() {
+    _t="$1"
+    _line="{\"t\":${_t},\"lte_rsrp\":${F_LTE_RSRP},\"lte_rsrq\":${F_LTE_RSRQ},\"lte_sinr\":${F_LTE_SINR},\"nr_rsrp\":${F_NR_RSRP},\"nr_rsrq\":${F_NR_RSRQ},\"nr_sinr\":${F_NR_SINR}}"
+    { [ -f "$HISTORY_SCRATCH" ] && cat "$HISTORY_SCRATCH"; printf '%s\n' "$_line"; } \
+        | tail -n "$HISTORY_WINDOW_SAMPLES" > "${HISTORY_SCRATCH}.tmp" && mv "${HISTORY_SCRATCH}.tmp" "$HISTORY_SCRATCH"
+
+    _arr=$(awk 'NR>1{printf ","} {printf "%s", $0} END{print ""}' "$HISTORY_SCRATCH")
+    printf '[%s]\n' "$_arr" > "${HISTORY_FILE}.tmp" && mv "${HISTORY_FILE}.tmp" "$HISTORY_FILE"
 }
 
 # AT+CGPADDR reports IPv6 as 16 dot-separated decimal octets (confirmed
@@ -1119,6 +1145,7 @@ while true; do
 
     _end=$(date +%s)
     write_state "$_start" "$(( _end - _start ))"
+    append_signal_history "$_start"
     log_dbg "Cycle ${_cycle} done in $(( _end - _start ))s"
 
     _elapsed=$(( _end - _start ))

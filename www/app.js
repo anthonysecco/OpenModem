@@ -529,6 +529,101 @@
     if (check204DotEl) setRingDotColor(check204DotEl, connStatusColor(check204Status), false);
   }
 
+  /* ── 5-minute trend history (Dashboard) ──────────────────────────────
+     Mirrors the server's own ring-buffer design: a fixed-size in-memory
+     window (HISTORY_WINDOW_SAMPLES, matching config's own default so a
+     tab left open way past 5 minutes doesn't grow unbounded either),
+     seeded once from history_signal.sh/history_net.sh on page load (so a
+     freshly-opened tab immediately sees the preceding 5 minutes the
+     server already accumulated, per the whole point of this feature —
+     see net_poller.sh/at_poller.sh's append_*_history()), then
+     live-appended to as refreshState()/refreshNetState() see genuinely
+     new poll data — no separate polling loop needed, this just piggybacks
+     on those two's existing gated new-data blocks. Record shapes match
+     the server's JSON exactly (lte_rsrp/nr_rsrp, latency_ms/jitter_ms)
+     rather than remapping at push time, so seeded and live-appended
+     records read identically in sparklineBarsHtml's accessors below. */
+  var HISTORY_WINDOW_SAMPLES = 60;
+  var historySignalSamples = [];
+  var historyNetSamples = [];
+
+  function pushCapped(arr, sample) {
+    arr.push(sample);
+    while (arr.length > HISTORY_WINDOW_SAMPLES) arr.shift();
+  }
+
+  // Whichever RAT's RSRP was actually reported for that sample — NR is
+  // only ever non-null when an NR leg was actually active at poll time
+  // (see at_poller.sh's collect_signal), so "NR present" is already a
+  // reliable proxy for "NR was the active RAT then", same rule
+  // currentRsrp() uses for the live topbar/Signal Strength card.
+  function historyRsrp(rec) {
+    return (typeof rec.nr_rsrp === 'number') ? rec.nr_rsrp : rec.lte_rsrp;
+  }
+
+  function sparklineBarsHtml(samples, getValue, zones, ascending, scaleMin, scaleMax) {
+    return samples.map(function (rec) {
+      var v = getValue(rec);
+      var has = typeof v === 'number';
+      var color = has ? (ascending ? ascZoneColor(v, zones) : sigZoneColor(v, zones)) : 'var(--border)';
+      var h = has ? sigPct(v, scaleMin, scaleMax) : 4;
+      return '<div class="om-spark-bar" style="height:' + h + '%;background:' + color + '"></div>';
+    }).join('');
+  }
+
+  function renderHistoryCharts() {
+    var rsrpEl = document.getElementById('om-hist-rsrp-spark');
+    if (rsrpEl) rsrpEl.innerHTML = sparklineBarsHtml(historySignalSamples, historyRsrp, RSRP_ZONES, false, RSRP_MIN, RSRP_MAX);
+
+    var latEl = document.getElementById('om-hist-latency-spark');
+    if (latEl) latEl.innerHTML = sparklineBarsHtml(historyNetSamples, function (r) { return r.latency_ms; }, LATENCY_ZONES, true, 0, 300);
+
+    var jitEl = document.getElementById('om-hist-jitter-spark');
+    if (jitEl) jitEl.innerHTML = sparklineBarsHtml(historyNetSamples, function (r) { return r.jitter_ms; }, JITTER_ZONES, true, 0, 50);
+  }
+
+  // One-time seed from the server's already-accumulated ring buffer.
+  // Guarded so a live sample that arrives first (fetch is async, could
+  // race the very first refreshState()/refreshNetState() tick) isn't
+  // clobbered by the seed landing after it — worst case is a shorter
+  // initial window that fills back in on its own, never a discarded
+  // live sample.
+  function seedHistoryOnce() {
+    if (!document.getElementById('om-hist-rsrp-spark')) return; // not on this page
+
+    fetch('/cgi-bin/history_signal.sh')
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        if (Array.isArray(data) && historySignalSamples.length === 0) {
+          historySignalSamples = data.slice(-HISTORY_WINDOW_SAMPLES);
+        }
+        renderHistoryCharts();
+      })
+      .catch(function () {});
+
+    fetch('/cgi-bin/history_net.sh')
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        if (Array.isArray(data) && historyNetSamples.length === 0) {
+          historyNetSamples = data.slice(-HISTORY_WINDOW_SAMPLES);
+        }
+        renderHistoryCharts();
+      })
+      .catch(function () {});
+  }
+
+  function pushSignalHistorySample(state) {
+    if (!document.getElementById('om-hist-rsrp-spark')) return; // not on this page
+    pushCapped(historySignalSamples, { t: state._polled_at, lte_rsrp: state.signal_lte_rsrp, nr_rsrp: state.signal_nr_rsrp });
+    renderHistoryCharts();
+  }
+
+  function pushNetHistorySample(netState) {
+    if (!document.getElementById('om-hist-latency-spark')) return; // not on this page
+    pushCapped(historyNetSamples, { t: netState._polled_at, latency_ms: netState.icmp_avg_rtt_ms, jitter_ms: netState.icmp_jitter_ms });
+    renderHistoryCharts();
+  }
+
   /* ── Connectivity polling: separate endpoint, separate cadence ───────
      net_poller.sh writes net_state.json on its own schedule (as fast as
      every NET_ICMP_INTERVAL seconds, decoupled from POLL_INTERVAL) — see
@@ -556,6 +651,7 @@
         if (!netState._error && netState._polled_at !== lastSeenNetPolledAt) {
           lastSeenNetPolledAt = netState._polled_at;
           renderConnectivityCard(netState);
+          pushNetHistorySample(netState);
         }
         scheduleNetRefresh(NET_FAST_POLL_MS);
       })
@@ -611,6 +707,7 @@
           renderTopbarSignal(state);
           renderCellTooltips(state);
           renderStatusDots(state);
+          pushSignalHistorySample(state);
           markRefreshedNow();
         }
         scheduleRefresh(FAST_POLL_MS);
@@ -2038,6 +2135,7 @@
   document.addEventListener('DOMContentLoaded', function () {
     refreshState();
     refreshNetState();
+    seedHistoryOnce();
     setInterval(tickAge, 1000);
     initUpdateButton();
     initAtTerminal();
