@@ -99,10 +99,10 @@
   var RSRP_MIN = -140, RSRP_MAX = -75;
   var SINR_MIN = -10, SINR_MAX = 30;
   var RSRP_ZONES = [
-    { thresh: -80, bar: '#34c777' },
-    { thresh: -90, bar: '#2fa66b' },
-    { thresh: -100, bar: '#e0a63e' },
-    { thresh: -999, bar: '#e05a4e' }
+    { thresh: -80, bar: '#34c777', label: 'Excellent' },
+    { thresh: -90, bar: '#2fa66b', label: 'Good' },
+    { thresh: -100, bar: '#e0a63e', label: 'Fair' },
+    { thresh: -999, bar: '#e05a4e', label: 'Poor' }
   ];
   var SINR_ZONES = [
     { thresh: 20, bar: '#34c777' },
@@ -127,6 +127,13 @@
       if (val >= zones[i].thresh) return zones[i].bar;
     }
     return zones[zones.length - 1].bar;
+  }
+
+  function sigZoneLabel(val, zones) {
+    for (var i = 0; i < zones.length; i++) {
+      if (val >= zones[i].thresh) return zones[i].label || '';
+    }
+    return zones[zones.length - 1].label || '';
   }
 
   function sigPct(val, min, max) {
@@ -444,6 +451,7 @@
           renderCarrierAggregation(state);
           renderNetPrefs(state);
           renderNetworkType(state);
+          renderSignalShowcase(state);
           renderCellTooltips(state);
           renderStatusDots(state);
           markRefreshedNow();
@@ -1072,6 +1080,77 @@
       text = 'LTE';
     }
     el.textContent = text;
+  }
+
+  /* ── Signal Strength style preview (Dashboard) ───────────────────────
+     Five visual treatments of the exact same reading, side by side, so
+     the user can pick which one(s) to keep — this card is a comparison
+     tool, not a finished design decision. All five are driven off one
+     shared value/color/label/pct computed once per refresh: the
+     currently active RAT's RSRP (NR takes priority when active, same
+     "which RAT is this really" logic as renderNetworkType() above),
+     run through the site's existing, UNCHANGED RSRP_ZONES/RSRP_MIN/
+     RSRP_MAX/sigZoneColor/sigZoneLabel/sigPct — this is purely a
+     presentation exercise, not a revisit of those thresholds. */
+  function currentRsrp(state) {
+    if (state.cell_nr_active && typeof state.signal_nr_rsrp === 'number') return state.signal_nr_rsrp;
+    return state.signal_lte_rsrp;
+  }
+
+  function renderSignalShowcase(state) {
+    var barsEl = document.getElementById('om-sig-bars');
+    if (!barsEl) return; // not on this page
+
+    var val = currentRsrp(state);
+    var has = typeof val === 'number';
+    var color = has ? sigZoneColor(val, RSRP_ZONES) : '#5c5c5e';
+    var label = has ? sigZoneLabel(val, RSRP_ZONES) : 'No Signal';
+    var pct = has ? sigPct(val, RSRP_MIN, RSRP_MAX) : 0;
+
+    // A. Phone-style bars — ascending heights, filled count from pct
+    // quartile (25/50/75/100), same "how many bars" logic a phone icon
+    // uses, just driven by this site's own pct instead of OS buckets.
+    var barHeights = [10, 18, 26, 34];
+    var litBars = has ? Math.max(1, Math.ceil(pct / 25)) : 0;
+    barsEl.innerHTML = barHeights.map(function (h, i) {
+      return '<div class="om-sig-bar" style="height:' + h + 'px;background:' + (i < litBars ? color : 'var(--border)') + '"></div>';
+    }).join('');
+
+    // B. Horizontal bar
+    var hbarEl = document.getElementById('om-sig-hbar');
+    hbarEl.innerHTML =
+      '<div class="om-sig-hbar-track"><div class="om-sig-hbar-fill" style="width:' + pct + '%;background:' + color + '"></div></div>' +
+      '<div class="om-sig-hbar-val" style="color:' + color + '">' + (has ? val + ' dBm' : '—') + '</div>';
+
+    // C. Gauge — semicircle arc, track always full, fill arc length
+    // scaled by pct via stroke-dasharray/dashoffset (141.4 ~= arc
+    // length for this path's radius-45 semicircle).
+    var gaugeEl = document.getElementById('om-sig-gauge');
+    var arcLen = 141.4;
+    var offset = arcLen * (1 - pct / 100);
+    gaugeEl.innerHTML =
+      '<svg viewBox="0 0 100 55" width="120" height="62">' +
+      '<path d="M5,50 A45,45 0 0 1 95,50" fill="none" stroke="var(--border)" stroke-width="9" stroke-linecap="round"/>' +
+      '<path d="M5,50 A45,45 0 0 1 95,50" fill="none" stroke="' + color + '" stroke-width="9" stroke-linecap="round" ' +
+      'stroke-dasharray="' + arcLen + '" stroke-dashoffset="' + offset + '"/>' +
+      '</svg>' +
+      '<div class="om-sig-gauge-val" style="color:' + color + '">' + (has ? pct + '%' : '—') + '</div>';
+
+    // D. Word + color
+    var wordEl = document.getElementById('om-sig-word');
+    wordEl.innerHTML =
+      '<div class="om-sig-word-label" style="color:' + color + '">' + label + '</div>' +
+      '<div class="om-sig-word-val">' + (has ? val + ' dBm' : 'No reading') + '</div>';
+
+    // E. Segmented dots — 5 segments, lit count scaled by pct.
+    var dotsEl = document.getElementById('om-sig-dots');
+    var segCount = 5;
+    var litSegs = has ? Math.max(1, Math.round((pct / 100) * segCount)) : 0;
+    var segs = [];
+    for (var i = 0; i < segCount; i++) {
+      segs.push('<span class="om-sig-dot" style="background:' + (i < litSegs ? color : 'var(--border)') + '"></span>');
+    }
+    dotsEl.innerHTML = segs.join('');
   }
 
   function initNetPrefs() {

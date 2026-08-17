@@ -714,6 +714,108 @@ body {
   color: var(--text-muted);
 }
 
+/* ── Signal Strength style preview (Dashboard) ──
+   A comparison card, not a finished component: five visual treatments
+   of the same reading laid out side by side so it's easy to eyeball
+   which one(s) to keep. Each item is its own bordered tile so they
+   read as distinct options, not one continuous widget. */
+.om-sigshowcase {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 1rem;
+  margin-top: 0.75rem;
+}
+
+.om-sigshowcase-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.6rem;
+  background: var(--surface-inset);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1.1rem 0.75rem;
+  min-height: 140px;
+  text-align: center;
+}
+
+.om-sigshowcase-label {
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-dim);
+}
+
+/* A. Phone-style bars */
+.om-sig-bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
+  height: 34px;
+}
+
+.om-sig-bar {
+  width: 8px;
+  border-radius: 2px;
+  transition: background 0.2s ease;
+}
+
+/* B. Horizontal bar */
+.om-sig-hbar-track {
+  width: 140px;
+  height: 12px;
+  background: var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.om-sig-hbar-fill {
+  height: 100%;
+  border-radius: 6px;
+  transition: width 0.3s ease;
+}
+
+.om-sig-hbar-val {
+  margin-top: 0.45rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+/* C. Gauge (semicircle arc) */
+.om-sig-gauge-val {
+  margin-top: -0.5rem;
+  font-weight: 700;
+  font-size: 1rem;
+}
+
+/* D. Word + color */
+.om-sig-word-label {
+  font-size: 1.5rem;
+  font-weight: 700;
+  line-height: 1.1;
+}
+
+.om-sig-word-val {
+  font-size: 0.72rem;
+  color: var(--text-dim);
+  margin-top: 0.25rem;
+}
+
+/* E. Segmented dots */
+.om-sig-dots {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.om-sig-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  transition: background 0.2s ease;
+}
+
 /* ── AT Terminal ──
    Modeled on a real terminal emulator (QuecControl's system.html
    terminal), styled with this same theme's own surface/border/text
