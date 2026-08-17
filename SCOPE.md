@@ -336,6 +336,28 @@ Confirmed on an actual RM520N-GL (2026-08-14), not assumed:
   210` for that session — plausible given the reported SINR/RSRQ, but
   the estimate itself has no independent ground truth (no throughput
   test was run against it).
+- Cellular's Network card (Network Mode / Data Roaming selectors, added
+  when Signal/Registration/Serving Cell were split into per-RAT LTE and
+  5G NR cards) needed two AT commands whose exact names weren't
+  documented anywhere in this project — found live by querying
+  `AT+QNWPREFCFG=?` and `AT+QNWCFG=?`'s own subcommand lists rather than
+  guessing from other Quectel modules' docs (2026-08-17):
+  `AT+QNWPREFCFG="mode_pref"` (colon-separated RAT list, same style as
+  `lte_band`/`nr5g_band`; current value read back `AUTO`) and
+  `AT+QNWCFG="data_roaming"` (plain `(0,1)` toggle; current value `0`).
+  The more commonly-documented Quectel roaming command elsewhere,
+  `AT+QCFG="roamservice"`, does **not** exist on this firmware — it
+  returned `ERROR` and is absent from `AT+QCFG=?`'s full list, confirmed
+  live before settling on `data_roaming` instead. Both commands' SET
+  forms were also confirmed live (set to their own current values,
+  non-disruptively) before shipping. A related real bug found in the
+  same session: `at_poller.sh`'s single whole-cycle AT chain aborts at
+  the first sub-command that ERRORs (already known — see CNUM's ordering
+  above) — `mode_pref`/`data_roaming` were first placed *after*
+  `nr5g_mimo_info` in that chain, which errors whenever there's no
+  active NR component carrier (the normal case on this LTE-only test
+  connection), and both fields came back silently `null` as a result.
+  Fixed by reordering them before `nr5g_mimo_info` instead.
 
 ## Open questions
 
