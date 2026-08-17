@@ -81,9 +81,9 @@
 
     var footer = document.getElementById('om-footer');
     if (footer) {
-      footer.innerHTML = '<span id="om-conn-status">Loading…</span> - Updated ' +
-        '<span data-field="_polled_at">—</span>' +
-        '<span class="om-ring-dot" id="om-footer-dot"></span>';
+      footer.innerHTML = '<span class="om-ring-dot" id="om-footer-dot"></span>' +
+        '<span id="om-conn-status">Loading…</span> - Updated ' +
+        '<span data-field="_polled_at">—</span>';
     }
   }
 
