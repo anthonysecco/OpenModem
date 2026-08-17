@@ -225,6 +225,55 @@ body {
   align-self: center;
 }
 
+/* Pulsing status dot (Pattern 2 of the status-indicator style guide)
+   after a row label — RSRP/RSRQ/SINR on the LTE/5G NR cards, one per
+   metric, each an independently-polled live value rather than one
+   generic "connected" indicator, which is why several of these can
+   coexist on one page without violating that guide's "max 1-2 animated
+   indicators per view" rule. Color isn't a fixed online/offline binary
+   here (the guide's own .pulse-dot only defines two states) — it's
+   whichever zone color app.js's sigZoneColor() computed against this
+   site's existing RSRP/RSRQ/SINR thresholds, set as this element's own
+   `color` so both the dot and its glow ring (background:currentColor)
+   pick it up from one JS-set value instead of needing a CSS class per
+   zone. */
+.om-pulse-dot {
+  position: relative;
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-left: 0.4rem;
+  border-radius: 50%;
+  background: currentColor;
+  color: var(--text-muted);
+  vertical-align: middle;
+  flex-shrink: 0;
+}
+
+.om-pulse-dot::after {
+  content: "";
+  position: absolute;
+  inset: -4px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.6;
+  animation: om-pulse-ring 5s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* No signal reading yet (not connected on this RAT) — go inert per the
+   guide's rule 3: gray (the default `color` above) and no animation,
+   rather than pulsing a meaningless value. */
+.om-pulse-dot-offline::after {
+  animation: none;
+  opacity: 0;
+}
+
+@keyframes om-pulse-ring {
+  0%   { transform: scale(0.6); opacity: 0.7; }
+  70%  { transform: scale(1.8); opacity: 0; }
+  100% { transform: scale(1.8); opacity: 0; }
+}
+
 /* A value too long to fit next to its label (long hostnames, IPv6
    addresses, multi-part locations) wraps to its own line below the
    label instead of clipping or squeezing into a narrow column —

@@ -95,6 +95,17 @@
     { thresh: 0, bar: '#e0a63e' },
     { thresh: -999, bar: '#e05a4e' }
   ];
+  /* RSRQ had no zone table before this — RSRP/SINR were the only
+     metrics ever color-coded (CA table columns). Thresholds are the
+     standard 3GPP RSRQ quality bands (dB, less negative = better),
+     same 4-tier shape and hex palette as RSRP/SINR above for a
+     consistent "site-wide thresholds" feel across all three. */
+  var RSRQ_ZONES = [
+    { thresh: -10, bar: '#34c777' },
+    { thresh: -15, bar: '#2fa66b' },
+    { thresh: -20, bar: '#e0a63e' },
+    { thresh: -999, bar: '#e05a4e' }
+  ];
 
   function sigZoneColor(val, zones) {
     for (var i = 0; i < zones.length; i++) {
@@ -258,6 +269,39 @@
     if (nrStateEl) nrStateEl.title = CELL_STATE_TOOLTIPS[state.cell_nr_state] || '';
   }
 
+  /* ── RSRP/RSRQ/SINR pulsing status dots (Cellular page) ──────────────
+     Pattern 2 (Pulsing Dot) from the status-indicator style guide,
+     after each signal metric's row label. Color is this site's own
+     existing zone thresholds (RSRP_ZONES/RSRQ_ZONES/SINR_ZONES, the
+     same ones sigBarCell() already draws the CA table's bars from), not
+     a plain online/offline binary — see .om-pulse-dot's CSS comment for
+     why one currentColor-driven class covers every zone. No value
+     (metric's RAT not connected) goes inert via .om-pulse-dot-offline,
+     which the markup already carries by default until this sets real
+     data — same "go gray and stop animating" rule the guide specifies
+     for offline state. */
+  function applyPulseDot(field, zones, state) {
+    var el = document.querySelector('[data-pulse="' + field + '"]');
+    if (!el) return;
+    var val = state[field];
+    if (typeof val === 'number') {
+      el.style.color = sigZoneColor(val, zones);
+      el.classList.remove('om-pulse-dot-offline');
+    } else {
+      el.classList.add('om-pulse-dot-offline');
+    }
+  }
+
+  function renderSignalPulseDots(state) {
+    if (!document.querySelector('[data-pulse="signal_lte_rsrp"]')) return; // not on this page
+    applyPulseDot('signal_lte_rsrp', RSRP_ZONES, state);
+    applyPulseDot('signal_lte_rsrq', RSRQ_ZONES, state);
+    applyPulseDot('signal_lte_sinr', SINR_ZONES, state);
+    applyPulseDot('signal_nr_rsrp', RSRP_ZONES, state);
+    applyPulseDot('signal_nr_rsrq', RSRQ_ZONES, state);
+    applyPulseDot('signal_nr_sinr', SINR_ZONES, state);
+  }
+
   /* ── Polling: fetches fast, renders only on genuine new data ─────────
      state.sh just cats the poller's already-written JSON file — no AT
      command involved — so fetching it faster than POLL_INTERVAL doesn't
@@ -301,6 +345,7 @@
           renderCarrierAggregation(state);
           renderNetPrefs(state);
           renderCellTooltips(state);
+          renderSignalPulseDots(state);
           markRefreshedNow();
         }
         scheduleRefresh(FAST_POLL_MS);
