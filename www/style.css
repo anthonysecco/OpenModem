@@ -224,37 +224,44 @@ body {
   align-self: center;
 }
 
-/* Trends card (Dashboard) — one row label + chart per metric (RSRP,
-   Latency, Jitter, Est. Speed), all sharing the same .om-chart-wrap
-   line-chart look below. The metric name carries its own unit inline
-   (e.g. "Latency (ms)") — just a plain title line above its chart. */
-.om-chart-row-label {
+/* Hero metric rows (Connectivity's Latency/Jitter, Signal Trends' RSRP/
+   Est. Speed) — a small uppercase label, then a large colored current
+   value, then its 5-minute trend chart below for context. Hero-first
+   layout (big number you read at a glance, chart underneath for anyone
+   who wants the trend) rather than overlaying the value on the chart
+   itself — clearer for a quick glance, and the number never has to
+   compete with the line/fill behind it. app.js's renderLineChart sets
+   both .om-hero-value's text and its color (matching that value's
+   current zone) on every render. */
+.om-hero-label {
   color: var(--text-dim);
   text-transform: uppercase;
   letter-spacing: 0.04em;
   font-size: 0.7rem;
-  margin: 0.9rem 0 0.2rem;
+  margin: 0.9rem 0 0.1rem;
 }
 
-.om-chart-row-label:first-child {
+.om-hero-label:first-child {
   margin-top: 0;
 }
 
-/* Smoothed line chart (Trends card: RSRP, Latency, Jitter, Est. Speed
-   each get their own row, sharing this same markup/CSS) — app.js's
-   renderLineChart/initChartHover build the <svg> content and position
-   .om-chart-tooltip via inline left/top, both relative to this wrap.
-   Axis min/max sit at the left (the metric's own fixed expected-range
-   bounds, e.g. RSRP_MIN/MAX, not an auto-scaled data range — a tiny
-   wobble between two close values shouldn't look like a huge swing);
-   .om-chart-latest sits at the right, vertically centered on the chart
-   — the chart itself already reads oldest-to-newest left-to-right, so
-   the right side is where a reader's eye lands on "now" anyway, and a
-   fixed center position (rather than tracking the last point's actual
-   height) keeps it from wandering around/overlapping the axis labels
-   as the value swings. touch-action:none on the svg stops a
-   touch-and-hold on the chart from also triggering a page scroll on
-   mobile while reading a value. */
+.om-hero-value {
+  font-size: 1.8rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.15;
+  margin-bottom: 0.15rem;
+}
+
+/* Smoothed line chart (RSRP, Latency, Jitter, Est. Speed all share this
+   same markup/CSS) — app.js's renderLineChart/initChartHover build the
+   <svg> content and position .om-chart-tooltip via inline left/top,
+   both relative to this wrap. Axis min/max are each metric's own fixed
+   expected-range bounds (e.g. RSRP_MIN/MAX), not an auto-scaled data
+   range — a tiny wobble between two close values shouldn't look like a
+   huge swing. touch-action:none on the svg stops a touch-and-hold on
+   the chart from also triggering a page scroll on mobile while reading
+   a value. */
 .om-chart-wrap {
   position: relative;
   padding: 0.4rem 0 0.2rem;
@@ -282,20 +289,6 @@ body {
 
 .om-chart-axis-min {
   bottom: 0.2rem;
-}
-
-.om-chart-latest {
-  position: absolute;
-  right: 0.3rem;
-  top: 50%;
-  transform: translateY(-50%);
-  font-size: 1rem;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-  padding: 0.1rem 0.45rem;
-  border-radius: var(--radius);
-  background: rgba(28, 28, 30, 0.6);
-  pointer-events: none;
 }
 
 .om-chart-tooltip {

@@ -23,50 +23,48 @@
           <div id="om-sig-combo-word"></div>
         </div>
       </div>
-      <div class="om-card">
+      <div class="om-card om-card-wide">
         <h2>Connectivity</h2>
         <div class="om-row"><span class="om-row-label">Connectivity Check</span><span class="om-row-value-wrap"><span id="om-conn-check204-text">—</span><span class="om-ring-dot" id="om-conn-check204-dot"></span></span></div>
         <div class="om-row"><span class="om-row-label">Ping Check</span><span class="om-row-value-wrap"><span id="om-conn-icmp-status-text">—</span><span class="om-ring-dot" id="om-conn-icmp-dot"></span></span></div>
-        <div class="om-row"><span class="om-row-label">Latency</span><span class="om-row-value-wrap"><span id="om-conn-icmp-latency-text">—</span><span class="om-ring-dot" id="om-conn-icmp-latency-dot"></span></span></div>
-        <div class="om-row"><span class="om-row-label">Jitter</span><span class="om-row-value-wrap"><span id="om-conn-icmp-jitter-text">—</span><span class="om-ring-dot" id="om-conn-icmp-jitter-dot"></span></span></div>
-      </div>
-      <div class="om-card om-card-wide">
-        <h2>Trends (5 min)</h2>
 
-        <div class="om-chart-row-label">RSRP (dBm)</div>
-        <div class="om-chart-wrap">
-          <span class="om-chart-axis om-chart-axis-max">-75</span>
-          <span class="om-chart-axis om-chart-axis-min">-140</span>
-          <span class="om-chart-latest" id="om-hist-rsrp-chart-latest">—</span>
-          <svg class="om-chart-svg" id="om-hist-rsrp-chart"></svg>
-          <div class="om-chart-tooltip" id="om-hist-rsrp-chart-tooltip"></div>
-        </div>
-
-        <div class="om-chart-row-label">Est. Speed (Mbps)</div>
+        <div class="om-hero-label">Latency (ms)</div>
+        <div class="om-hero-value" id="om-hist-latency-chart-latest">—</div>
         <div class="om-chart-wrap">
           <span class="om-chart-axis om-chart-axis-max">250</span>
           <span class="om-chart-axis om-chart-axis-min">0</span>
-          <span class="om-chart-latest" id="om-hist-speed-chart-latest">—</span>
-          <svg class="om-chart-svg" id="om-hist-speed-chart"></svg>
-          <div class="om-chart-tooltip" id="om-hist-speed-chart-tooltip"></div>
-        </div>
-
-        <div class="om-chart-row-label">Latency (ms)</div>
-        <div class="om-chart-wrap">
-          <span class="om-chart-axis om-chart-axis-max">250</span>
-          <span class="om-chart-axis om-chart-axis-min">0</span>
-          <span class="om-chart-latest" id="om-hist-latency-chart-latest">—</span>
           <svg class="om-chart-svg" id="om-hist-latency-chart"></svg>
           <div class="om-chart-tooltip" id="om-hist-latency-chart-tooltip"></div>
         </div>
 
-        <div class="om-chart-row-label">Jitter (ms)</div>
+        <div class="om-hero-label">Jitter (ms)</div>
+        <div class="om-hero-value" id="om-hist-jitter-chart-latest">—</div>
         <div class="om-chart-wrap">
           <span class="om-chart-axis om-chart-axis-max">50</span>
           <span class="om-chart-axis om-chart-axis-min">0</span>
-          <span class="om-chart-latest" id="om-hist-jitter-chart-latest">—</span>
           <svg class="om-chart-svg" id="om-hist-jitter-chart"></svg>
           <div class="om-chart-tooltip" id="om-hist-jitter-chart-tooltip"></div>
+        </div>
+      </div>
+      <div class="om-card om-card-wide">
+        <h2>Signal Trends (5 min)</h2>
+
+        <div class="om-hero-label">RSRP (dBm)</div>
+        <div class="om-hero-value" id="om-hist-rsrp-chart-latest">—</div>
+        <div class="om-chart-wrap">
+          <span class="om-chart-axis om-chart-axis-max">-75</span>
+          <span class="om-chart-axis om-chart-axis-min">-140</span>
+          <svg class="om-chart-svg" id="om-hist-rsrp-chart"></svg>
+          <div class="om-chart-tooltip" id="om-hist-rsrp-chart-tooltip"></div>
+        </div>
+
+        <div class="om-hero-label">Est. Speed (Mbps)</div>
+        <div class="om-hero-value" id="om-hist-speed-chart-latest">—</div>
+        <div class="om-chart-wrap">
+          <span class="om-chart-axis om-chart-axis-max">250</span>
+          <span class="om-chart-axis om-chart-axis-min">0</span>
+          <svg class="om-chart-svg" id="om-hist-speed-chart"></svg>
+          <div class="om-chart-tooltip" id="om-hist-speed-chart-tooltip"></div>
         </div>
       </div>
     </div>

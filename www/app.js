@@ -523,6 +523,11 @@
     return '—';
   }
 
+  // Latency/Jitter are no longer duplicated here as small text+dot rows —
+  // they're the hero value + trend chart rendered by renderLineChart
+  // (via renderHistoryCharts, driven off historyNetSamples) directly
+  // inside the Connectivity card now, one source of truth instead of two
+  // competing displays of the same number.
   function renderConnectivityCard(netState) {
     var icmpStatusTextEl = document.getElementById('om-conn-icmp-status-text');
     if (!icmpStatusTextEl) return; // not on this page
@@ -531,22 +536,6 @@
     icmpStatusTextEl.textContent = connStatusText(icmpStatus);
     var icmpDotEl = document.getElementById('om-conn-icmp-dot');
     if (icmpDotEl) setRingDotColor(icmpDotEl, connStatusColor(icmpStatus), false);
-
-    var latencyEl = document.getElementById('om-conn-icmp-latency-text');
-    if (latencyEl) {
-      var avg = netState.icmp_avg_rtt_ms;
-      latencyEl.textContent = typeof avg === 'number' ? avg + ' ms' : '—';
-      var latencyDotEl = document.getElementById('om-conn-icmp-latency-dot');
-      if (latencyDotEl) setRingDotColor(latencyDotEl, typeof avg === 'number' ? ascZoneColor(avg, LATENCY_ZONES) : '#5c5c5e', true);
-    }
-
-    var jitterEl = document.getElementById('om-conn-icmp-jitter-text');
-    if (jitterEl) {
-      var jitter = netState.icmp_jitter_ms;
-      jitterEl.textContent = typeof jitter === 'number' ? jitter + ' ms' : '—';
-      var jitterDotEl = document.getElementById('om-conn-icmp-jitter-dot');
-      if (jitterDotEl) setRingDotColor(jitterDotEl, typeof jitter === 'number' ? ascZoneColor(jitter, JITTER_ZONES) : '#5c5c5e', true);
-    }
 
     var check204Status = netState.check204_status;
     var check204TextEl = document.getElementById('om-conn-check204-text');
@@ -669,11 +658,11 @@
     });
     chartPoints[containerId] = pts;
 
-    // Latest value, shown at the row label's right side — the chart
-    // itself already reads left-to-right oldest-to-newest, so "right
-    // side" is where a reader's eye lands on "now" anyway. Updated even
-    // with fewer than 2 points (the line itself needs at least 2 to
-    // draw a path, but a single sample is still a real "latest" value).
+    // Latest value, shown as the hero number above this chart (see
+    // .om-hero-value) — a big glanceable figure first, chart underneath
+    // for trend context. Updated even with fewer than 2 points (the
+    // line itself needs at least 2 to draw a path, but a single sample
+    // is still a real "latest" value).
     var latestEl = document.getElementById(containerId + '-latest');
     if (latestEl) {
       if (pts.length > 0) {
