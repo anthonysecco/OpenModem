@@ -650,6 +650,21 @@ body {
   border-top: 3px solid var(--border);
 }
 
+/* Fixed per-row height so the card doesn't visibly resize as SCCs come
+   and go — MIN_CA_ROWS in app.js already pads the row *count* out to a
+   floor, but that alone didn't fully stop the size jump: a real row's
+   .om-ca-carrier-name pill badge (its own padding/line-height) renders
+   a few px taller than an empty placeholder row's plain "—" text, and
+   that difference compounds visibly across several rows at once. `td`
+   height acts as a floor in table layout (content taller than this
+   still grows the row; content shorter gets centered via the default
+   vertical-align:middle), so every row in this table — empty, plain
+   text, or pill-badge — ends up the same height regardless of which
+   kind of content it holds. */
+#om-ca-tbody td {
+  height: 2.5rem;
+}
+
 /* ── Data tables (Cellular page) ── */
 .om-table-wrap {
   overflow-x: auto;

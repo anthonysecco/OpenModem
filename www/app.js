@@ -396,6 +396,7 @@
           renderSimSlots(state);
           renderCarrierAggregation(state);
           renderNetPrefs(state);
+          renderNetworkType(state);
           renderCellTooltips(state);
           renderStatusDots(state);
           markRefreshedNow();
@@ -999,6 +1000,28 @@
     document.getElementById('om-roaming-select').value = state.net_data_roaming === true ? '1' : '0';
     netPrefsBaseline = netPrefsSnapshot();
     checkCellularDirty();
+  }
+
+  /* ── Network Type (Cellular page) ────────────────────────────────────
+     "LTE" / "5G NSA" / "5G SA" — there's no single poller field for
+     this since the LTE/5G NR split (cell_lte_active/cell_nr_active/
+     cell_nr_type), so it's derived here rather than through the
+     generic FORMATTERS path (which only ever transforms one field's
+     own value, not several combined). NR takes priority when active:
+     NSA still carries an LTE anchor underneath it (cell_lte_active is
+     also true in that case), but "5G NSA" is the more meaningful thing
+     to show the user than "LTE". */
+  function renderNetworkType(state) {
+    var el = document.getElementById('om-network-type');
+    if (!el) return; // not on this page
+
+    var text = '—';
+    if (state.cell_nr_active) {
+      text = state.cell_nr_type === 'NR5G-SA' ? '5G SA' : state.cell_nr_type === 'NR5G-NSA' ? '5G NSA' : '5G';
+    } else if (state.cell_lte_active) {
+      text = 'LTE';
+    }
+    el.textContent = text;
   }
 
   function initNetPrefs() {
