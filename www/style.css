@@ -314,11 +314,13 @@ body {
    the dot away from its value out to the row's far edge instead of
    sitting right beside it. Inherits color/min-width/overflow-wrap/
    align-self from .om-row > span:not(.om-row-label) below since it's
-   itself an unlabeled direct child of .om-row. */
+   itself an unlabeled direct child of .om-row. Same 0.25rem gap as the
+   topbar's tightened spacing (.om-topbar-signal), for one consistent
+   "text next to its status dot" distance site-wide. */
 .om-row-value-wrap {
   display: inline-flex;
   align-items: center;
-  gap: 0.4rem;
+  gap: 0.25rem;
 }
 
 /* A <select> used as a row's value (Network Mode/Data Roaming) rather
@@ -825,6 +827,24 @@ body {
   font-size: 1.5rem;
   font-weight: 700;
   line-height: 1.1;
+}
+
+/* Carrier + network type, below the bars/word — 1rem is small enough
+   that both sit comfortably side by side (unlike the 1.5rem word label
+   above, which is deliberately the loudest thing in the card) while
+   still reading easily at a glance, not squinting-small. */
+.om-sig-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.om-sig-meta-sep {
+  color: var(--text-dim);
+  font-size: 0.8rem;
 }
 
 /* ── Topbar signal indicator (every page) ──

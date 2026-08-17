@@ -1693,6 +1693,11 @@
 
     barsEl.innerHTML = sigBarsHtml(val, has, color, SIG_BAR_HEIGHTS, 'om-sig-bar');
     if (wordEl) wordEl.innerHTML = '<div class="om-sig-word-label" style="color:' + color + '">' + label + '</div>';
+
+    var carrierEl = document.getElementById('om-sig-carrier-name');
+    if (carrierEl) carrierEl.textContent = state.carrier_name || '—';
+    var nettypeEl = document.getElementById('om-sig-network-type');
+    if (nettypeEl) nettypeEl.textContent = networkTypeText(state);
   }
 
   /* ── Topbar signal indicator (every page) ────────────────────────────
