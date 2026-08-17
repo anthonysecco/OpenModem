@@ -227,16 +227,12 @@ body {
 /* Trends card (Dashboard) — one row label + chart per metric (RSRP,
    Latency, Jitter, Est. Speed), all sharing the same .om-chart-wrap
    line-chart look below. The metric name carries its own unit inline
-   (e.g. "Latency (ms)") rather than a separate unit span; the right
-   side of the row instead shows that metric's latest value — the chart
-   itself already reads oldest-to-newest left-to-right, so the right
-   edge is where a reader's eye lands on "now" anyway. app.js's
-   renderLineChart sets both the text and its color (matching that
-   value's own zone) on every re-render. */
+   (e.g. "Latency (ms)") — just a plain title line above its chart. */
 .om-chart-row-label {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 0.7rem;
   margin: 0.9rem 0 0.2rem;
 }
 
@@ -244,28 +240,21 @@ body {
   margin-top: 0;
 }
 
-.om-chart-row-label > span:first-child {
-  color: var(--text-dim);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  font-size: 0.7rem;
-}
-
-.om-chart-row-value {
-  font-size: 0.85rem;
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-}
-
 /* Smoothed line chart (Trends card: RSRP, Latency, Jitter, Est. Speed
    each get their own row, sharing this same markup/CSS) — app.js's
    renderLineChart/initChartHover build the <svg> content and position
    .om-chart-tooltip via inline left/top, both relative to this wrap.
-   Axis labels are each metric's own fixed expected-range bounds (e.g.
-   RSRP_MIN/MAX), not an auto-scaled data range — a tiny wobble between
-   two close values shouldn't look like a huge swing. touch-action:none
-   on the svg stops a touch-and-hold on the chart from also triggering a
-   page scroll on mobile while reading a value. */
+   Axis min/max sit at the left (the metric's own fixed expected-range
+   bounds, e.g. RSRP_MIN/MAX, not an auto-scaled data range — a tiny
+   wobble between two close values shouldn't look like a huge swing);
+   .om-chart-latest sits at the right, vertically centered on the chart
+   — the chart itself already reads oldest-to-newest left-to-right, so
+   the right side is where a reader's eye lands on "now" anyway, and a
+   fixed center position (rather than tracking the last point's actual
+   height) keeps it from wandering around/overlapping the axis labels
+   as the value swings. touch-action:none on the svg stops a
+   touch-and-hold on the chart from also triggering a page scroll on
+   mobile while reading a value. */
 .om-chart-wrap {
   position: relative;
   padding: 0.4rem 0 0.2rem;
@@ -281,7 +270,7 @@ body {
 
 .om-chart-axis {
   position: absolute;
-  right: 0;
+  left: 0;
   font-size: 0.65rem;
   color: var(--text-dim);
   pointer-events: none;
@@ -293,6 +282,20 @@ body {
 
 .om-chart-axis-min {
   bottom: 0.2rem;
+}
+
+.om-chart-latest {
+  position: absolute;
+  right: 0.3rem;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 1rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  padding: 0.1rem 0.45rem;
+  border-radius: var(--radius);
+  background: rgba(28, 28, 30, 0.6);
+  pointer-events: none;
 }
 
 .om-chart-tooltip {
