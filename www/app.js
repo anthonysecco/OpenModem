@@ -87,39 +87,54 @@
     }
   }
 
-  /* ── Signal quality thresholds (RSRP/SINR) ───────────────────────────
-     Single canonical source for what counts as excellent/good/fair/poor
-     signal, so every UI element that shows RSRP or SINR — today just
-     Carrier Aggregation's table, but Signal/Neighbor-cell-style displays
-     later too — colors and scales against the exact same breakpoints
-     instead of each defining its own. Thresholds/colors ported from
-     QuecControl's RSRP_ZONES/SINR_ZONES (3GPP TS 36.133/38.133 for
-     RSRP, TS 36.214/38.215 for SINR). sigPct clamps to [2,97] so a bar
-     fill is always visible even at the extreme ends of the range. */
+  /* ── Signal quality thresholds (RSRP/RSRQ/SINR) ──────────────────────
+     Single canonical source for what counts as excellent/good/fair/
+     poor/critical signal, so every UI element that shows these — CA
+     table columns, the Cellular page's ring dots, the Dashboard's
+     Signal Strength showcase — colors against the exact same
+     breakpoints instead of each defining its own. RSRP/SINR base
+     thresholds/colors ported from QuecControl (3GPP TS 36.133/38.133
+     for RSRP, TS 36.214/38.215 for SINR); RSRQ's are the standard
+     3GPP RSRQ quality bands. sigPct clamps to [2,97] so a bar fill is
+     always visible even at the extreme ends of the range.
+
+     5th tier ("Critical", 2026-08-17): the original 4-tier "Poor"
+     bucket for each metric was a wide catch-all (RSRP: everything
+     below -100, a 40+ dB span down to the -140 floor) collapsing
+     "degraded but usable" and "about to drop" into one identical
+     color — the distinction that matters most for a vehicle roaming
+     between urban and rural coverage. Added one more boundary per
+     metric, continuing that metric's own existing step size one more
+     increment (RSRP: -10 dB steps -> -110; RSRQ: -5 dB steps -> -25;
+     SINR: ~5 dB step -> -5, matching SINR_MIN's existing -10 floor).
+     Critical's color is --bad-pill (#b3382c) from style.css's palette
+     — reused as-is rather than inventing a new hue or reassigning what
+     any existing tier's color means, since these same hex values are
+     also the site's shared green/amber/red status vocabulary
+     elsewhere (registration ring dots, etc.) and shouldn't drift out
+     of sync with what they mean there. */
   var RSRP_MIN = -140, RSRP_MAX = -75;
   var SINR_MIN = -10, SINR_MAX = 30;
   var RSRP_ZONES = [
     { thresh: -80, bar: '#34c777', label: 'Excellent' },
     { thresh: -90, bar: '#2fa66b', label: 'Good' },
     { thresh: -100, bar: '#e0a63e', label: 'Fair' },
-    { thresh: -999, bar: '#e05a4e', label: 'Poor' }
+    { thresh: -110, bar: '#e05a4e', label: 'Poor' },
+    { thresh: -999, bar: '#b3382c', label: 'Critical' }
   ];
   var SINR_ZONES = [
-    { thresh: 20, bar: '#34c777' },
-    { thresh: 13, bar: '#2fa66b' },
-    { thresh: 0, bar: '#e0a63e' },
-    { thresh: -999, bar: '#e05a4e' }
+    { thresh: 20, bar: '#34c777', label: 'Excellent' },
+    { thresh: 13, bar: '#2fa66b', label: 'Good' },
+    { thresh: 0, bar: '#e0a63e', label: 'Fair' },
+    { thresh: -5, bar: '#e05a4e', label: 'Poor' },
+    { thresh: -999, bar: '#b3382c', label: 'Critical' }
   ];
-  /* RSRQ had no zone table before this — RSRP/SINR were the only
-     metrics ever color-coded (CA table columns). Thresholds are the
-     standard 3GPP RSRQ quality bands (dB, less negative = better),
-     same 4-tier shape and hex palette as RSRP/SINR above for a
-     consistent "site-wide thresholds" feel across all three. */
   var RSRQ_ZONES = [
-    { thresh: -10, bar: '#34c777' },
-    { thresh: -15, bar: '#2fa66b' },
-    { thresh: -20, bar: '#e0a63e' },
-    { thresh: -999, bar: '#e05a4e' }
+    { thresh: -10, bar: '#34c777', label: 'Excellent' },
+    { thresh: -15, bar: '#2fa66b', label: 'Good' },
+    { thresh: -20, bar: '#e0a63e', label: 'Fair' },
+    { thresh: -25, bar: '#e05a4e', label: 'Poor' },
+    { thresh: -999, bar: '#b3382c', label: 'Critical' }
   ];
 
   function sigZoneColor(val, zones) {
@@ -1117,10 +1132,12 @@
 
     // A. Phone-style bars — filled count tracks which RSRP_ZONES tier
     // the reading actually falls in, not a generic pct quartile: index
-    // 0 (Excellent) lights all 4, index 3 (Poor) lights just 1. That
-    // keeps the bars honest about the same boundaries the color itself
-    // is drawn from, rather than an independent linear split.
-    var barHeights = [10, 18, 26, 34];
+    // 0 (Excellent) lights all 5, index 4 (Critical) lights just 1.
+    // That keeps the bars honest about the same boundaries the color
+    // itself is drawn from, rather than an independent linear split.
+    // One height per RSRP_ZONES entry — keep this array's length in
+    // sync if that ever gains/loses a tier.
+    var barHeights = [8, 14, 20, 26, 32];
     var litBars = has ? (RSRP_ZONES.length - sigZoneIndex(val, RSRP_ZONES)) : 0;
     barsEl.innerHTML = barHeights.map(function (h, i) {
       return '<div class="om-sig-bar" style="height:' + h + 'px;background:' + (i < litBars ? color : 'var(--border)') + '"></div>';
