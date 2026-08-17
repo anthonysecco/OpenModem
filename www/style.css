@@ -908,6 +908,15 @@ body {
   flex-shrink: 0;
 }
 
+/* A bit of extra breathing room beyond .om-topbar-signal's own
+   (tightened) flex gap, scoped to just this one dot rather than
+   widening every gap in the topbar back out — .om-ring-dot's own
+   box-shadow halo bleeds visually into a plain flex gap, so "Online"
+   and the dot were reading as touching even at gap:0.25rem. */
+#om-topbar-conn-dot {
+  margin-left: 0.15rem;
+}
+
 /* ── AT Terminal ──
    Modeled on a real terminal emulator (QuecControl's system.html
    terminal), styled with this same theme's own surface/border/text
