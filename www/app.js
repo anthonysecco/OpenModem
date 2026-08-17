@@ -571,9 +571,219 @@
     }).join('');
   }
 
+  /* ── Smoothed line chart (RSRP Trend) ────────────────────────────────
+     Inline SVG, no charting library — consistent with the rest of the
+     site's no-build-step/no-new-dependency constraint. "Smoothing" is a
+     Catmull-Rom-to-cubic-Bezier conversion (catmullRomSegments): each
+     segment's control points are derived from its own neighbors, so
+     consecutive segments share a continuous tangent at their shared
+     endpoint — this is what lets each segment be drawn as its own
+     separately-colored <path> (to keep the RSRP_ZONES color bucketing
+     per the site's established convention) without visible kinks where
+     one segment's color hands off to the next. The soft area fill
+     beneath, by contrast, is intentionally a single color (the latest
+     sample's zone) rather than multi-colored — a multi-colored fill
+     read as noisy in practice; the multi-colored *line* is what carries
+     the bucketing, the fill is just a modern-chart backdrop.
+     viewBox is a fixed logical coordinate system (CHART_VIEW_W x
+     CHART_VIEW_H); actual on-screen size is controlled by CSS
+     (.om-chart-svg: width:100%, fixed height) — non-uniform scaling of
+     a line chart (x = time, y = value, independently scaled) is
+     standard/expected here, not a distortion to avoid. */
+  var CHART_VIEW_W = 300;
+  var CHART_VIEW_H = 90;
+  var CHART_PAD = 6;
+  var chartPoints = {};  // containerId -> last-rendered [{x,y,v,t}, ...], for hover lookups
+  var chartHover = {};   // containerId -> {timer, idx} currently-tracked dwell
+
+  function chartX(i, n) {
+    if (n <= 1) return CHART_PAD;
+    return CHART_PAD + (i / (n - 1)) * (CHART_VIEW_W - CHART_PAD * 2);
+  }
+
+  function chartY(val, min, max) {
+    var pct = Math.max(0, Math.min(1, (val - min) / (max - min)));
+    return CHART_PAD + (1 - pct) * (CHART_VIEW_H - CHART_PAD * 2);
+  }
+
+  // One cubic-Bezier segment per adjacent point pair; p0/p3 are the
+  // neighbors used only to compute this segment's own control points
+  // (clamped to the first/last point at the ends), uniform Catmull-Rom.
+  function catmullRomSegments(points) {
+    var segs = [];
+    var n = points.length;
+    for (var i = 0; i < n - 1; i++) {
+      var p0 = points[i === 0 ? 0 : i - 1];
+      var p1 = points[i];
+      var p2 = points[i + 1];
+      var p3 = points[i + 2 < n ? i + 2 : n - 1];
+      var cp1 = [p1[0] + (p2[0] - p0[0]) / 6, p1[1] + (p2[1] - p0[1]) / 6];
+      var cp2 = [p2[0] - (p3[0] - p1[0]) / 6, p2[1] - (p3[1] - p1[1]) / 6];
+      segs.push([p1, cp1, cp2, p2]);
+    }
+    return segs;
+  }
+
+  function segPathD(seg) {
+    return 'M ' + seg[0][0] + ' ' + seg[0][1] +
+      ' C ' + seg[1][0] + ' ' + seg[1][1] + ', ' + seg[2][0] + ' ' + seg[2][1] + ', ' + seg[3][0] + ' ' + seg[3][1];
+  }
+
+  function renderLineChart(containerId, samples, getValue, zones, min, max) {
+    var svg = document.getElementById(containerId);
+    if (!svg) return;
+    var svgns = 'http://www.w3.org/2000/svg';
+    svg.innerHTML = '';
+    svg.setAttribute('viewBox', '0 0 ' + CHART_VIEW_W + ' ' + CHART_VIEW_H);
+    svg.setAttribute('preserveAspectRatio', 'none');
+
+    var pts = [];
+    samples.forEach(function (rec, i) {
+      var v = getValue(rec);
+      if (typeof v !== 'number') return;
+      pts.push({ x: chartX(i, samples.length), y: chartY(v, min, max), v: v, t: rec.t });
+    });
+    chartPoints[containerId] = pts;
+    if (pts.length < 2) return; // not enough data yet — leave blank
+
+    var coords = pts.map(function (p) { return [p.x, p.y]; });
+    var segs = catmullRomSegments(coords);
+    var lastColor = sigZoneColor(pts[pts.length - 1].v, zones);
+    var gradId = containerId + '-grad';
+
+    var defs = document.createElementNS(svgns, 'defs');
+    var grad = document.createElementNS(svgns, 'linearGradient');
+    grad.setAttribute('id', gradId);
+    grad.setAttribute('x1', '0'); grad.setAttribute('y1', '0');
+    grad.setAttribute('x2', '0'); grad.setAttribute('y2', '1');
+    var stop1 = document.createElementNS(svgns, 'stop');
+    stop1.setAttribute('offset', '0%');
+    stop1.setAttribute('stop-color', lastColor);
+    stop1.setAttribute('stop-opacity', '0.25');
+    var stop2 = document.createElementNS(svgns, 'stop');
+    stop2.setAttribute('offset', '100%');
+    stop2.setAttribute('stop-color', lastColor);
+    stop2.setAttribute('stop-opacity', '0');
+    grad.appendChild(stop1); grad.appendChild(stop2);
+    defs.appendChild(grad);
+    svg.appendChild(defs);
+
+    var floorY = CHART_VIEW_H - CHART_PAD;
+    var areaD = 'M ' + coords[0][0] + ' ' + floorY + ' L ' + coords[0][0] + ' ' + coords[0][1];
+    segs.forEach(function (s) {
+      areaD += ' C ' + s[1][0] + ' ' + s[1][1] + ', ' + s[2][0] + ' ' + s[2][1] + ', ' + s[3][0] + ' ' + s[3][1];
+    });
+    areaD += ' L ' + coords[coords.length - 1][0] + ' ' + floorY + ' Z';
+    var area = document.createElementNS(svgns, 'path');
+    area.setAttribute('d', areaD);
+    area.setAttribute('fill', 'url(#' + gradId + ')');
+    area.setAttribute('stroke', 'none');
+    svg.appendChild(area);
+
+    segs.forEach(function (s, i) {
+      var color = sigZoneColor((pts[i].v + pts[i + 1].v) / 2, zones);
+      var path = document.createElementNS(svgns, 'path');
+      path.setAttribute('d', segPathD(s));
+      path.setAttribute('fill', 'none');
+      path.setAttribute('stroke', color);
+      path.setAttribute('stroke-width', '2');
+      path.setAttribute('stroke-linecap', 'round');
+      svg.appendChild(path);
+    });
+  }
+
+  /* Hover/touch dwell: per the user's ask, a value only appears after
+     resting on a point for 2s (not an immediate on-hover tooltip) — so
+     a casual glance/scroll across the chart doesn't throw tooltips up
+     constantly. pointerdown+pointermove (not separate mouse/touch
+     handlers) covers both desktop hover and a mobile long-press with
+     one code path. Moving to a different point resets the 2s timer. */
+  var CHART_HOVER_DWELL_MS = 2000;
+
+  function clearChartHover(containerId) {
+    var st = chartHover[containerId];
+    if (st && st.timer) clearTimeout(st.timer);
+    chartHover[containerId] = null;
+    var svg = document.getElementById(containerId);
+    var marker = svg && svg.querySelector('.om-chart-hover-marker');
+    if (marker) marker.parentNode.removeChild(marker);
+    var tip = document.getElementById(containerId + '-tooltip');
+    if (tip) tip.style.display = 'none';
+  }
+
+  function nearestChartIndex(containerId, clientX, svgEl) {
+    var pts = chartPoints[containerId];
+    if (!pts || !pts.length) return -1;
+    var rect = svgEl.getBoundingClientRect();
+    if (!rect.width) return -1;
+    var relX = ((clientX - rect.left) / rect.width) * CHART_VIEW_W;
+    var best = 0, bestDist = Infinity;
+    pts.forEach(function (p, i) {
+      var d = Math.abs(p.x - relX);
+      if (d < bestDist) { bestDist = d; best = i; }
+    });
+    return best;
+  }
+
+  function showChartHover(containerId, unit, idx, svgEl, wrapEl) {
+    var pts = chartPoints[containerId];
+    if (!pts || !pts[idx]) return;
+    var p = pts[idx];
+    var svgns = 'http://www.w3.org/2000/svg';
+
+    var marker = svgEl.querySelector('.om-chart-hover-marker');
+    if (marker) marker.parentNode.removeChild(marker);
+    var circle = document.createElementNS(svgns, 'circle');
+    circle.setAttribute('class', 'om-chart-hover-marker');
+    circle.setAttribute('cx', p.x);
+    circle.setAttribute('cy', p.y);
+    circle.setAttribute('r', '3.5');
+    circle.setAttribute('fill', sigZoneColor(p.v, RSRP_ZONES));
+    circle.setAttribute('stroke', 'var(--surface)');
+    circle.setAttribute('stroke-width', '1.5');
+    svgEl.appendChild(circle);
+
+    var tip = document.getElementById(containerId + '-tooltip');
+    if (!tip) return;
+    tip.textContent = Math.round(p.v) + ' ' + unit;
+    tip.style.display = 'block';
+    var wrapRect = wrapEl.getBoundingClientRect();
+    var svgRect = svgEl.getBoundingClientRect();
+    var xPx = (p.x / CHART_VIEW_W) * svgRect.width + (svgRect.left - wrapRect.left);
+    var yPx = (p.y / CHART_VIEW_H) * svgRect.height + (svgRect.top - wrapRect.top);
+    tip.style.left = xPx + 'px';
+    tip.style.top = yPx + 'px';
+  }
+
+  function handleChartHoverMove(containerId, unit, clientX, svgEl, wrapEl) {
+    var idx = nearestChartIndex(containerId, clientX, svgEl);
+    if (idx < 0) return;
+    var st = chartHover[containerId];
+    if (st && st.idx === idx) return; // already dwelling on this point
+    if (st && st.timer) clearTimeout(st.timer);
+    var marker = svgEl.querySelector('.om-chart-hover-marker');
+    if (marker) marker.parentNode.removeChild(marker);
+    var tip = document.getElementById(containerId + '-tooltip');
+    if (tip) tip.style.display = 'none';
+    chartHover[containerId] = {
+      idx: idx,
+      timer: setTimeout(function () { showChartHover(containerId, unit, idx, svgEl, wrapEl); }, CHART_HOVER_DWELL_MS)
+    };
+  }
+
+  function initChartHover(containerId, unit) {
+    var svg = document.getElementById(containerId);
+    if (!svg) return; // not on this page
+    var wrapEl = svg.closest('.om-chart-wrap');
+    if (!wrapEl) return;
+    svg.addEventListener('pointermove', function (e) { handleChartHoverMove(containerId, unit, e.clientX, svg, wrapEl); });
+    svg.addEventListener('pointerdown', function (e) { handleChartHoverMove(containerId, unit, e.clientX, svg, wrapEl); });
+    svg.addEventListener('pointerleave', function () { clearChartHover(containerId); });
+    svg.addEventListener('pointerup', function () { clearChartHover(containerId); });
+  }
+
   function renderHistoryCharts() {
-    var rsrpEl = document.getElementById('om-hist-rsrp-spark');
-    if (rsrpEl) rsrpEl.innerHTML = sparklineBarsHtml(historySignalSamples, historyRsrp, RSRP_ZONES, false, RSRP_MIN, RSRP_MAX);
+    renderLineChart('om-hist-rsrp-chart', historySignalSamples, historyRsrp, RSRP_ZONES, RSRP_MIN, RSRP_MAX);
 
     var latEl = document.getElementById('om-hist-latency-spark');
     if (latEl) latEl.innerHTML = sparklineBarsHtml(historyNetSamples, function (r) { return r.latency_ms; }, LATENCY_ZONES, true, 0, 300);
@@ -589,7 +799,7 @@
   // initial window that fills back in on its own, never a discarded
   // live sample.
   function seedHistoryOnce() {
-    if (!document.getElementById('om-hist-rsrp-spark')) return; // not on this page
+    if (!document.getElementById('om-hist-rsrp-chart')) return; // not on this page
 
     fetch('/cgi-bin/history_signal.sh')
       .then(function (r) { return r.json(); })
@@ -613,7 +823,7 @@
   }
 
   function pushSignalHistorySample(state) {
-    if (!document.getElementById('om-hist-rsrp-spark')) return; // not on this page
+    if (!document.getElementById('om-hist-rsrp-chart')) return; // not on this page
     pushCapped(historySignalSamples, { t: state._polled_at, lte_rsrp: state.signal_lte_rsrp, nr_rsrp: state.signal_nr_rsrp });
     renderHistoryCharts();
   }
@@ -2136,6 +2346,7 @@
     refreshState();
     refreshNetState();
     seedHistoryOnce();
+    initChartHover('om-hist-rsrp-chart', 'dBm');
     setInterval(tickAge, 1000);
     initUpdateButton();
     initAtTerminal();

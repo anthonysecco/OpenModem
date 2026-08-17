@@ -256,6 +256,60 @@ body {
   border-radius: 1px 1px 0 0;
 }
 
+/* Smoothed line chart (RSRP Trend) — app.js's renderLineChart/
+   initChartHover build the <svg> content and position .om-chart-tooltip
+   via inline left/top, both relative to this wrap. Axis labels are the
+   metric's own fixed expected-range bounds (e.g. RSRP_MIN/MAX), not an
+   auto-scaled data range — a tiny wobble between two close values
+   shouldn't look like a huge swing. touch-action:none on the svg stops
+   the dwell-to-reveal gesture (pointerdown+hold) from also triggering a
+   page scroll on mobile while the user is trying to read a value. */
+.om-chart-wrap {
+  position: relative;
+  padding: 0.4rem 0 0.2rem;
+}
+
+.om-chart-svg {
+  display: block;
+  width: 100%;
+  height: 90px;
+  touch-action: none;
+  cursor: crosshair;
+}
+
+.om-chart-axis {
+  position: absolute;
+  right: 0;
+  font-size: 0.65rem;
+  color: var(--text-dim);
+  pointer-events: none;
+}
+
+.om-chart-axis-max {
+  top: 0.4rem;
+}
+
+.om-chart-axis-min {
+  bottom: 0.2rem;
+}
+
+.om-chart-tooltip {
+  position: absolute;
+  transform: translate(-50%, -135%);
+  background: var(--surface-inset);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.2rem 0.55rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+  pointer-events: none;
+  display: none;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+  z-index: 1;
+}
+
 /* Groups a value with its status dot (see .om-ring-dot below) so the
    pair reads as .om-row's single "right side" flex item — without
    this, a bare 3rd child (label / value / dot) would space-between
