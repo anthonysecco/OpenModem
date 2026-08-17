@@ -60,7 +60,6 @@ body {
 .om-topbar .device-name { font-weight: 600; color: var(--text-heading); }
 
 #om-conn-status {
-  font-size: 0.85rem;
   color: var(--text-dim);
 }
 #om-conn-status.bad { color: var(--bad); }
@@ -349,11 +348,21 @@ body {
   font-style: italic;
 }
 
-.om-updated {
+/* Shared page footer — connection status + "Updated Xs ago" + a status
+   dot, identical on every page (injected by app.js's initShell(), see
+   its header comment). Plain text-align:right rather than flex: the
+   content is just inline text with a trailing inline-block dot, and
+   flex's `gap` would double up with the text's own literal "- "
+   spacing rather than replace it. */
+.om-footer {
   margin: 1rem 0 0;
   font-size: 0.8rem;
   color: var(--text-dim);
   text-align: right;
+}
+
+#om-footer-dot {
+  margin-left: 0.4rem;
 }
 
 .om-card-wide {
