@@ -1145,9 +1145,10 @@
     // sync if that ever gains/loses a tier.
     var barHeights = [8, 14, 20, 26, 32];
     var litBars = has ? (RSRP_ZONES.length - sigZoneIndex(val, RSRP_ZONES)) : 0;
-    barsEl.innerHTML = barHeights.map(function (h, i) {
+    var barsHtml = barHeights.map(function (h, i) {
       return '<div class="om-sig-bar" style="height:' + h + 'px;background:' + (i < litBars ? color : 'var(--border)') + '"></div>';
     }).join('');
+    barsEl.innerHTML = barsHtml;
 
     // B. Horizontal bar
     var hbarEl = document.getElementById('om-sig-hbar');
@@ -1176,6 +1177,14 @@
     wordEl.innerHTML =
       '<div class="om-sig-word-label" style="color:' + color + '">' + label + '</div>' +
       '<div class="om-sig-word-val">' + (has ? val + ' dBm' : 'No reading') + '</div>';
+
+    // E. Bars + word — A's bars on top, D's word underneath, no dBm
+    // sub-caption (that's what makes this distinct from just stacking
+    // A and D on top of each other).
+    var comboBarsEl = document.getElementById('om-sig-combo-bars');
+    var comboWordEl = document.getElementById('om-sig-combo-word');
+    if (comboBarsEl) comboBarsEl.innerHTML = barsHtml;
+    if (comboWordEl) comboWordEl.innerHTML = '<div class="om-sig-word-label" style="color:' + color + '">' + label + '</div>';
   }
 
   function initNetPrefs() {
