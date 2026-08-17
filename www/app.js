@@ -84,16 +84,16 @@
   var RSRP_MIN = -140, RSRP_MAX = -75;
   var SINR_MIN = -10, SINR_MAX = 30;
   var RSRP_ZONES = [
-    { thresh: -80, bar: '#34d399' },
-    { thresh: -90, bar: '#6ee7b7' },
-    { thresh: -100, bar: '#fcd34d' },
-    { thresh: -999, bar: '#fca5a5' }
+    { thresh: -80, bar: '#34c777' },
+    { thresh: -90, bar: '#2fa66b' },
+    { thresh: -100, bar: '#e0a63e' },
+    { thresh: -999, bar: '#e05a4e' }
   ];
   var SINR_ZONES = [
-    { thresh: 20, bar: '#34d399' },
-    { thresh: 13, bar: '#6ee7b7' },
-    { thresh: 0, bar: '#fcd34d' },
-    { thresh: -999, bar: '#fca5a5' }
+    { thresh: 20, bar: '#34c777' },
+    { thresh: 13, bar: '#2fa66b' },
+    { thresh: 0, bar: '#e0a63e' },
+    { thresh: -999, bar: '#e05a4e' }
   ];
 
   function sigZoneColor(val, zones) {

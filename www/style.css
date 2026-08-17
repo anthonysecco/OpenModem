@@ -1,16 +1,34 @@
 /* style.css — shared shell layout.
    Router/modem admin UI pattern (GL.iNet-style): fixed sidebar nav on
    desktop, bottom tab bar on mobile, top bar with device identity and
-   connection status, card-grid content area. */
+   connection status, card-grid content area.
+
+   Dark dashboard theme (single theme, no light/dark toggle — the
+   design brief this was matched against specified one fixed dark
+   palette, not an adaptive one): flat, no shadows/gradients, surfaces
+   separated by subtle background-color steps and 1px hairline borders.
+   Status color vocabulary is consistent everywhere it's used: green =
+   good, amber = fair/warning, red = poor/denied, blue = neutral/
+   informational, gray = idle/inactive. */
 
 :root {
-  --bg: #f4f5f7;
-  --surface: #ffffff;
-  --border: #e2e4e9;
-  --text: #1c1f26;
-  --text-dim: #6b7280;
+  --bg: #121212;
+  --surface: #1c1c1e;
+  --surface-inset: #242426;
+  --border: #2e2e30;
+  --text: #f2f2f2;
+  --text-heading: #ffffff;
+  --text-dim: #8a8a8e;
+  --text-muted: #5c5c5e;
   --accent: #2f6fed;
-  --bad: #d94848;
+  --good: #2fa66b;
+  --good-bar: #34c777;
+  --warn: #c9761d;
+  --warn-bar: #e0a63e;
+  --bad: #e05a4e;
+  --bad-pill: #b3382c;
+  --gold: #e0a63e;
+  --radius: 8px;
   --nav-width: 220px;
   --topbar-height: 56px;
   --tabbar-height: 60px;
@@ -39,7 +57,7 @@ body {
   z-index: 10;
 }
 
-.om-topbar .device-name { font-weight: 600; }
+.om-topbar .device-name { font-weight: 600; color: var(--text-heading); }
 
 #om-conn-status {
   font-size: 0.85rem;
@@ -105,7 +123,7 @@ body {
 .om-card {
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: var(--radius);
   padding: 1rem;
   display: flex;
   flex-direction: column;
@@ -143,12 +161,14 @@ body {
 /* A value shown in a card's title bar (e.g. 5G NR's connection type)
    rather than its own row — reset the uppercase/letter-spacing/dim
    styling h2 otherwise imposes so it reads as a normal value, not a
-   second heading. */
+   second heading, and pin it to the right while the title text (its
+   sibling span) stays left via the h2's own space-between. */
 .om-card-title-value {
   text-transform: none;
   letter-spacing: normal;
-  font-weight: 600;
+  font-weight: 400;
   color: var(--text);
+  text-align: right;
 }
 
 /* A second h2 inside one card (e.g. LAN's Network Mode + DNS Settings)
@@ -164,7 +184,7 @@ body {
   font: inherit;
   padding: 0.5rem 0.9rem;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius);
   background: var(--accent);
   color: #fff;
   cursor: pointer;
@@ -183,7 +203,7 @@ body {
   flex-wrap: wrap;
   justify-content: space-between;
   gap: 0.25rem 1rem;
-  padding: 0.3rem 0;
+  padding: 0.4rem 0;
   border-bottom: 1px solid var(--border);
   font-size: 0.9rem;
 }
@@ -192,9 +212,17 @@ body {
   border-bottom: none;
 }
 
+/* Micro-label-over/beside-value pattern: small, uppercase, letter-
+   spaced, dim — every field label on every page follows this, contrast
+   against the plain-weight, normal-case, brighter value beside it is
+   what makes a dense card of rows still scannable. */
 .om-row-label {
   color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 0.7rem;
   flex-shrink: 0;
+  align-self: center;
 }
 
 /* A value too long to fit next to its label (long hostnames, IPv6
@@ -208,6 +236,8 @@ body {
 .om-row > span:not(.om-row-label) {
   min-width: 0;
   overflow-wrap: anywhere;
+  color: var(--text);
+  align-self: center;
 }
 
 .om-note {
@@ -242,8 +272,10 @@ body {
 }
 
 .om-form-row label {
-  font-size: 0.8rem;
+  font-size: 0.7rem;
   color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
 }
 
 .om-form-row input,
@@ -251,8 +283,8 @@ body {
   font: inherit;
   padding: 0.5rem 0.6rem;
   border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--bg);
+  border-radius: var(--radius);
+  background: var(--surface-inset);
   color: var(--text);
 }
 
@@ -297,7 +329,7 @@ body {
 }
 
 .om-band-section-title {
-  font-size: 0.72rem;
+  font-size: 0.7rem;
   color: var(--text-dim);
   text-transform: uppercase;
   letter-spacing: 0.05em;
@@ -315,9 +347,9 @@ body {
   display: flex;
   align-items: center;
   gap: 0.35rem;
-  background: var(--bg);
+  background: var(--surface-inset);
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--radius);
   padding: 0.3rem 0.55rem;
   font-size: 0.78rem;
   cursor: pointer;
@@ -347,7 +379,7 @@ body {
 }
 
 .om-band-actions .om-secondary {
-  background: var(--bg);
+  background: var(--surface-inset);
   color: var(--text-dim);
   border: 1px solid var(--border);
 }
@@ -362,7 +394,8 @@ body {
    any future signal display should reuse this exact markup/coloring
    rather than inventing its own. Fill width/color are set per-instance
    via inline style since they come from a continuous value→zone lookup
-   (app.js's RSRP_ZONES/SINR_ZONES), not a small fixed class set. */
+   (app.js's RSRP_ZONES/SINR_ZONES — green/amber/red, matching this
+   theme's status vocabulary), not a small fixed class set. */
 .om-sigbar {
   display: flex;
   align-items: center;
@@ -412,9 +445,9 @@ body {
 }
 
 .om-ca-stat {
-  background: var(--bg);
+  background: var(--surface-inset);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius);
   padding: 0.5rem 0.65rem;
 }
 
@@ -430,6 +463,7 @@ body {
 .om-ca-stat-value {
   font-size: 1rem;
   font-weight: 600;
+  color: var(--text-heading);
 }
 
 @media (min-width: 480px) {
@@ -439,7 +473,7 @@ body {
 .om-ca-bwbar {
   display: flex;
   height: 20px;
-  border-radius: 6px;
+  border-radius: var(--radius);
   overflow: hidden;
   gap: 2px;
   margin-bottom: 0.5rem;
@@ -447,18 +481,23 @@ body {
 
 .om-ca-bwbar-empty {
   flex: 1;
-  background: var(--bg);
+  background: var(--surface-inset);
   border: 1px dashed var(--border);
-  border-radius: 6px;
+  border-radius: var(--radius);
 }
 
 .om-ca-seg {
   min-width: 2px;
 }
 
-.om-ca-seg-0 { background: #2f6fed; }
-.om-ca-seg-1 { background: #1f9e75; }
-.om-ca-seg-2 { background: #d98b1f; }
+/* Categorical identity colors (which carrier is which), not a status
+   severity — blue/green/orange per the design brief's own segmented-
+   bandwidth-bar spec, plus a 4th (purple) since a real CA session on
+   this hardware can carry more component carriers than that 3-color
+   set covers. */
+.om-ca-seg-0 { background: var(--accent); }
+.om-ca-seg-1 { background: var(--good-bar); }
+.om-ca-seg-2 { background: #c8791f; }
 .om-ca-seg-3 { background: #8b5cf6; }
 
 /* UL segments share their carrier's color (om-ca-seg-0..3 above) but
@@ -483,23 +522,21 @@ body {
   text-overflow: ellipsis;
 }
 
-/* The pill treatment that used to sit on a separate "PCC"/"SCC" badge
-   (removed — that identity is still one hover away, folded into this
-   element's title tooltip, same as EARFCN/PCI already were) now
-   applies directly to the band name text itself. Same hex values as
-   .om-ca-seg-0..3 so a row's pill color matches its bar segment. */
+/* Status-pill treatment (rounded-full, solid color, small bold white
+   text) applied to the carrier band identity badge — same hex values
+   as .om-ca-seg-0..3 so a row's pill color matches its bar segment. */
 .om-ca-carrier-name {
   display: inline-block;
-  padding: 0.1rem 0.4rem;
-  border-radius: 4px;
-  font-size: 0.78rem;
+  padding: 0.2rem 0.6rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
   font-weight: 700;
   color: #fff;
   cursor: help;
 }
-.om-ca-name-0 { background: #2f6fed; }
-.om-ca-name-1 { background: #1f9e75; }
-.om-ca-name-2 { background: #d98b1f; }
+.om-ca-name-0 { background: var(--accent); }
+.om-ca-name-1 { background: var(--good-bar); }
+.om-ca-name-2 { background: #c8791f; }
 .om-ca-name-3 { background: #8b5cf6; }
 
 /* Delineation between the PCC row (always first) and the SCC rows
@@ -525,17 +562,17 @@ body {
 
 .om-table th {
   text-align: left;
-  font-size: 0.72rem;
+  font-size: 0.7rem;
   color: var(--text-dim);
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  padding: 0.4rem 0.6rem;
+  padding: 0.5rem 0.6rem;
   border-bottom: 1px solid var(--border);
   white-space: nowrap;
 }
 
 .om-table td {
-  padding: 0.45rem 0.6rem;
+  padding: 0.55rem 0.6rem;
   border-bottom: 1px solid var(--border);
   white-space: nowrap;
 }
@@ -548,13 +585,16 @@ body {
    minimum row count — same height as a real row, just visually quiet
    so an empty slot doesn't read as an error. */
 .om-ca-row-empty td {
-  color: var(--text-dim);
-  opacity: 0.5;
+  color: var(--text-muted);
 }
 
 /* ── AT Terminal ──
-   Deliberately dark in both light and dark host themes, like a real
-   terminal emulator — modeled on QuecControl's system.html terminal. */
+   Modeled on a real terminal emulator (QuecControl's system.html
+   terminal), styled with this same theme's own surface/border/text
+   tokens rather than a separate bespoke near-black palette — now that
+   the whole site is one dark theme there's no light-mode host to stand
+   out against. Status colors (ok/error/info/prompt) reuse the same
+   green/red/blue/gold tokens the rest of the site uses for status. */
 .om-term-header {
   display: flex;
   align-items: center;
@@ -570,25 +610,25 @@ body {
 .om-term-header-btns button {
   font-size: 0.75rem;
   padding: 0.3rem 0.65rem;
-  background: var(--surface);
+  background: var(--surface-inset);
   color: var(--text-dim);
   border: 1px solid var(--border);
 }
 
 .om-terminal {
-  background: #181818;
-  border: 1px solid #333;
-  border-radius: 8px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
   overflow: hidden;
 }
 
 .om-term-bar {
-  background: #252525;
+  background: var(--surface-inset);
   padding: 0.5rem 0.85rem;
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  border-bottom: 1px solid #333;
+  border-bottom: 1px solid var(--border);
 }
 
 .om-term-dot {
@@ -604,7 +644,7 @@ body {
   flex: 1;
   text-align: center;
   font-size: 0.75rem;
-  color: #777;
+  color: var(--text-muted);
   font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 }
 
@@ -616,34 +656,34 @@ body {
   min-height: 200px;
   max-height: 340px;
   overflow-y: auto;
-  color: #ccc;
+  color: var(--text);
 }
 
 .om-term-log:empty::before {
   content: "AT command output will appear here…";
-  color: #555;
+  color: var(--text-muted);
   font-style: italic;
 }
 
-.om-t-prompt { color: #c49a6c; }
-.om-t-ok     { color: #27c93f; }
-.om-t-error  { color: #ff5f56; }
-.om-t-info   { color: #7dd3fc; }
-.om-t-muted  { color: #666; font-size: 0.72rem; }
+.om-t-prompt { color: var(--gold); }
+.om-t-ok     { color: var(--good-bar); }
+.om-t-error  { color: var(--bad); }
+.om-t-info   { color: var(--accent); }
+.om-t-muted  { color: var(--text-muted); font-size: 0.72rem; }
 
 .om-term-presets {
   display: flex;
   flex-wrap: wrap;
   gap: 0.4rem;
   padding: 0.65rem 1rem;
-  border-top: 1px solid #333;
-  background: #1c1c1c;
+  border-top: 1px solid var(--border);
+  background: var(--surface);
 }
 
 .om-term-preset {
-  background: #2a2a2a;
-  border: 1px solid #3a3a3a;
-  color: #999;
+  background: var(--surface-inset);
+  border: 1px solid var(--border);
+  color: var(--text-dim);
   font-size: 0.72rem;
   font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
   padding: 0.2rem 0.5rem;
@@ -652,9 +692,9 @@ body {
 }
 
 .om-term-preset:hover {
-  background: #333;
-  color: #c49a6c;
-  border-color: #c49a6c;
+  background: var(--border);
+  color: var(--gold);
+  border-color: var(--gold);
 }
 
 .om-term-input-row {
@@ -662,12 +702,12 @@ body {
   align-items: center;
   gap: 0.5rem;
   padding: 0.6rem 1rem;
-  border-top: 1px solid #333;
-  background: #1a1a1a;
+  border-top: 1px solid var(--border);
+  background: var(--surface);
 }
 
 .om-term-prefix {
-  color: #c49a6c;
+  color: var(--gold);
   font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
   font-size: 0.85rem;
 }
@@ -677,12 +717,12 @@ body {
   background: transparent;
   border: none;
   outline: none;
-  color: #ececec;
+  color: var(--text);
   font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
   font-size: 0.85rem;
 }
 
-.om-term-input-row input::placeholder { color: #555; }
+.om-term-input-row input::placeholder { color: var(--text-muted); }
 
 .om-term-input-row button {
   flex-shrink: 0;
@@ -696,7 +736,7 @@ body {
   gap: 0.75rem;
   background: var(--surface);
   border: 1px solid var(--accent);
-  border-radius: 10px;
+  border-radius: var(--radius);
   padding: 0.75rem 1rem;
   margin-bottom: 0.75rem;
 }
@@ -711,7 +751,7 @@ body {
   font: inherit;
   padding: 0.5rem 0.9rem;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius);
   background: var(--accent);
   color: #fff;
   cursor: pointer;
@@ -747,7 +787,7 @@ body {
   display: flex;
   width: fit-content;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius);
   overflow: hidden;
   margin: 0.4rem 0;
 }
@@ -756,7 +796,7 @@ body {
   font: inherit;
   padding: 0.4rem 0.9rem;
   border: none;
-  background: var(--bg);
+  background: var(--surface-inset);
   color: var(--text-dim);
   cursor: pointer;
   font-size: 0.85rem;
@@ -780,7 +820,7 @@ body {
   display: none;
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.5);
+  background: rgba(0, 0, 0, 0.6);
   align-items: center;
   justify-content: center;
   padding: 1rem;
@@ -794,7 +834,7 @@ body {
 .om-modal {
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: var(--radius);
   width: 100%;
   max-width: 420px;
   max-height: 80vh;
@@ -815,6 +855,7 @@ body {
 .om-modal-header h3 {
   margin: 0;
   font-size: 1rem;
+  color: var(--text-heading);
 }
 
 .om-modal-close {
@@ -847,14 +888,14 @@ body {
   font: inherit;
   padding: 0.5rem 0.9rem;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius);
   background: var(--accent);
   color: #fff;
   cursor: pointer;
 }
 
 .om-modal-actions button.om-secondary {
-  background: var(--bg);
+  background: var(--surface-inset);
   color: var(--text);
 }
 
@@ -876,11 +917,11 @@ body {
 
   .om-sidebar a {
     padding: 0.6rem 0.75rem;
-    border-radius: 8px;
+    border-radius: var(--radius);
   }
 
   .om-sidebar a.active {
-    background: var(--bg);
+    background: var(--surface-inset);
   }
 
   .om-tabbar { display: none; }
@@ -892,15 +933,5 @@ body {
 
   .om-cards {
     grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-  }
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #14161a;
-    --surface: #1c1f26;
-    --border: #2a2e37;
-    --text: #e7e9ee;
-    --text-dim: #9199a8;
   }
 }
