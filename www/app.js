@@ -503,15 +503,19 @@
   }
 
   /* ── Shared "Apply changes" bar (settings pages) ────────────────────
-     Cellular (Band Lock) and LAN each have exactly one settings-apply
-     button, shown only while something differs from the last-loaded/
-     last-applied baseline, rather than a button per card. This module
-     only owns show/hide + the click binding; each page tracks its own
-     baseline and owns the confirm()/fetch/status-text logic, since
-     "what changed" and "how to apply it" differ per page. Only one of
-     initBandLock()/initLanConfig() proceeds past its own page-specific
-     guard on any given page, so binding the shared #om-apply-btn from
-     both is safe — only one is ever actually on the page at a time. */
+     One settings-apply button per page, shown only while something
+     differs from the last-loaded/last-applied baseline, rather than a
+     button per card. This module only owns show/hide + the click
+     binding; each page tracks its own baseline(s) and owns the
+     confirm()/fetch/status-text logic, since "what changed" and "how to
+     apply it" differ per page. LAN binds it straight from
+     initLanConfig(). Cellular is the one page with two independent
+     settings sections (Band Lock, Network Mode/Roaming) sharing it, so
+     it routes through its own combined checkCellularDirty()/
+     cellularApply()/initCellularApplyBar() instead of binding either
+     section's logic directly — see that trio's header comment. Only one
+     of initLanConfig()/initCellularApplyBar() ever finds its elements
+     on a given page, so binding #om-apply-btn from both is safe. */
   function applyBarToggle(dirty) {
     var bar = document.getElementById('om-apply-bar');
     if (bar) bar.style.display = dirty ? '' : 'none';
@@ -576,11 +580,6 @@
     return { lte: getBandGridSelected('om-bandlock-lte-grid'), nr: getBandGridSelected('om-bandlock-nr-grid') };
   }
 
-  function checkBandLockDirty() {
-    if (!bandLockBaseline) return;
-    applyBarToggle(JSON.stringify(bandLockSnapshot()) !== JSON.stringify(bandLockBaseline));
-  }
-
   function loadCurrentBandLock() {
     fetch('/cgi-bin/band_lock.sh?action=get')
       .then(function (r) { return r.json(); })
@@ -591,41 +590,9 @@
         setBandGridChecked('om-bandlock-lte-grid', data.lte_bands || LTE_BANDS);
         setBandGridChecked('om-bandlock-nr-grid', data.nr_bands || NR_BANDS);
         bandLockBaseline = bandLockSnapshot();
-        applyBarToggle(false);
+        checkCellularDirty();
       })
       .catch(function () { /* leave grids at their default (unchecked) state */ });
-  }
-
-  function bandLockApply() {
-    var statusEl = document.getElementById('om-apply-status');
-    var btn = document.getElementById('om-apply-btn');
-    var lte = getBandGridSelected('om-bandlock-lte-grid');
-    var nr = getBandGridSelected('om-bandlock-nr-grid');
-    if (!lte.length && !nr.length) {
-      statusEl.textContent = 'Select at least one band.';
-      return;
-    }
-    if (!window.confirm('This changes the band lock. The network may briefly reconnect. Continue?')) return;
-
-    btn.disabled = true;
-    statusEl.textContent = 'Applying…';
-    var qs = [];
-    if (lte.length) qs.push('lte_bands=' + encodeURIComponent(lte.join(',')));
-    if (nr.length) qs.push('nr_bands=' + encodeURIComponent(nr.join(',')));
-
-    fetch('/cgi-bin/band_lock.sh?action=set&' + qs.join('&'))
-      .then(function (r) { return r.json(); })
-      .then(function (data) {
-        statusEl.textContent = data.success ? data.message : ('Failed: ' + data.error);
-        if (data.success) {
-          bandLockBaseline = bandLockSnapshot();
-          applyBarToggle(false);
-        }
-      })
-      .catch(function (err) {
-        statusEl.textContent = 'Failed: ' + err;
-      })
-      .finally(function () { btn.disabled = false; });
   }
 
   /* ── Collapsible card sections ────────────────────────────────────────
@@ -652,20 +619,18 @@
     initCollapsible('om-bandlock-toggle', 'om-bandlock-body');
     renderBandGrid('om-bandlock-lte-grid', LTE_BANDS, 'B');
     renderBandGrid('om-bandlock-nr-grid', NR_BANDS, 'n');
-    grid.addEventListener('change', checkBandLockDirty);
-    document.getElementById('om-bandlock-nr-grid').addEventListener('change', checkBandLockDirty);
+    grid.addEventListener('change', checkCellularDirty);
+    document.getElementById('om-bandlock-nr-grid').addEventListener('change', checkCellularDirty);
     loadCurrentBandLock();
 
     var lteAll = document.getElementById('om-bandlock-lte-all');
     var lteNone = document.getElementById('om-bandlock-lte-none');
     var nrAll = document.getElementById('om-bandlock-nr-all');
     var nrNone = document.getElementById('om-bandlock-nr-none');
-    if (lteAll) lteAll.addEventListener('click', function () { setBandGridAll('om-bandlock-lte-grid', true); checkBandLockDirty(); });
-    if (lteNone) lteNone.addEventListener('click', function () { setBandGridAll('om-bandlock-lte-grid', false); checkBandLockDirty(); });
-    if (nrAll) nrAll.addEventListener('click', function () { setBandGridAll('om-bandlock-nr-grid', true); checkBandLockDirty(); });
-    if (nrNone) nrNone.addEventListener('click', function () { setBandGridAll('om-bandlock-nr-grid', false); checkBandLockDirty(); });
-
-    bindApplyButton(bandLockApply);
+    if (lteAll) lteAll.addEventListener('click', function () { setBandGridAll('om-bandlock-lte-grid', true); checkCellularDirty(); });
+    if (lteNone) lteNone.addEventListener('click', function () { setBandGridAll('om-bandlock-lte-grid', false); checkCellularDirty(); });
+    if (nrAll) nrAll.addEventListener('click', function () { setBandGridAll('om-bandlock-nr-grid', true); checkCellularDirty(); });
+    if (nrNone) nrNone.addEventListener('click', function () { setBandGridAll('om-bandlock-nr-grid', false); checkCellularDirty(); });
   }
 
   /* ── Generic modal overlay ───────────────────────────────────────────
@@ -742,13 +707,12 @@
   }
 
   function initCarrierScan() {
-    var link = document.getElementById('om-scan-link');
+    var btn = document.getElementById('om-scan-btn');
     var modal = document.getElementById('om-scan-modal');
     var body = document.getElementById('om-scan-modal-body');
-    if (!link || !modal || !body) return;
+    if (!btn || !modal || !body) return;
 
-    link.addEventListener('click', function (e) {
-      e.preventDefault();
+    btn.addEventListener('click', function () {
       body.innerHTML = scanConfirmHtml();
       openModal('om-scan-modal');
     });
@@ -775,76 +739,128 @@
   }
 
   /* ── Network Mode / Data Roaming (Cellular page) ─────────────────────
-     Both apply immediately on click behind a confirm() — same
-     immediate-apply pattern as SIM slot switching, not the shared
-     Apply-changes bar (Band Lock already owns that on this page, and
-     each of these is a single-value toggle, not a multi-field form
-     worth batching). Highlighted button is re-synced from real modem
-     state on every poll tick via renderNetPrefs(), same as SIM slot's
-     toggle — there's no in-progress edit here to protect from being
-     clobbered by a background refresh. */
-  var NET_MODE_LABELS = { AUTO: 'Auto', LTE: 'LTE only', NR5G: '5G only', 'LTE:NR5G': 'LTE + 5G' };
+     Selects, routed through the shared Apply bar alongside Band Lock
+     (see checkCellularDirty()/cellularApply() below) rather than
+     applying per-selection — same reasoning as Band Lock/LAN: the
+     current value loads once from the first state.sh poll that
+     actually carries it (these fields are already polled every cycle,
+     so no separate GET endpoint is needed) and is then left alone —
+     a background poll resyncing the select mid-edit would silently
+     discard whatever the user just picked. */
+  var netPrefsBaseline = null;
 
-  function renderNetPrefs(state) {
-    if (!document.getElementById('om-netmode-toggle')) return; // not on this page
-    setToggleActive('om-netmode-toggle', 'data-mode', state.net_mode_pref);
-    var roam = state.net_data_roaming === true ? '1' : state.net_data_roaming === false ? '0' : null;
-    setToggleActive('om-roaming-toggle', 'data-roam', roam);
+  function netPrefsSnapshot() {
+    var modeEl = document.getElementById('om-netmode-select');
+    var roamEl = document.getElementById('om-roaming-select');
+    return {
+      mode: modeEl ? modeEl.value : 'AUTO',
+      roaming: roamEl ? roamEl.value : '0'
+    };
   }
 
-  function applyNetPref(url, confirmMsg, btn) {
-    var statusEl = document.getElementById('om-netprefs-status');
-    if (!window.confirm(confirmMsg)) return;
+  function renderNetPrefs(state) {
+    var modeEl = document.getElementById('om-netmode-select');
+    if (!modeEl || netPrefsBaseline) return; // not on this page, or already loaded
+    if (state.net_mode_pref === null || state.net_mode_pref === undefined) return; // wait for real data
 
-    btn.disabled = true;
-    statusEl.textContent = 'Applying…';
-    fetch(url)
-      .then(function (r) { return r.json(); })
-      .then(function (data) {
-        statusEl.textContent = data.success ? data.message : ('Failed: ' + data.error);
-      })
-      .catch(function (err) { statusEl.textContent = 'Failed: ' + err; })
-      .finally(function () { btn.disabled = false; });
+    modeEl.value = state.net_mode_pref;
+    document.getElementById('om-roaming-select').value = state.net_data_roaming === true ? '1' : '0';
+    netPrefsBaseline = netPrefsSnapshot();
+    checkCellularDirty();
   }
 
   function initNetPrefs() {
-    var modeGroup = document.getElementById('om-netmode-toggle');
-    var roamGroup = document.getElementById('om-roaming-toggle');
-    if (!modeGroup && !roamGroup) return; // not on this page
+    var modeEl = document.getElementById('om-netmode-select');
+    var roamEl = document.getElementById('om-roaming-select');
+    if (!modeEl || !roamEl) return; // not on this page
+    modeEl.addEventListener('change', checkCellularDirty);
+    roamEl.addEventListener('change', checkCellularDirty);
+  }
 
-    if (modeGroup) {
-      var modeBtns = modeGroup.querySelectorAll('button');
-      for (var i = 0; i < modeBtns.length; i++) {
-        (function (btn) {
-          btn.addEventListener('click', function () {
-            if (btn.classList.contains('active')) return;
-            var mode = btn.getAttribute('data-mode');
-            applyNetPref(
-              '/cgi-bin/network_action.sh?action=set_mode&mode=' + encodeURIComponent(mode),
-              'Switch network mode to ' + (NET_MODE_LABELS[mode] || mode) + '? The connection may briefly drop while the modem re-searches. Continue?',
-              btn
-            );
-          });
-        })(modeBtns[i]);
-      }
+  /* ── Cellular's shared Apply bar (Band Lock + Network Mode/Roaming) ──
+     Both sections live on this one page and now both route through the
+     single #om-apply-bar/#om-apply-btn, so unlike every other page's
+     apply flow (exactly one settings section, see bindApplyButton's own
+     header comment) this page needs one combined dirty check and one
+     combined apply — mirrors LAN's own multi-field lanApply() (mode/
+     DNS/IP each independently dirty-checked, only the changed ones
+     fire) generalized across two independent sections instead of three
+     fields in one. */
+  function checkCellularDirty() {
+    var bandDirty = !!bandLockBaseline && JSON.stringify(bandLockSnapshot()) !== JSON.stringify(bandLockBaseline);
+    var netDirty = !!netPrefsBaseline && JSON.stringify(netPrefsSnapshot()) !== JSON.stringify(netPrefsBaseline);
+    applyBarToggle(bandDirty || netDirty);
+  }
+
+  function cellularApply() {
+    var statusEl = document.getElementById('om-apply-status');
+    var btn = document.getElementById('om-apply-btn');
+
+    var bandDirty = !!bandLockBaseline && JSON.stringify(bandLockSnapshot()) !== JSON.stringify(bandLockBaseline);
+    var net = netPrefsBaseline ? netPrefsSnapshot() : null;
+    var modeDirty = !!net && net.mode !== netPrefsBaseline.mode;
+    var roamDirty = !!net && net.roaming !== netPrefsBaseline.roaming;
+    if (!bandDirty && !modeDirty && !roamDirty) return;
+
+    var lte = getBandGridSelected('om-bandlock-lte-grid');
+    var nr = getBandGridSelected('om-bandlock-nr-grid');
+    if (bandDirty && !lte.length && !nr.length) {
+      statusEl.textContent = 'Select at least one band.';
+      return;
     }
 
-    if (roamGroup) {
-      var roamBtns = roamGroup.querySelectorAll('button');
-      for (var j = 0; j < roamBtns.length; j++) {
-        (function (btn) {
-          btn.addEventListener('click', function () {
-            if (btn.classList.contains('active')) return;
-            var value = btn.getAttribute('data-roam');
-            applyNetPref(
-              '/cgi-bin/network_action.sh?action=set_roaming&value=' + value,
-              'Set data roaming to ' + (value === '1' ? 'Enabled' : 'Disabled') + '? Continue?',
-              btn
-            );
-          });
-        })(roamBtns[j]);
-      }
+    var disruptive = [];
+    if (bandDirty) disruptive.push('the band lock');
+    if (modeDirty || roamDirty) disruptive.push('network mode/roaming');
+    if (!window.confirm('Apply changes to ' + disruptive.join(' and ') + '? The connection may briefly reconnect. Continue?')) return;
+
+    btn.disabled = true;
+    statusEl.textContent = 'Applying…';
+
+    var steps = [];
+    if (bandDirty) {
+      var qs = [];
+      if (lte.length) qs.push('lte_bands=' + encodeURIComponent(lte.join(',')));
+      if (nr.length) qs.push('nr_bands=' + encodeURIComponent(nr.join(',')));
+      steps.push({ label: 'Band lock', url: '/cgi-bin/band_lock.sh?action=set&' + qs.join('&') });
     }
+    if (modeDirty) {
+      steps.push({ label: 'Network mode', url: '/cgi-bin/network_action.sh?action=set_mode&mode=' + encodeURIComponent(net.mode) });
+    }
+    if (roamDirty) {
+      steps.push({ label: 'Data roaming', url: '/cgi-bin/network_action.sh?action=set_roaming&value=' + net.roaming });
+    }
+
+    // Sequential, not parallel — same reasoning as LAN's lanApply(): the
+    // AT broker only serializes one in-flight request at a time anyway,
+    // and a mode/band change can briefly interrupt the next request.
+    var results = [];
+    var chain = Promise.resolve();
+    steps.forEach(function (step) {
+      chain = chain.then(function () {
+        return fetch(step.url)
+          .then(function (r) { return r.json(); })
+          .then(function (data) {
+            results.push(step.label + ': ' + (data.success ? 'OK' : 'Failed — ' + data.error));
+          })
+          .catch(function (err) {
+            results.push(step.label + ': Failed — ' + err);
+          });
+      });
+    });
+
+    chain.then(function () {
+      statusEl.textContent = results.join('  ');
+      btn.disabled = false;
+      if (bandDirty) bandLockBaseline = bandLockSnapshot();
+      if (net) netPrefsBaseline = net;
+      checkCellularDirty();
+    });
+  }
+
+  function initCellularApplyBar() {
+    if (!document.getElementById('om-bandlock-lte-grid') && !document.getElementById('om-netmode-select')) return; // not on this page
+    bindApplyButton(cellularApply);
   }
 
   /* ── Carrier center-frequency calculation (Cellular page) ────────────
@@ -1490,6 +1506,7 @@
     initBandLock();
     initCarrierScan();
     initNetPrefs();
+    initCellularApplyBar();
     initLanConfig();
     initWanConfig();
     initWanInternet();

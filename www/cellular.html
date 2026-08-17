@@ -22,6 +22,29 @@
     </div>
     <div class="om-cards">
       <div class="om-card">
+        <h2>Network</h2>
+        <div class="om-row"><span class="om-row-label">Operator</span><span data-field="carrier_name">—</span></div>
+        <div class="om-row"><span class="om-row-label">PLMN</span><span data-field="carrier_plmn">—</span></div>
+        <div class="om-row"><span class="om-row-label">CS Registration</span><span data-field="reg_creg">—</span></div>
+        <div class="om-form-row">
+          <label for="om-netmode-select">Network Mode</label>
+          <select id="om-netmode-select">
+            <option value="AUTO">Auto</option>
+            <option value="LTE">LTE only</option>
+            <option value="NR5G">5G only</option>
+            <option value="LTE:NR5G">LTE + 5G</option>
+          </select>
+        </div>
+        <div class="om-form-row">
+          <label for="om-roaming-select">Data Roaming</label>
+          <select id="om-roaming-select">
+            <option value="1">Enabled</option>
+            <option value="0">Disabled</option>
+          </select>
+        </div>
+        <button type="button" id="om-scan-btn">Scan for Available Carriers</button>
+      </div>
+      <div class="om-card">
         <h2>LTE</h2>
         <div class="om-row"><span class="om-row-label">Registration</span><span data-field="reg_lte">—</span></div>
         <div class="om-row"><span class="om-row-label">RSRP</span><span data-field="signal_lte_rsrp">—</span></div>
@@ -33,7 +56,6 @@
         <div class="om-row"><span class="om-row-label">PCID</span><span data-field="cell_lte_pcid">—</span></div>
         <div class="om-row"><span class="om-row-label">Cell ID</span><span data-field="cell_lte_id">—</span></div>
         <div class="om-row"><span class="om-row-label">TAC</span><span data-field="cell_lte_tac">—</span></div>
-        <div class="om-row"><span class="om-row-label">MCC/MNC</span><span data-field="cell_lte_mcc">—</span>/<span data-field="cell_lte_mnc">—</span></div>
       </div>
       <div class="om-card">
         <h2>5G NR</h2>
@@ -48,27 +70,6 @@
         <div class="om-row"><span class="om-row-label">PCID</span><span data-field="cell_nr_pcid">—</span></div>
         <div class="om-row"><span class="om-row-label">Cell ID</span><span data-field="cell_nr_id">—</span></div>
         <div class="om-row"><span class="om-row-label">TAC</span><span data-field="cell_nr_tac">—</span></div>
-        <div class="om-row"><span class="om-row-label">MCC/MNC</span><span data-field="cell_nr_mcc">—</span>/<span data-field="cell_nr_mnc">—</span></div>
-      </div>
-      <div class="om-card">
-        <h2>Network</h2>
-        <div class="om-row"><span class="om-row-label">Operator</span><span data-field="carrier_name">—</span></div>
-        <div class="om-row"><span class="om-row-label">PLMN</span><span data-field="carrier_plmn">—</span></div>
-        <div class="om-row"><span class="om-row-label">CS Registration</span><span data-field="reg_creg">—</span></div>
-        <p class="om-band-section-title">Network mode</p>
-        <div class="om-toggle-group" id="om-netmode-toggle">
-          <button type="button" data-mode="AUTO">Auto</button>
-          <button type="button" data-mode="LTE">LTE only</button>
-          <button type="button" data-mode="NR5G">5G only</button>
-          <button type="button" data-mode="LTE:NR5G">LTE + 5G</button>
-        </div>
-        <p class="om-band-section-title">Data roaming</p>
-        <div class="om-toggle-group" id="om-roaming-toggle">
-          <button type="button" data-roam="1">Enabled</button>
-          <button type="button" data-roam="0">Disabled</button>
-        </div>
-        <p id="om-netprefs-status" class="om-note"></p>
-        <p><a href="#" id="om-scan-link">Scan for available carriers &rarr;</a></p>
       </div>
       <div class="om-card om-card-wide">
         <h2>Carrier Aggregation</h2>

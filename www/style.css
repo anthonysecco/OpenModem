@@ -231,7 +231,8 @@ body {
   color: var(--text-dim);
 }
 
-.om-form-row input {
+.om-form-row input,
+.om-form-row select {
   font: inherit;
   padding: 0.5rem 0.6rem;
   border: 1px solid var(--border);
