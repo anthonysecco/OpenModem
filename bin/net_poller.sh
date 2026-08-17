@@ -91,34 +91,64 @@ ping_once() {
     fi
 }
 
-# $1 = window (space-separated "ok:<rtt>"/"fail" tokens). Prints two
-# bare lines: status ("online"/"offline"/"") and avg RTT ms ("" if none).
-# Online = at least one "ok" token anywhere in the current window
-# (whatever size it's currently at, per spec); offline = every token in
-# a non-empty window is "fail". Average is over successful samples only
-# — a failed ping has no RTT to contribute, and folding it in as 0 or a
-# penalty value would misrepresent latency on an otherwise-healthy link.
+# $1 = window (space-separated "ok:<rtt>"/"fail" tokens). Prints three
+# bare lines: status ("online"/"offline"/""), avg RTT ms ("" if none,
+# rounded to a whole number — sub-ms precision has no UI use here), and
+# jitter ms ("" if fewer than 2 consecutive successes to diff). Online =
+# at least one "ok" token anywhere in the current window (whatever size
+# it's currently at, per spec); offline = every token in a non-empty
+# window is "fail". Average is over successful samples only — a failed
+# ping has no RTT to contribute, and folding it in as 0 or a penalty
+# value would misrepresent latency on an otherwise-healthy link.
+#
+# Jitter is the mean absolute difference between each pair of
+# consecutive successful samples in the window (the standard "average
+# variation between consecutive readings" definition) — a "fail" token
+# breaks the chain rather than being treated as a 0 or skipped-over gap,
+# since a diff spanning a dropped ping doesn't describe jitter between
+# two actual measurements.
 summarize_icmp_window() {
     _win="$1"
     if [ -z "$_win" ]; then
-        echo ""; echo ""
+        echo ""; echo ""; echo ""
         return
     fi
     _ok_count=0
     _sum="0"
+    _prev_rtt=""
+    _prev_ok=0
+    _jitter_sum="0"
+    _jitter_count=0
     for _tok in $_win; do
         case "$_tok" in
             ok:*)
+                _rtt="${_tok#ok:}"
                 _ok_count=$(( _ok_count + 1 ))
-                _sum=$(awk -v s="$_sum" -v r="${_tok#ok:}" 'BEGIN { printf "%.3f", s + r }')
+                _sum=$(awk -v s="$_sum" -v r="$_rtt" 'BEGIN { printf "%.3f", s + r }')
+                if [ "$_prev_ok" -eq 1 ]; then
+                    _diff=$(awk -v a="$_rtt" -v b="$_prev_rtt" 'BEGIN { d = a - b; if (d < 0) d = -d; printf "%.3f", d }')
+                    _jitter_sum=$(awk -v s="$_jitter_sum" -v d="$_diff" 'BEGIN { printf "%.3f", s + d }')
+                    _jitter_count=$(( _jitter_count + 1 ))
+                fi
+                _prev_rtt="$_rtt"
+                _prev_ok=1
+                ;;
+            *)
+                _prev_ok=0
+                _prev_rtt=""
                 ;;
         esac
     done
     if [ "$_ok_count" -gt 0 ]; then
         echo "online"
-        awk -v s="$_sum" -v n="$_ok_count" 'BEGIN { printf "%.1f\n", s / n }'
+        awk -v s="$_sum" -v n="$_ok_count" 'BEGIN { printf "%.0f\n", s / n }'
     else
         echo "offline"
+        echo ""
+    fi
+    if [ "$_jitter_count" -gt 0 ]; then
+        awk -v s="$_jitter_sum" -v n="$_jitter_count" 'BEGIN { printf "%.0f\n", s / n }'
+    else
         echo ""
     fi
 }
@@ -139,14 +169,15 @@ icmp_loop() {
         _summary=$(summarize_icmp_window "$_window")
         _icmp_status=$(printf '%s\n' "$_summary" | sed -n '1p')
         _icmp_avg=$(printf '%s\n' "$_summary" | sed -n '2p')
+        _icmp_jitter=$(printf '%s\n' "$_summary" | sed -n '3p')
 
         _check204_status=""
         [ -f "$CHECK204_FILE" ] && _check204_status=$(cat "$CHECK204_FILE" 2>/dev/null)
 
-        _json='{"_polled_at":'"$(date +%s)"',"icmp_target":'"$(json_str_or_null "$NET_ICMP_TARGET")"',"icmp_status":'"$(json_status "$_icmp_status")"',"icmp_avg_rtt_ms":'"$(json_num_or_null "$_icmp_avg")"',"check204_status":'"$(json_status "$_check204_status")"'}'
+        _json='{"_polled_at":'"$(date +%s)"',"icmp_target":'"$(json_str_or_null "$NET_ICMP_TARGET")"',"icmp_status":'"$(json_status "$_icmp_status")"',"icmp_avg_rtt_ms":'"$(json_num_or_null "$_icmp_avg")"',"icmp_jitter_ms":'"$(json_num_or_null "$_icmp_jitter")"',"check204_status":'"$(json_status "$_check204_status")"'}'
         printf '%s\n' "$_json" > "${STATE_FILE}.tmp" && mv "${STATE_FILE}.tmp" "$STATE_FILE"
 
-        log_dbg "icmp=$_icmp_status avg=${_icmp_avg}ms check204=$_check204_status window=[$_window]"
+        log_dbg "icmp=$_icmp_status avg=${_icmp_avg}ms jitter=${_icmp_jitter}ms check204=$_check204_status window=[$_window]"
         rotate_log
         sleep "$NET_ICMP_INTERVAL"
     done

@@ -454,14 +454,25 @@
   }
 
   function renderConnectivityCard(netState) {
-    var icmpTextEl = document.getElementById('om-conn-icmp-text');
-    if (!icmpTextEl) return; // not on this page
+    var icmpStatusTextEl = document.getElementById('om-conn-icmp-status-text');
+    if (!icmpStatusTextEl) return; // not on this page
 
     var icmpStatus = netState.icmp_status;
-    var avg = netState.icmp_avg_rtt_ms;
-    icmpTextEl.textContent = (typeof avg === 'number' ? avg + ' ms · ' : '') + connStatusText(icmpStatus);
+    icmpStatusTextEl.textContent = connStatusText(icmpStatus);
     var icmpDotEl = document.getElementById('om-conn-icmp-dot');
     if (icmpDotEl) setRingDotColor(icmpDotEl, connStatusColor(icmpStatus), false);
+
+    var latencyEl = document.getElementById('om-conn-icmp-latency-text');
+    if (latencyEl) {
+      var avg = netState.icmp_avg_rtt_ms;
+      latencyEl.textContent = typeof avg === 'number' ? avg + ' ms' : '—';
+    }
+
+    var jitterEl = document.getElementById('om-conn-icmp-jitter-text');
+    if (jitterEl) {
+      var jitter = netState.icmp_jitter_ms;
+      jitterEl.textContent = typeof jitter === 'number' ? jitter + ' ms' : '—';
+    }
 
     var check204Status = netState.check204_status;
     var check204TextEl = document.getElementById('om-conn-check204-text');
@@ -490,7 +501,7 @@
   }
 
   function refreshNetState() {
-    if (!document.getElementById('om-conn-icmp-text')) return; // not on this page
+    if (!document.getElementById('om-conn-icmp-status-text')) return; // not on this page
     fetch('/cgi-bin/net_state.sh')
       .then(function (r) { return r.json(); })
       .then(function (netState) {
