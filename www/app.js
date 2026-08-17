@@ -317,23 +317,29 @@
     el.classList.add('om-dot-flash');
   }
 
-  function setRingDotColor(el, color) {
+  function setRingDotColor(el, color, flash) {
     el.style.color = color;
     el.style.boxShadow = '0 0 0 3px ' + hexToRgba(color, 0.25);
-    flashRingDot(el);
+    if (flash) flashRingDot(el);
   }
 
+  /* Signal dots flash on refresh (a live-changing measurement, worth a
+     "this just updated" cue); Registration's dot stays a plain static
+     halo per feedback — it changes rarely, so flashing it every poll
+     cycle would either be a near-constant blink (if it kept animating
+     regardless of an actual change) or a confusing one-off spike users
+     would read as something being wrong. */
   function applyRingDot(field, zones, state) {
     var el = document.querySelector('[data-ring="' + field + '"]');
     if (!el) return;
     var val = state[field];
-    setRingDotColor(el, typeof val === 'number' ? sigZoneColor(val, zones) : '#5c5c5e');
+    setRingDotColor(el, typeof val === 'number' ? sigZoneColor(val, zones) : '#5c5c5e', true);
   }
 
   function applyRegRingDot(field, state) {
     var el = document.querySelector('[data-ring="' + field + '"]');
     if (!el) return;
-    setRingDotColor(el, REG_DOT_COLORS[state[field]] || '#5c5c5e');
+    setRingDotColor(el, REG_DOT_COLORS[state[field]] || '#5c5c5e', false);
   }
 
   function renderStatusDots(state) {
