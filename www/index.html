@@ -9,6 +9,7 @@
 <body>
   <header class="om-topbar">
     <span class="device-name">OpenModem</span>
+    <div class="om-topbar-signal" id="om-topbar-signal"></div>
   </header>
 
   <nav class="om-sidebar" id="om-sidebar-nav"></nav>
@@ -22,30 +23,10 @@
         <div class="om-row"><span class="om-row-label">SINR</span><span data-field="signal_lte_sinr">—</span></div>
       </div>
       <div class="om-card om-card-wide">
-        <h2>Signal Strength — Style Preview</h2>
-        <p class="om-note">Five ways to show the same reading (currently active RAT's RSRP) — pick which one(s) to keep.</p>
-        <div class="om-sigshowcase">
-          <div class="om-sigshowcase-item">
-            <span class="om-sigshowcase-label">A · Phone Bars</span>
-            <div class="om-sig-bars" id="om-sig-bars"></div>
-          </div>
-          <div class="om-sigshowcase-item">
-            <span class="om-sigshowcase-label">B · Horizontal Bar</span>
-            <div id="om-sig-hbar"></div>
-          </div>
-          <div class="om-sigshowcase-item">
-            <span class="om-sigshowcase-label">C · Gauge</span>
-            <div id="om-sig-gauge"></div>
-          </div>
-          <div class="om-sigshowcase-item">
-            <span class="om-sigshowcase-label">D · Word + Color</span>
-            <div id="om-sig-word"></div>
-          </div>
-          <div class="om-sigshowcase-item">
-            <span class="om-sigshowcase-label">E · Bars + Word</span>
-            <div class="om-sig-bars" id="om-sig-combo-bars"></div>
-            <div id="om-sig-combo-word"></div>
-          </div>
+        <h2>Signal Strength</h2>
+        <div class="om-sig-final">
+          <div class="om-sig-bars" id="om-sig-combo-bars"></div>
+          <div id="om-sig-combo-word"></div>
         </div>
       </div>
       <div class="om-card">

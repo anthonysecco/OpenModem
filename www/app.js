@@ -480,7 +480,8 @@
           renderCarrierAggregation(state);
           renderNetPrefs(state);
           renderNetworkType(state);
-          renderSignalShowcase(state);
+          renderSignalCard(state);
+          renderTopbarSignal(state);
           renderCellTooltips(state);
           renderStatusDots(state);
           markRefreshedNow();
@@ -1098,93 +1099,86 @@
      NSA still carries an LTE anchor underneath it (cell_lte_active is
      also true in that case), but "5G NSA" is the more meaningful thing
      to show the user than "LTE". */
+  // "LTE" / "5G NSA" / "5G SA" — no single poller field carries this
+  // since the LTE/5G NR split (cell_lte_active/cell_nr_active/
+  // cell_nr_type), so it's derived here. NR takes priority when
+  // active: NSA still carries an LTE anchor underneath it
+  // (cell_lte_active is also true in that case), but "5G NSA" is the
+  // more meaningful thing to show than "LTE". Shared by the Cellular
+  // page's Network card and the topbar signal indicator below, rather
+  // than each recomputing it.
+  function networkTypeText(state) {
+    if (state.cell_nr_active) {
+      return state.cell_nr_type === 'NR5G-SA' ? '5G SA' : state.cell_nr_type === 'NR5G-NSA' ? '5G NSA' : '5G';
+    }
+    if (state.cell_lte_active) return 'LTE';
+    return '—';
+  }
+
   function renderNetworkType(state) {
     var el = document.getElementById('om-network-type');
     if (!el) return; // not on this page
-
-    var text = '—';
-    if (state.cell_nr_active) {
-      text = state.cell_nr_type === 'NR5G-SA' ? '5G SA' : state.cell_nr_type === 'NR5G-NSA' ? '5G NSA' : '5G';
-    } else if (state.cell_lte_active) {
-      text = 'LTE';
-    }
-    el.textContent = text;
+    el.textContent = networkTypeText(state);
   }
 
-  /* ── Signal Strength style preview (Dashboard) ───────────────────────
-     Five visual treatments of the exact same reading, side by side, so
-     the user can pick which one(s) to keep — this card is a comparison
-     tool, not a finished design decision. All five are driven off one
-     shared value/color/label/pct computed once per refresh: the
+  /* ── Signal Strength (Dashboard) ─────────────────────────────────────
+     Final pick after comparing five styles: phone-style bars + a
+     colored tier word underneath, no dBm sub-caption. Driven by the
      currently active RAT's RSRP (NR takes priority when active, same
-     "which RAT is this really" logic as renderNetworkType() above),
-     run through the site's existing, UNCHANGED RSRP_ZONES/RSRP_MIN/
-     RSRP_MAX/sigZoneColor/sigZoneLabel/sigPct — this is purely a
-     presentation exercise, not a revisit of those thresholds. */
+     logic as networkTypeText() above) through the site's own
+     RSRP_ZONES/sigZoneColor/sigZoneLabel/sigZoneIndex — unchanged
+     thresholds, this is presentation only. */
   function currentRsrp(state) {
     if (state.cell_nr_active && typeof state.signal_nr_rsrp === 'number') return state.signal_nr_rsrp;
     return state.signal_lte_rsrp;
   }
 
-  function renderSignalShowcase(state) {
-    var barsEl = document.getElementById('om-sig-bars');
+  // One height per RSRP_ZONES entry — keep this array's length in sync
+  // if that ever gains/loses a tier. Shared by the Dashboard card and
+  // the (smaller-scale) topbar indicator, which passes its own height
+  // set instead.
+  var SIG_BAR_HEIGHTS = [8, 14, 20, 26, 32];
+
+  function sigBarsHtml(val, has, color, heights, barClass) {
+    var litBars = has ? (RSRP_ZONES.length - sigZoneIndex(val, RSRP_ZONES)) : 0;
+    return heights.map(function (h, i) {
+      return '<div class="' + barClass + '" style="height:' + h + 'px;background:' + (i < litBars ? color : 'var(--border)') + '"></div>';
+    }).join('');
+  }
+
+  function renderSignalCard(state) {
+    var barsEl = document.getElementById('om-sig-combo-bars');
+    var wordEl = document.getElementById('om-sig-combo-word');
     if (!barsEl) return; // not on this page
 
     var val = currentRsrp(state);
     var has = typeof val === 'number';
     var color = has ? sigZoneColor(val, RSRP_ZONES) : '#5c5c5e';
     var label = has ? sigZoneLabel(val, RSRP_ZONES) : 'No Signal';
-    var pct = has ? sigPct(val, RSRP_MIN, RSRP_MAX) : 0;
 
-    // A. Phone-style bars — filled count tracks which RSRP_ZONES tier
-    // the reading actually falls in, not a generic pct quartile: index
-    // 0 (Excellent) lights all 5, index 4 (Critical) lights just 1.
-    // That keeps the bars honest about the same boundaries the color
-    // itself is drawn from, rather than an independent linear split.
-    // One height per RSRP_ZONES entry — keep this array's length in
-    // sync if that ever gains/loses a tier.
-    var barHeights = [8, 14, 20, 26, 32];
-    var litBars = has ? (RSRP_ZONES.length - sigZoneIndex(val, RSRP_ZONES)) : 0;
-    var barsHtml = barHeights.map(function (h, i) {
-      return '<div class="om-sig-bar" style="height:' + h + 'px;background:' + (i < litBars ? color : 'var(--border)') + '"></div>';
-    }).join('');
-    barsEl.innerHTML = barsHtml;
+    barsEl.innerHTML = sigBarsHtml(val, has, color, SIG_BAR_HEIGHTS, 'om-sig-bar');
+    if (wordEl) wordEl.innerHTML = '<div class="om-sig-word-label" style="color:' + color + '">' + label + '</div>';
+  }
 
-    // B. Horizontal bar
-    var hbarEl = document.getElementById('om-sig-hbar');
-    hbarEl.innerHTML =
-      '<div class="om-sig-hbar-track"><div class="om-sig-hbar-fill" style="width:' + pct + '%;background:' + color + '"></div></div>' +
-      '<div class="om-sig-hbar-val" style="color:' + color + '">' + (has ? val + ' dBm' : '—') + '</div>';
+  /* ── Topbar signal indicator (every page) ────────────────────────────
+     Bars + carrier + network type, always visible regardless of which
+     page you're on — same reasoning as moving connection status into
+     the shared footer: this is global state, not page-specific.
+     Smaller bar heights than the Dashboard card (topbar is ~56px
+     tall), same tier-boundary logic via sigBarsHtml(). */
+  var TOPBAR_SIG_BAR_HEIGHTS = [5, 8, 11, 14, 17];
 
-    // C. Gauge — semicircle arc, track always full, fill arc length
-    // scaled by pct via stroke-dasharray/dashoffset (141.4 ~= arc
-    // length for this path's radius-45 semicircle). Percent text is an
-    // SVG <text> node inside the arc's own enclosed area (~(50,38) in
-    // the arc's 0-100/0-55 viewBox), not separate HTML below it.
-    var gaugeEl = document.getElementById('om-sig-gauge');
-    var arcLen = 141.4;
-    var offset = arcLen * (1 - pct / 100);
-    gaugeEl.innerHTML =
-      '<svg viewBox="0 0 100 55" width="120" height="62">' +
-      '<path d="M5,50 A45,45 0 0 1 95,50" fill="none" stroke="var(--border)" stroke-width="9" stroke-linecap="round"/>' +
-      '<path d="M5,50 A45,45 0 0 1 95,50" fill="none" stroke="' + color + '" stroke-width="9" stroke-linecap="round" ' +
-      'stroke-dasharray="' + arcLen + '" stroke-dashoffset="' + offset + '"/>' +
-      '<text x="50" y="40" text-anchor="middle" font-size="15" font-weight="700" fill="' + color + '">' + (has ? pct + '%' : '—') + '</text>' +
-      '</svg>';
+  function renderTopbarSignal(state) {
+    var el = document.getElementById('om-topbar-signal');
+    if (!el) return; // shouldn't happen, every page carries this
 
-    // D. Word + color
-    var wordEl = document.getElementById('om-sig-word');
-    wordEl.innerHTML =
-      '<div class="om-sig-word-label" style="color:' + color + '">' + label + '</div>' +
-      '<div class="om-sig-word-val">' + (has ? val + ' dBm' : 'No reading') + '</div>';
+    var val = currentRsrp(state);
+    var has = typeof val === 'number';
+    var color = has ? sigZoneColor(val, RSRP_ZONES) : '#5c5c5e';
+    var barsHtml = sigBarsHtml(val, has, color, TOPBAR_SIG_BAR_HEIGHTS, 'om-topbar-sigbar');
 
-    // E. Bars + word — A's bars on top, D's word underneath, no dBm
-    // sub-caption (that's what makes this distinct from just stacking
-    // A and D on top of each other).
-    var comboBarsEl = document.getElementById('om-sig-combo-bars');
-    var comboWordEl = document.getElementById('om-sig-combo-word');
-    if (comboBarsEl) comboBarsEl.innerHTML = barsHtml;
-    if (comboWordEl) comboWordEl.innerHTML = '<div class="om-sig-word-label" style="color:' + color + '">' + label + '</div>';
+    el.innerHTML = '<span class="om-topbar-sigbars">' + barsHtml + '</span>' +
+      '<span class="om-topbar-signal-text">' + escapeHtml(state.carrier_name || '—') + ' · ' + escapeHtml(networkTypeText(state)) + '</span>';
   }
 
   function initNetPrefs() {
