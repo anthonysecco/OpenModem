@@ -853,6 +853,17 @@ body {
   max-width: 140px;
 }
 
+/* Static separator between the carrier/network text and the
+   Connectivity Check status — matches the "·" already used inline
+   between carrier name and network type within om-topbar-signal-text
+   itself, so the whole line reads as one consistent "A · B · C" rather
+   than the last segment looking detached (flex gap alone doesn't read
+   as clearly as a matching literal dot). Never changes, so it's part of
+   initShell's one-time skeleton, not rebuilt by either render function. */
+.om-topbar-sep {
+  flex-shrink: 0;
+}
+
 /* Connectivity Check status, right of the carrier/network text — short
    fixed strings ("Online"/"Offline"/"—"), no truncation needed unlike
    the carrier name beside it. */

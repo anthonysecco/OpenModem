@@ -98,6 +98,7 @@
     if (topbarSignal) {
       topbarSignal.innerHTML = '<span class="om-topbar-sigbars" id="om-topbar-sigbars"></span>' +
         '<span class="om-topbar-signal-text" id="om-topbar-signal-text"></span>' +
+        '<span class="om-topbar-sep">·</span>' +
         '<span class="om-topbar-conn-text" id="om-topbar-conn-text"></span>' +
         '<span class="om-ring-dot" id="om-topbar-conn-dot"></span>';
     }
@@ -545,6 +546,41 @@
   // (via renderHistoryCharts, driven off historyNetSamples) directly
   // inside the Connectivity card now, one source of truth instead of two
   // competing displays of the same number.
+  /* US state/territory name -> USPS 2-letter code, for "IP Geo"'s
+     "City, State, Country" display. ipinfo.io's free/unauthenticated
+     tier (see net_poller.sh's geo_loop) returns country already as ISO
+     3166-1 alpha-2 (e.g. "US") but region as a full name ("California"),
+     not an ISO 3166-2 subdivision code — that field only exists on paid
+     plans, not worth requiring an API key for. This table gets the
+     requested abbreviation for the common case (US) without hand-rolling
+     a full worldwide ISO 3166-2 database for every country's provinces;
+     non-US regions just show their full name as ipinfo returns it. */
+  var US_STATE_ABBR = {
+    'Alabama': 'AL', 'Alaska': 'AK', 'Arizona': 'AZ', 'Arkansas': 'AR',
+    'California': 'CA', 'Colorado': 'CO', 'Connecticut': 'CT', 'Delaware': 'DE',
+    'Florida': 'FL', 'Georgia': 'GA', 'Hawaii': 'HI', 'Idaho': 'ID',
+    'Illinois': 'IL', 'Indiana': 'IN', 'Iowa': 'IA', 'Kansas': 'KS',
+    'Kentucky': 'KY', 'Louisiana': 'LA', 'Maine': 'ME', 'Maryland': 'MD',
+    'Massachusetts': 'MA', 'Michigan': 'MI', 'Minnesota': 'MN', 'Mississippi': 'MS',
+    'Missouri': 'MO', 'Montana': 'MT', 'Nebraska': 'NE', 'Nevada': 'NV',
+    'New Hampshire': 'NH', 'New Jersey': 'NJ', 'New Mexico': 'NM', 'New York': 'NY',
+    'North Carolina': 'NC', 'North Dakota': 'ND', 'Ohio': 'OH', 'Oklahoma': 'OK',
+    'Oregon': 'OR', 'Pennsylvania': 'PA', 'Rhode Island': 'RI', 'South Carolina': 'SC',
+    'South Dakota': 'SD', 'Tennessee': 'TN', 'Texas': 'TX', 'Utah': 'UT',
+    'Vermont': 'VT', 'Virginia': 'VA', 'Washington': 'WA', 'West Virginia': 'WV',
+    'Wisconsin': 'WI', 'Wyoming': 'WY', 'District of Columbia': 'DC',
+    'Puerto Rico': 'PR', 'Guam': 'GU', 'American Samoa': 'AS',
+    'United States Virgin Islands': 'VI', 'Northern Mariana Islands': 'MP'
+  };
+
+  function formatGeoLocation(city, region, country) {
+    var parts = [];
+    if (city) parts.push(city);
+    if (region) parts.push((country === 'US' && US_STATE_ABBR[region]) || region);
+    if (country) parts.push(country);
+    return parts.length ? parts.join(', ') : '—';
+  }
+
   function renderConnectivityCard(netState) {
     var icmpStatusTextEl = document.getElementById('om-conn-icmp-status-text');
     if (!icmpStatusTextEl) return; // not on this page
@@ -567,7 +603,7 @@
     if (cfPopEl) cfPopEl.textContent = netState.cf_pop || '—';
 
     var geoEl = document.getElementById('om-conn-geo-location');
-    if (geoEl) geoEl.textContent = netState.geo_location || '—';
+    if (geoEl) geoEl.textContent = formatGeoLocation(netState.geo_city, netState.geo_region, netState.geo_country);
   }
 
   /* ── 5-minute trend history (Dashboard) ──────────────────────────────

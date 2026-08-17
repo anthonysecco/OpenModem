@@ -209,18 +209,22 @@ icmp_loop() {
         [ -f "$CHECK204_FILE" ] && _check204_status=$(cat "$CHECK204_FILE" 2>/dev/null)
 
         _geo_colo=""
-        _geo_location=""
+        _geo_city=""
+        _geo_region=""
+        _geo_country=""
         if [ -f "$GEO_FILE" ]; then
             _geo_colo=$(sed -n '1p' "$GEO_FILE")
-            _geo_location=$(sed -n '2p' "$GEO_FILE")
+            _geo_city=$(sed -n '2p' "$GEO_FILE")
+            _geo_region=$(sed -n '3p' "$GEO_FILE")
+            _geo_country=$(sed -n '4p' "$GEO_FILE")
         fi
 
         _cycle_t=$(date +%s)
-        _json='{"_polled_at":'"$_cycle_t"',"icmp_target":'"$(json_str_or_null "$NET_ICMP_TARGET")"',"icmp_status":'"$(json_status "$_icmp_status")"',"icmp_avg_rtt_ms":'"$(json_num_or_null "$_icmp_avg")"',"icmp_jitter_ms":'"$(json_num_or_null "$_icmp_jitter")"',"check204_status":'"$(json_status "$_check204_status")"',"cf_pop":'"$(json_str_or_null "$_geo_colo")"',"geo_location":'"$(json_str_or_null "$_geo_location")"'}'
+        _json='{"_polled_at":'"$_cycle_t"',"icmp_target":'"$(json_str_or_null "$NET_ICMP_TARGET")"',"icmp_status":'"$(json_status "$_icmp_status")"',"icmp_avg_rtt_ms":'"$(json_num_or_null "$_icmp_avg")"',"icmp_jitter_ms":'"$(json_num_or_null "$_icmp_jitter")"',"check204_status":'"$(json_status "$_check204_status")"',"cf_pop":'"$(json_str_or_null "$_geo_colo")"',"geo_city":'"$(json_str_or_null "$_geo_city")"',"geo_region":'"$(json_str_or_null "$_geo_region")"',"geo_country":'"$(json_str_or_null "$_geo_country")"'}'
         printf '%s\n' "$_json" > "${STATE_FILE}.tmp" && mv "${STATE_FILE}.tmp" "$STATE_FILE"
         append_net_history "$_cycle_t"
 
-        log_dbg "icmp=$_icmp_status avg=${_icmp_avg}ms jitter=${_icmp_jitter}ms check204=$_check204_status cf_pop=${_geo_colo:-unknown} geo=${_geo_location:-unknown} window=[$_window]"
+        log_dbg "icmp=$_icmp_status avg=${_icmp_avg}ms jitter=${_icmp_jitter}ms check204=$_check204_status cf_pop=${_geo_colo:-unknown} geo=${_geo_city:-unknown}/${_geo_region:-unknown}/${_geo_country:-unknown} window=[$_window]"
         rotate_log
         sleep "$NET_ICMP_INTERVAL"
     done
@@ -313,16 +317,22 @@ check204_loop() {
 # from geolocation rather than folded into it.
 #
 # ipinfo.io/json is a free, unauthenticated IP-geolocation lookup
-# (confirmed live: returns city/region for this device's public IP,
-# well under its free-tier rate limit at one request per
-# NET_GEO_INTERVAL) — city+region only, not the full response (org/
-# postal/timezone/lat-long aren't surfaced anywhere in the UI, no
-# reason to carry them through). Parsed with sed rather than a JSON
-# library (none available in BusyBox ash, see CLAUDE.md's Conventions)
-# — safe here because the field shape is simple and stable (a flat
-# "key": "value" pair per line in ipinfo's own pretty-printed output,
-# confirmed live), same pragmatic approach at_poller.sh already takes
-# for AT command responses.
+# (confirmed live: returns city/region/country for this device's public
+# IP, well under its free-tier rate limit at one request per
+# NET_GEO_INTERVAL) — city/region/country only, not the full response
+# (org/postal/timezone/lat-long aren't surfaced anywhere in the UI, no
+# reason to carry them through). Sent as three separate fields rather
+# than one pre-joined string so the front end owns formatting/
+# abbreviation, not this script — country comes back already as ISO
+# 3166-1 alpha-2 (e.g. "US", confirmed live), but region is the full
+# name ("California", not "CA") on this free/unauthenticated tier; a
+# paid ipinfo.io plan adds a region_code field this could pick up
+# instead, but isn't worth requiring an API key for. Parsed with sed
+# rather than a JSON library (none available in BusyBox ash, see
+# CLAUDE.md's Conventions) — safe here because the field shape is
+# simple and stable (a flat "key": "value" pair per line in ipinfo's
+# own pretty-printed output, confirmed live), same pragmatic approach
+# at_poller.sh already takes for AT command responses.
 geo_loop() {
     while :; do
         _trace=$(curl -4 -fsS -m 5 "$NET_GEO_TRACE_URL" 2>/dev/null)
@@ -331,21 +341,16 @@ geo_loop() {
         _ipinfo=$(curl -4 -fsS -m 5 "$NET_GEO_IPINFO_URL" 2>/dev/null)
         _city=$(printf '%s' "$_ipinfo" | sed -n 's/.*"city" *: *"\([^"]*\)".*/\1/p')
         _region=$(printf '%s' "$_ipinfo" | sed -n 's/.*"region" *: *"\([^"]*\)".*/\1/p')
-        _geo=""
-        if [ -n "$_city" ] && [ -n "$_region" ]; then
-            _geo="${_city}, ${_region}"
-        elif [ -n "$_city" ]; then
-            _geo="$_city"
-        elif [ -n "$_region" ]; then
-            _geo="$_region"
-        fi
+        _country=$(printf '%s' "$_ipinfo" | sed -n 's/.*"country" *: *"\([^"]*\)".*/\1/p')
 
         {
             printf '%s\n' "$_colo"
-            printf '%s\n' "$_geo"
+            printf '%s\n' "$_city"
+            printf '%s\n' "$_region"
+            printf '%s\n' "$_country"
         } > "${GEO_FILE}.tmp" && mv "${GEO_FILE}.tmp" "$GEO_FILE"
 
-        log_dbg "geo colo=${_colo:-unknown} location=${_geo:-unknown}"
+        log_dbg "geo colo=${_colo:-unknown} city=${_city:-unknown} region=${_region:-unknown} country=${_country:-unknown}"
         sleep "$NET_GEO_INTERVAL"
     done
 }
