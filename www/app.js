@@ -166,6 +166,28 @@
     { thresh: Infinity, bar: '#e0473e', label: 'Critical' }
   ];
 
+  /* Estimated-download-speed thresholds (2026-08-17), chosen for an RV/
+     mobile-home use case — a single cellular link usually serving the
+     whole household, not a per-device figure: Excellent (25+ Mbps)
+     covers 4K streaming plus normal simultaneous use without thinking
+     about it (matches the FCC's own 25 Mbps "broadband" floor). Good
+     (10-25) comfortably covers HD streaming, video calls, and general
+     browsing at once. Fair (5-10) is usable but starts to limit
+     simultaneous heavy use — HD may buffer, plan around it. Poor (1-5)
+     is basic-use-only: browsing/email fine, streaming needs to drop to
+     SD or fails outright, video calls degrade badly. Critical (under 1)
+     is effectively unusable for anything beyond text. Same descending-
+     threshold, higher-is-better shape as RSRP/SINR_ZONES (val >= thresh
+     wins), reusing sigZoneColor/sigZoneLabel/sigZoneIndex directly
+     rather than ascZoneColor's lower-is-better direction. */
+  var SPEED_ZONES = [
+    { thresh: 25, bar: '#1e8a4e', label: 'Excellent' },
+    { thresh: 10, bar: '#34c777', label: 'Good' },
+    { thresh: 5, bar: '#f0c64c', label: 'Fair' },
+    { thresh: 1, bar: '#e0873a', label: 'Poor' },
+    { thresh: 0, bar: '#e0473e', label: 'Critical' }
+  ];
+
   function sigZoneColor(val, zones) {
     for (var i = 0; i < zones.length; i++) {
       if (val >= zones[i].thresh) return zones[i].bar;
@@ -540,9 +562,10 @@
      live-appended to as refreshState()/refreshNetState() see genuinely
      new poll data — no separate polling loop needed, this just piggybacks
      on those two's existing gated new-data blocks. Record shapes match
-     the server's JSON exactly (lte_rsrp/nr_rsrp, latency_ms/jitter_ms)
-     rather than remapping at push time, so seeded and live-appended
-     records read identically in sparklineBarsHtml's accessors below. */
+     the server's JSON exactly (lte_rsrp/nr_rsrp/dl_est_mbps,
+     latency_ms/jitter_ms) rather than remapping at push time, so seeded
+     and live-appended records read identically in renderLineChart's
+     accessor callbacks below. */
   var HISTORY_WINDOW_SAMPLES = 60;
   var historySignalSamples = [];
   var historyNetSamples = [];
@@ -559,16 +582,6 @@
   // currentRsrp() uses for the live topbar/Signal Strength card.
   function historyRsrp(rec) {
     return (typeof rec.nr_rsrp === 'number') ? rec.nr_rsrp : rec.lte_rsrp;
-  }
-
-  function sparklineBarsHtml(samples, getValue, zones, ascending, scaleMin, scaleMax) {
-    return samples.map(function (rec) {
-      var v = getValue(rec);
-      var has = typeof v === 'number';
-      var color = has ? (ascending ? ascZoneColor(v, zones) : sigZoneColor(v, zones)) : 'var(--border)';
-      var h = has ? sigPct(v, scaleMin, scaleMax) : 4;
-      return '<div class="om-spark-bar" style="height:' + h + '%;background:' + color + '"></div>';
-    }).join('');
   }
 
   /* ── Smoothed line chart (RSRP Trend) ────────────────────────────────
@@ -629,7 +642,14 @@
       ' C ' + seg[1][0] + ' ' + seg[1][1] + ', ' + seg[2][0] + ' ' + seg[2][1] + ', ' + seg[3][0] + ' ' + seg[3][1];
   }
 
-  function renderLineChart(containerId, samples, getValue, zones, min, max) {
+  // ascending=true for lower-is-better metrics (Latency/Jitter, via
+  // ascZoneColor), false/omitted for higher-is-better (RSRP, Speed, via
+  // sigZoneColor).
+  function chartZoneColor(val, zones, ascending) {
+    return ascending ? ascZoneColor(val, zones) : sigZoneColor(val, zones);
+  }
+
+  function renderLineChart(containerId, samples, getValue, zones, min, max, ascending) {
     var svg = document.getElementById(containerId);
     if (!svg) return;
     var svgns = 'http://www.w3.org/2000/svg';
@@ -648,7 +668,7 @@
 
     var coords = pts.map(function (p) { return [p.x, p.y]; });
     var segs = catmullRomSegments(coords);
-    var lastColor = sigZoneColor(pts[pts.length - 1].v, zones);
+    var lastColor = chartZoneColor(pts[pts.length - 1].v, zones, ascending);
     var gradId = containerId + '-grad';
 
     var defs = document.createElementNS(svgns, 'defs');
@@ -681,7 +701,7 @@
     svg.appendChild(area);
 
     segs.forEach(function (s, i) {
-      var color = sigZoneColor((pts[i].v + pts[i + 1].v) / 2, zones);
+      var color = chartZoneColor((pts[i].v + pts[i + 1].v) / 2, zones, ascending);
       var path = document.createElementNS(svgns, 'path');
       path.setAttribute('d', segPathD(s));
       path.setAttribute('fill', 'none');
@@ -725,7 +745,7 @@
     return best;
   }
 
-  function showChartHover(containerId, unit, idx, svgEl, wrapEl) {
+  function showChartHover(containerId, unit, zones, ascending, idx, svgEl, wrapEl) {
     var pts = chartPoints[containerId];
     if (!pts || !pts[idx]) return;
     var p = pts[idx];
@@ -738,7 +758,7 @@
     circle.setAttribute('cx', p.x);
     circle.setAttribute('cy', p.y);
     circle.setAttribute('r', '3.5');
-    circle.setAttribute('fill', sigZoneColor(p.v, RSRP_ZONES));
+    circle.setAttribute('fill', chartZoneColor(p.v, zones, ascending));
     circle.setAttribute('stroke', 'var(--surface)');
     circle.setAttribute('stroke-width', '1.5');
     svgEl.appendChild(circle);
@@ -755,7 +775,7 @@
     tip.style.top = yPx + 'px';
   }
 
-  function handleChartHoverMove(containerId, unit, clientX, svgEl, wrapEl) {
+  function handleChartHoverMove(containerId, unit, zones, ascending, clientX, svgEl, wrapEl) {
     var idx = nearestChartIndex(containerId, clientX, svgEl);
     if (idx < 0) return;
     var st = chartHover[containerId];
@@ -767,29 +787,26 @@
     if (tip) tip.style.display = 'none';
     chartHover[containerId] = {
       idx: idx,
-      timer: setTimeout(function () { showChartHover(containerId, unit, idx, svgEl, wrapEl); }, CHART_HOVER_DWELL_MS)
+      timer: setTimeout(function () { showChartHover(containerId, unit, zones, ascending, idx, svgEl, wrapEl); }, CHART_HOVER_DWELL_MS)
     };
   }
 
-  function initChartHover(containerId, unit) {
+  function initChartHover(containerId, unit, zones, ascending) {
     var svg = document.getElementById(containerId);
     if (!svg) return; // not on this page
     var wrapEl = svg.closest('.om-chart-wrap');
     if (!wrapEl) return;
-    svg.addEventListener('pointermove', function (e) { handleChartHoverMove(containerId, unit, e.clientX, svg, wrapEl); });
-    svg.addEventListener('pointerdown', function (e) { handleChartHoverMove(containerId, unit, e.clientX, svg, wrapEl); });
+    svg.addEventListener('pointermove', function (e) { handleChartHoverMove(containerId, unit, zones, ascending, e.clientX, svg, wrapEl); });
+    svg.addEventListener('pointerdown', function (e) { handleChartHoverMove(containerId, unit, zones, ascending, e.clientX, svg, wrapEl); });
     svg.addEventListener('pointerleave', function () { clearChartHover(containerId); });
     svg.addEventListener('pointerup', function () { clearChartHover(containerId); });
   }
 
   function renderHistoryCharts() {
-    renderLineChart('om-hist-rsrp-chart', historySignalSamples, historyRsrp, RSRP_ZONES, RSRP_MIN, RSRP_MAX);
-
-    var latEl = document.getElementById('om-hist-latency-spark');
-    if (latEl) latEl.innerHTML = sparklineBarsHtml(historyNetSamples, function (r) { return r.latency_ms; }, LATENCY_ZONES, true, 0, 300);
-
-    var jitEl = document.getElementById('om-hist-jitter-spark');
-    if (jitEl) jitEl.innerHTML = sparklineBarsHtml(historyNetSamples, function (r) { return r.jitter_ms; }, JITTER_ZONES, true, 0, 50);
+    renderLineChart('om-hist-rsrp-chart', historySignalSamples, historyRsrp, RSRP_ZONES, RSRP_MIN, RSRP_MAX, false);
+    renderLineChart('om-hist-latency-chart', historyNetSamples, function (r) { return r.latency_ms; }, LATENCY_ZONES, 0, 300, true);
+    renderLineChart('om-hist-jitter-chart', historyNetSamples, function (r) { return r.jitter_ms; }, JITTER_ZONES, 0, 50, true);
+    renderLineChart('om-hist-speed-chart', historySignalSamples, function (r) { return r.dl_est_mbps; }, SPEED_ZONES, 0, 50, false);
   }
 
   // One-time seed from the server's already-accumulated ring buffer — the
@@ -832,12 +849,17 @@
 
   function pushSignalHistorySample(state) {
     if (!document.getElementById('om-hist-rsrp-chart')) return; // not on this page
-    pushCapped(historySignalSamples, { t: state._polled_at, lte_rsrp: state.signal_lte_rsrp, nr_rsrp: state.signal_nr_rsrp });
+    pushCapped(historySignalSamples, {
+      t: state._polled_at,
+      lte_rsrp: state.signal_lte_rsrp,
+      nr_rsrp: state.signal_nr_rsrp,
+      dl_est_mbps: state.ca_dl_estimated_mbps
+    });
     renderHistoryCharts();
   }
 
   function pushNetHistorySample(netState) {
-    if (!document.getElementById('om-hist-latency-spark')) return; // not on this page
+    if (!document.getElementById('om-hist-latency-chart')) return; // not on this page
     pushCapped(historyNetSamples, { t: netState._polled_at, latency_ms: netState.icmp_avg_rtt_ms, jitter_ms: netState.icmp_jitter_ms });
     renderHistoryCharts();
   }
@@ -2354,7 +2376,10 @@
     refreshState();
     refreshNetState();
     seedHistoryOnce();
-    initChartHover('om-hist-rsrp-chart', 'dBm');
+    initChartHover('om-hist-rsrp-chart', 'dBm', RSRP_ZONES, false);
+    initChartHover('om-hist-latency-chart', 'ms', LATENCY_ZONES, true);
+    initChartHover('om-hist-jitter-chart', 'ms', JITTER_ZONES, true);
+    initChartHover('om-hist-speed-chart', 'Mbps', SPEED_ZONES, false);
     setInterval(tickAge, 1000);
     initUpdateButton();
     initAtTerminal();

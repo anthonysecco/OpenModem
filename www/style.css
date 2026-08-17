@@ -224,46 +224,40 @@ body {
   align-self: center;
 }
 
-/* 5-minute trend sparklines (Dashboard) — same thin-vertical-bar
-   technique as .om-sig-bar/.om-topbar-sigbar, just many more of them and
-   flex-sized (flex:1 1 0, not a fixed px width) so however many samples
-   are currently in the window (fewer than the full 60 right after a
-   fresh boot/restart) still spread evenly across the card's width
-   instead of leaving a gap. */
-.om-spark-label {
+/* Trends card (Dashboard) — one row label + chart per metric (RSRP,
+   Latency, Jitter, Est. Speed), all sharing the same .om-chart-wrap
+   line-chart look below. Unit sits right-aligned on the same line as
+   the metric name, same space-between idea as .om-card-title-value but
+   at row scale rather than the card's own <h2>. */
+.om-chart-row-label {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
   color: var(--text-dim);
   text-transform: uppercase;
   letter-spacing: 0.04em;
   font-size: 0.7rem;
-  margin: 0.6rem 0 0.3rem;
+  margin: 0.9rem 0 0.2rem;
 }
 
-.om-spark-label:first-child {
+.om-chart-row-label:first-child {
   margin-top: 0;
 }
 
-.om-spark {
-  display: flex;
-  align-items: flex-end;
-  gap: 1px;
-  height: 48px;
-  padding: 0.25rem 0;
+.om-chart-row-label .om-chart-row-unit {
+  text-transform: none;
+  letter-spacing: normal;
 }
 
-.om-spark-bar {
-  flex: 1 1 0;
-  min-width: 2px;
-  border-radius: 1px 1px 0 0;
-}
-
-/* Smoothed line chart (RSRP Trend) — app.js's renderLineChart/
-   initChartHover build the <svg> content and position .om-chart-tooltip
-   via inline left/top, both relative to this wrap. Axis labels are the
-   metric's own fixed expected-range bounds (e.g. RSRP_MIN/MAX), not an
-   auto-scaled data range — a tiny wobble between two close values
-   shouldn't look like a huge swing. touch-action:none on the svg stops
-   the dwell-to-reveal gesture (pointerdown+hold) from also triggering a
-   page scroll on mobile while the user is trying to read a value. */
+/* Smoothed line chart (Trends card: RSRP, Latency, Jitter, Est. Speed
+   each get their own row, sharing this same markup/CSS) — app.js's
+   renderLineChart/initChartHover build the <svg> content and position
+   .om-chart-tooltip via inline left/top, both relative to this wrap.
+   Axis labels are each metric's own fixed expected-range bounds (e.g.
+   RSRP_MIN/MAX), not an auto-scaled data range — a tiny wobble between
+   two close values shouldn't look like a huge swing. touch-action:none
+   on the svg stops the dwell-to-reveal gesture (pointerdown+hold) from
+   also triggering a page scroll on mobile while reading a value. */
 .om-chart-wrap {
   position: relative;
   padding: 0.4rem 0 0.2rem;

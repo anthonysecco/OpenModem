@@ -138,9 +138,15 @@ atomic_write() {
 # changes. Accumulates every cycle regardless of whether any browser has
 # the Dashboard open — a page opening for the first time still sees the
 # preceding 5 minutes via history_signal.sh's initial fetch.
+#
+# dl_est_mbps rides along here too (the Dashboard's "Est. Speed" trend)
+# rather than getting its own history file — it's already computed once
+# per cycle by collect_carrier_aggregation (F_CA_DL_EST_MBPS), which runs
+# earlier in the same main-loop iteration, so this is just capturing an
+# already-available value, not adding a new collector.
 append_signal_history() {
     _t="$1"
-    _line="{\"t\":${_t},\"lte_rsrp\":${F_LTE_RSRP},\"lte_rsrq\":${F_LTE_RSRQ},\"lte_sinr\":${F_LTE_SINR},\"nr_rsrp\":${F_NR_RSRP},\"nr_rsrq\":${F_NR_RSRQ},\"nr_sinr\":${F_NR_SINR}}"
+    _line="{\"t\":${_t},\"lte_rsrp\":${F_LTE_RSRP},\"lte_rsrq\":${F_LTE_RSRQ},\"lte_sinr\":${F_LTE_SINR},\"nr_rsrp\":${F_NR_RSRP},\"nr_rsrq\":${F_NR_RSRQ},\"nr_sinr\":${F_NR_SINR},\"dl_est_mbps\":${F_CA_DL_EST_MBPS}}"
     { [ -f "$HISTORY_SCRATCH" ] && cat "$HISTORY_SCRATCH"; printf '%s\n' "$_line"; } \
         | tail -n "$HISTORY_WINDOW_SAMPLES" > "${HISTORY_SCRATCH}.tmp" && mv "${HISTORY_SCRATCH}.tmp" "$HISTORY_SCRATCH"
 

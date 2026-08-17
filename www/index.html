@@ -18,22 +18,10 @@
     <div class="om-cards">
       <div class="om-card">
         <h2>Signal</h2>
-        <div class="om-row"><span class="om-row-label">RSRP</span><span data-field="signal_lte_rsrp">—</span></div>
-        <div class="om-row"><span class="om-row-label">RSRQ</span><span data-field="signal_lte_rsrq">—</span></div>
-        <div class="om-row"><span class="om-row-label">SINR</span><span data-field="signal_lte_sinr">—</span></div>
-      </div>
-      <div class="om-card om-card-wide">
-        <h2>Signal Strength</h2>
         <div class="om-sig-final">
           <div class="om-sig-bars" id="om-sig-combo-bars"></div>
           <div id="om-sig-combo-word"></div>
         </div>
-      </div>
-      <div class="om-card">
-        <h2>Carrier</h2>
-        <div class="om-row"><span class="om-row-label">Name</span><span data-field="carrier_name">—</span></div>
-        <div class="om-row"><span class="om-row-label">Type</span><span data-field="cell_rat">—</span></div>
-        <div class="om-row"><span class="om-row-label">Band</span><span data-field="cell_band">—</span></div>
       </div>
       <div class="om-card">
         <h2>Connectivity</h2>
@@ -43,29 +31,43 @@
         <div class="om-row"><span class="om-row-label">Jitter</span><span class="om-row-value-wrap"><span id="om-conn-icmp-jitter-text">—</span><span class="om-ring-dot" id="om-conn-icmp-jitter-dot"></span></span></div>
       </div>
       <div class="om-card om-card-wide">
-        <h2><span>RSRP Trend (5 min)</span><span class="om-card-title-value">dBm</span></h2>
+        <h2>Trends (5 min)</h2>
+
+        <div class="om-chart-row-label"><span>RSRP</span><span class="om-chart-row-unit">dBm</span></div>
         <div class="om-chart-wrap">
           <span class="om-chart-axis om-chart-axis-max">-75</span>
           <span class="om-chart-axis om-chart-axis-min">-140</span>
           <svg class="om-chart-svg" id="om-hist-rsrp-chart"></svg>
           <div class="om-chart-tooltip" id="om-hist-rsrp-chart-tooltip"></div>
         </div>
-      </div>
-      <div class="om-card om-card-wide">
-        <h2>Latency / Jitter Trend (5 min)</h2>
-        <div class="om-spark-label">Latency</div>
-        <div class="om-spark" id="om-hist-latency-spark"></div>
-        <div class="om-spark-label">Jitter</div>
-        <div class="om-spark" id="om-hist-jitter-spark"></div>
+
+        <div class="om-chart-row-label"><span>Latency</span><span class="om-chart-row-unit">ms</span></div>
+        <div class="om-chart-wrap">
+          <span class="om-chart-axis om-chart-axis-max">300</span>
+          <span class="om-chart-axis om-chart-axis-min">0</span>
+          <svg class="om-chart-svg" id="om-hist-latency-chart"></svg>
+          <div class="om-chart-tooltip" id="om-hist-latency-chart-tooltip"></div>
+        </div>
+
+        <div class="om-chart-row-label"><span>Jitter</span><span class="om-chart-row-unit">ms</span></div>
+        <div class="om-chart-wrap">
+          <span class="om-chart-axis om-chart-axis-max">50</span>
+          <span class="om-chart-axis om-chart-axis-min">0</span>
+          <svg class="om-chart-svg" id="om-hist-jitter-chart"></svg>
+          <div class="om-chart-tooltip" id="om-hist-jitter-chart-tooltip"></div>
+        </div>
+
+        <div class="om-chart-row-label"><span>Est. Speed</span><span class="om-chart-row-unit">Mbps</span></div>
+        <div class="om-chart-wrap">
+          <span class="om-chart-axis om-chart-axis-max">50</span>
+          <span class="om-chart-axis om-chart-axis-min">0</span>
+          <svg class="om-chart-svg" id="om-hist-speed-chart"></svg>
+          <div class="om-chart-tooltip" id="om-hist-speed-chart-tooltip"></div>
+        </div>
       </div>
       <div class="om-card">
         <h2>SIM</h2>
         <p data-field="sim_status">—</p>
-      </div>
-      <div class="om-card">
-        <h2>WAN</h2>
-        <div class="om-row"><span class="om-row-label">Status</span><span data-field="wan_active">—</span></div>
-        <div class="om-row"><span class="om-row-label">IP</span><span data-field="wan_ip">—</span></div>
       </div>
     </div>
     <footer class="om-footer" id="om-footer"></footer>
