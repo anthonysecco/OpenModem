@@ -792,19 +792,27 @@
     if (jitEl) jitEl.innerHTML = sparklineBarsHtml(historyNetSamples, function (r) { return r.jitter_ms; }, JITTER_ZONES, true, 0, 50);
   }
 
-  // One-time seed from the server's already-accumulated ring buffer.
-  // Guarded so a live sample that arrives first (fetch is async, could
-  // race the very first refreshState()/refreshNetState() tick) isn't
-  // clobbered by the seed landing after it — worst case is a shorter
-  // initial window that fills back in on its own, never a discarded
-  // live sample.
+  // One-time seed from the server's already-accumulated ring buffer — the
+  // whole point of the server-side history files, so a freshly-opened
+  // tab sees the preceding 5 minutes immediately rather than building up
+  // from empty as live samples trickle in. Always assigns when the fetch
+  // resolves, even if a live sample (from refreshState()/refreshNetState())
+  // already landed first: state.sh is a much smaller/faster fetch than
+  // history_signal.sh/history_net.sh, so in practice the first live poll
+  // reliably wins that race — a "only seed if still empty" guard (the
+  // previous version of this function) meant the seed almost never
+  // actually ran, which is exactly the "only shows data since the page
+  // loaded" bug this replaces. Safe to just overwrite: the server's
+  // history file already reflects every poll cycle a live push would
+  // have added anyway, so this never discards anything the array
+  // wouldn't already have picked up from the source of truth.
   function seedHistoryOnce() {
     if (!document.getElementById('om-hist-rsrp-chart')) return; // not on this page
 
     fetch('/cgi-bin/history_signal.sh')
       .then(function (r) { return r.json(); })
       .then(function (data) {
-        if (Array.isArray(data) && historySignalSamples.length === 0) {
+        if (Array.isArray(data)) {
           historySignalSamples = data.slice(-HISTORY_WINDOW_SAMPLES);
         }
         renderHistoryCharts();
@@ -814,7 +822,7 @@
     fetch('/cgi-bin/history_net.sh')
       .then(function (r) { return r.json(); })
       .then(function (data) {
-        if (Array.isArray(data) && historyNetSamples.length === 0) {
+        if (Array.isArray(data)) {
           historyNetSamples = data.slice(-HISTORY_WINDOW_SAMPLES);
         }
         renderHistoryCharts();
