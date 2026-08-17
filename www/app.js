@@ -611,7 +611,7 @@
   var CHART_VIEW_H = 90;
   var CHART_PAD = 6;
   var chartPoints = {};  // containerId -> last-rendered [{x,y,v,t}, ...], for hover lookups
-  var chartHover = {};   // containerId -> {timer, idx} currently-tracked dwell
+  var chartHover = {};   // containerId -> {idx} currently-shown point
 
   function chartX(i, n) {
     if (n <= 1) return CHART_PAD;
@@ -716,17 +716,14 @@
     });
   }
 
-  /* Hover/touch dwell: per the user's ask, a value only appears after
-     resting on a point for 2s (not an immediate on-hover tooltip) — so
-     a casual glance/scroll across the chart doesn't throw tooltips up
-     constantly. pointerdown+pointermove (not separate mouse/touch
-     handlers) covers both desktop hover and a mobile long-press with
-     one code path. Moving to a different point resets the 2s timer. */
-  var CHART_HOVER_DWELL_MS = 2000;
-
+  /* Hover/touch: shows the nearest point's value immediately (not
+     delayed) — pointerdown+pointermove (not separate mouse/touch
+     handlers) covers both desktop hover and mobile touch with one code
+     path. chartHover just tracks which point index is currently shown,
+     so moving to a different point re-renders the marker/tooltip there
+     instead of redrawing on every pixel of movement within the same
+     point's nearest-neighbor range. */
   function clearChartHover(containerId) {
-    var st = chartHover[containerId];
-    if (st && st.timer) clearTimeout(st.timer);
     chartHover[containerId] = null;
     var svg = document.getElementById(containerId);
     var marker = svg && svg.querySelector('.om-chart-hover-marker');
@@ -783,16 +780,9 @@
     var idx = nearestChartIndex(containerId, clientX, svgEl);
     if (idx < 0) return;
     var st = chartHover[containerId];
-    if (st && st.idx === idx) return; // already dwelling on this point
-    if (st && st.timer) clearTimeout(st.timer);
-    var marker = svgEl.querySelector('.om-chart-hover-marker');
-    if (marker) marker.parentNode.removeChild(marker);
-    var tip = document.getElementById(containerId + '-tooltip');
-    if (tip) tip.style.display = 'none';
-    chartHover[containerId] = {
-      idx: idx,
-      timer: setTimeout(function () { showChartHover(containerId, unit, zones, ascending, idx, svgEl, wrapEl); }, CHART_HOVER_DWELL_MS)
-    };
+    if (st && st.idx === idx) return; // already showing this point
+    chartHover[containerId] = { idx: idx };
+    showChartHover(containerId, unit, zones, ascending, idx, svgEl, wrapEl);
   }
 
   function initChartHover(containerId, unit, zones, ascending) {
@@ -808,8 +798,8 @@
 
   function renderHistoryCharts() {
     renderLineChart('om-hist-rsrp-chart', historySignalSamples, historyRsrp, RSRP_ZONES, RSRP_MIN, RSRP_MAX, false);
-    renderLineChart('om-hist-speed-chart', historySignalSamples, function (r) { return r.dl_est_mbps; }, SPEED_ZONES, 0, 400, false);
-    renderLineChart('om-hist-latency-chart', historyNetSamples, function (r) { return r.latency_ms; }, LATENCY_ZONES, 0, 300, true);
+    renderLineChart('om-hist-speed-chart', historySignalSamples, function (r) { return r.dl_est_mbps; }, SPEED_ZONES, 0, 250, false);
+    renderLineChart('om-hist-latency-chart', historyNetSamples, function (r) { return r.latency_ms; }, LATENCY_ZONES, 0, 250, true);
     renderLineChart('om-hist-jitter-chart', historyNetSamples, function (r) { return r.jitter_ms; }, JITTER_ZONES, 0, 50, true);
   }
 

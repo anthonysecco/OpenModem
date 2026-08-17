@@ -256,8 +256,8 @@ body {
    Axis labels are each metric's own fixed expected-range bounds (e.g.
    RSRP_MIN/MAX), not an auto-scaled data range — a tiny wobble between
    two close values shouldn't look like a huge swing. touch-action:none
-   on the svg stops the dwell-to-reveal gesture (pointerdown+hold) from
-   also triggering a page scroll on mobile while reading a value. */
+   on the svg stops a touch-and-hold on the chart from also triggering a
+   page scroll on mobile while reading a value. */
 .om-chart-wrap {
   position: relative;
   padding: 0.4rem 0 0.2rem;
