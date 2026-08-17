@@ -134,6 +134,21 @@ body {
   color: var(--text-dim);
   text-transform: uppercase;
   letter-spacing: 0.03em;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+/* A value shown in a card's title bar (e.g. 5G NR's connection type)
+   rather than its own row — reset the uppercase/letter-spacing/dim
+   styling h2 otherwise imposes so it reads as a normal value, not a
+   second heading. */
+.om-card-title-value {
+  text-transform: none;
+  letter-spacing: normal;
+  font-weight: 600;
+  color: var(--text);
 }
 
 /* A second h2 inside one card (e.g. LAN's Network Mode + DNS Settings)
