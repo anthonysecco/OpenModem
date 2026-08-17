@@ -21,6 +21,20 @@
         <div class="om-row"><span class="om-row-label">Model</span><span data-field="device_model">—</span></div>
         <div class="om-row"><span class="om-row-label">IMEI</span><span data-field="device_imei">—</span></div>
         <div class="om-row"><span class="om-row-label">Firmware</span><span data-field="device_firmware">—</span></div>
+        <div class="om-row"><span class="om-row-label">Uptime</span><span data-field="device_uptime_s">—</span></div>
+      </div>
+      <div class="om-card">
+        <h2>Power</h2>
+        <div class="om-button-stack">
+          <button type="button" data-power-action="reboot">Reboot</button>
+          <button type="button" data-power-action="radio_off">Radio Off</button>
+          <button type="button" data-power-action="radio_on">Radio On</button>
+        </div>
+      </div>
+      <div class="om-card">
+        <h2>Update</h2>
+        <p id="om-update-status">Reinstalls the latest OpenModem from GitHub.</p>
+        <button id="om-update-btn" type="button">Check for Update / Install Latest</button>
       </div>
       <div class="om-card om-card-wide">
         <div class="om-term-header">
@@ -45,19 +59,6 @@
             <button id="om-term-send" type="button">Send</button>
           </div>
         </div>
-      </div>
-      <div class="om-card">
-        <h2>Power</h2>
-        <div class="om-button-stack">
-          <button type="button" data-power-action="reboot">Reboot</button>
-          <button type="button" data-power-action="radio_off">Radio Off</button>
-          <button type="button" data-power-action="radio_on">Radio On</button>
-        </div>
-      </div>
-      <div class="om-card">
-        <h2>Update</h2>
-        <p id="om-update-status">Reinstalls the latest OpenModem from GitHub.</p>
-        <button id="om-update-btn" type="button">Check for Update / Install Latest</button>
       </div>
     </div>
   </main>

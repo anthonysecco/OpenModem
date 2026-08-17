@@ -213,6 +213,21 @@ collect_device() {
     fi
 }
 
+# Application Processor OS uptime — not an AT command at all, this is
+# the Linux system OpenModem itself runs on (see CLAUDE.md's
+# "Development" section on the AP vs. the modem's AT-command side), so
+# it's a plain /proc/uptime read rather than anything routed through
+# the AT broker/chain. First field is seconds since boot as a float
+# (confirmed live, e.g. "3495.06 2404.67"); truncated to a whole-second
+# integer since sub-second precision has no UI use here. The
+# years/months/weeks/days/hours/minutes breakdown itself is computed
+# client-side in app.js (fmtUptime), same division of labor as
+# fmtBytes already uses for wan_data_tx/rx — this just supplies the raw
+# seconds count.
+collect_uptime() {
+    F_UPTIME_S=$(json_num "$(cut -d. -f1 /proc/uptime 2>/dev/null | tr -d ' \r\n')")
+}
+
 
 # This module supports 2 SIM slots (AT+QUIMSLOT=? confirmed live:
 # "+QUIMSLOT: (1,2)") but only one is active/queryable at a time — the
@@ -961,6 +976,7 @@ write_state() {
   "device_imei": ${F_IMEI},
   "device_firmware": ${F_FIRMWARE},
   "device_temps": ${F_TEMPS},
+  "device_uptime_s": ${F_UPTIME_S},
   "sim_status": ${F_SIM_STATUS},
   "sim_imsi": ${F_SIM_IMSI},
   "sim_iccid": ${F_SIM_ICCID},
@@ -1089,6 +1105,7 @@ while true; do
     _blob=$(run_at "$ALL_CMD" 15)
 
     collect_device "$_blob"
+    collect_uptime
     collect_sim "$_blob"
     collect_registration "$_blob"
     collect_signal "$_blob"

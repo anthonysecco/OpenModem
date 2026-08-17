@@ -165,6 +165,35 @@
     return (v / Math.pow(1024, i)).toFixed(i === 0 ? 0 : 2) + ' ' + units[i];
   }
   function fmtSimSlot(v) { return v === 1 ? 'SIM1' : v === 2 ? 'SIM2' : null; }
+
+  /* System (Application Processor) uptime — the poller supplies raw
+     seconds from /proc/uptime (collect_uptime() in at_poller.sh, not
+     an AT command at all); the years/months/weeks/days/hours/minutes
+     breakdown happens here, same split as fmtBytes above. Leading
+     zero units are skipped entirely (a freshly-booted device reads
+     "12 minutes", not "0 years, 0 months, ..., 12 minutes"); units
+     are the calendar-approximate kind uptime displays conventionally
+     use (year=365d, month=30d), not calendar-exact, since an uptime
+     counter has no real calendar anchor to be exact against anyway. */
+  var UPTIME_UNITS = [
+    { label: 'year', secs: 365 * 24 * 3600 },
+    { label: 'month', secs: 30 * 24 * 3600 },
+    { label: 'week', secs: 7 * 24 * 3600 },
+    { label: 'day', secs: 24 * 3600 },
+    { label: 'hour', secs: 3600 },
+    { label: 'minute', secs: 60 }
+  ];
+  function fmtUptime(v) {
+    if (typeof v !== 'number' || v < 0) return null;
+    var remaining = Math.floor(v);
+    var parts = [];
+    UPTIME_UNITS.forEach(function (u) {
+      var n = Math.floor(remaining / u.secs);
+      remaining -= n * u.secs;
+      if (n > 0) parts.push(n + ' ' + u.label + (n === 1 ? '' : 's'));
+    });
+    return parts.length ? parts.join(', ') : 'Less than a minute';
+  }
   /* Standard industry nominal band frequency (e.g. "B13" = "700 MHz
      band"), NOT the precise DL-low-edge math LTE_BAND_TABLE/nrArfcnToMhz
      use further below for the CA bandwidth bar (band 13's real DL edge
@@ -213,7 +242,8 @@
     band_pref_lte: fmtBands, band_pref_nr5g: fmtBands,
     lan_dns_mode: fmtDnsMode,
     wan_data_rx: fmtBytes, wan_data_tx: fmtBytes,
-    sim_active_slot: fmtSimSlot
+    sim_active_slot: fmtSimSlot,
+    device_uptime_s: fmtUptime
   };
 
   function renderState(state) {
