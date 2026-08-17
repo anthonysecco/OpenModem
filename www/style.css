@@ -622,6 +622,12 @@ body {
 @media (max-width: 767px) {
   .om-sigbar { min-width: 0; }
   .om-sigbar-track { display: none; }
+
+  /* Dashboard's Signal card (bars + word) is redundant with the same
+     data already shown in the topbar on every page and in the Trends
+     card's Signal (dBm) row below it — worth the screen space on
+     desktop, not on a phone where every card costs a full scroll. */
+  .om-dash-signal-card { display: none; }
 }
 
 /* ── Carrier Aggregation (Cellular page) ── */
@@ -827,7 +833,7 @@ body {
 .om-topbar-signal {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: 0.25rem;
   font-size: 0.8rem;
   color: var(--text-dim);
   min-width: 0;
@@ -871,6 +877,7 @@ body {
    either render function. */
 .om-topbar-sep {
   flex-shrink: 0;
+  font-size: 0.65rem;
 }
 
 /* Connectivity Check status, right of the carrier/network text — short
