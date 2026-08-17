@@ -1253,12 +1253,16 @@
      More rows are added freely above this floor; it's a minimum, not a
      cap. */
   var MIN_CA_ROWS = 5;
-  var CA_EMPTY_ROW = '<tr class="om-ca-row-empty"><td>—</td><td>—</td><td>—</td><td>—</td></tr>';
+  var CA_EMPTY_ROW = '<tr class="om-ca-row-empty"><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>';
 
   function padCaRows(rows) {
     var out = rows.slice();
     while (out.length < MIN_CA_ROWS) out.push(CA_EMPTY_ROW);
     return out;
+  }
+
+  function fmtBwCell(bwMhz) {
+    return bwMhz ? bwMhz + ' MHz' : '—';
   }
 
   /* mimo_layers is at_poller.sh's real per-carrier reading from
@@ -1267,14 +1271,10 @@
      as "NxN" since the field reports active DL spatial layers and this
      hardware's live behavior (confirmed by chaining a real download
      during testing) is symmetric — 0/1/2/4 layers observed, rendered as
-     0x0/1x1/2x2/4x4. */
-  function fmtBwCell(bwMhz, mimoLayers) {
-    if (!bwMhz) return '—';
-    var txt = bwMhz + ' MHz';
-    if (typeof mimoLayers === 'number' && mimoLayers >= 0) {
-      txt += ' (' + mimoLayers + 'x' + mimoLayers + ')';
-    }
-    return txt;
+     0x0/1x1/2x2/4x4. Its own column now, previously folded into BW's
+     cell text. */
+  function fmtMimoCell(mimoLayers) {
+    return (typeof mimoLayers === 'number' && mimoLayers >= 0) ? mimoLayers + 'x' + mimoLayers : '—';
   }
 
   function renderCarrierAggregation(state) {
@@ -1287,7 +1287,7 @@
     if (!Array.isArray(carriers) || !carriers.length) {
       bar.innerHTML = '<div class="om-ca-bwbar-empty"></div>';
       freqRow.innerHTML = '';
-      tbody.innerHTML = padCaRows(['<tr><td colspan="4" class="om-note">No carrier aggregation active.</td></tr>']).join('');
+      tbody.innerHTML = padCaRows(['<tr><td colspan="5" class="om-note">No carrier aggregation active.</td></tr>']).join('');
       return;
     }
 
@@ -1358,7 +1358,8 @@
       var groupCls = (idx > 0 && withFreq[idx - 1].c.type !== c.type) ? ' om-ca-row-group-start' : '';
       return '<tr class="' + groupCls.trim() + '">' +
         '<td><span class="om-ca-carrier-name ' + nameCls + '" title="' + escapeHtml(idTitle) + '">' + escapeHtml(fmtCarrierBand(c.band)) + '</span></td>' +
-        '<td>' + fmtBwCell(s.bw, c.mimo_layers) + '</td>' +
+        '<td>' + fmtBwCell(s.bw) + '</td>' +
+        '<td>' + fmtMimoCell(c.mimo_layers) + '</td>' +
         '<td>' + sigBarCell(c.rsrp, RSRP_ZONES, RSRP_MIN, RSRP_MAX, 'dBm') + '</td>' +
         '<td>' + sigBarCell(c.sinr, SINR_ZONES, SINR_MIN, SINR_MAX, 'dB') + '</td>' +
         '</tr>';
