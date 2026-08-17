@@ -136,6 +136,14 @@
     return zones[zones.length - 1].label || '';
   }
 
+  // Index of the matching zone (0 = best tier, e.g. Excellent).
+  function sigZoneIndex(val, zones) {
+    for (var i = 0; i < zones.length; i++) {
+      if (val >= zones[i].thresh) return i;
+    }
+    return zones.length - 1;
+  }
+
   function sigPct(val, min, max) {
     return Math.max(2, Math.min(97, Math.round(((val - min) / (max - min)) * 100)));
   }
@@ -1107,11 +1115,13 @@
     var label = has ? sigZoneLabel(val, RSRP_ZONES) : 'No Signal';
     var pct = has ? sigPct(val, RSRP_MIN, RSRP_MAX) : 0;
 
-    // A. Phone-style bars — ascending heights, filled count from pct
-    // quartile (25/50/75/100), same "how many bars" logic a phone icon
-    // uses, just driven by this site's own pct instead of OS buckets.
+    // A. Phone-style bars — filled count tracks which RSRP_ZONES tier
+    // the reading actually falls in, not a generic pct quartile: index
+    // 0 (Excellent) lights all 4, index 3 (Poor) lights just 1. That
+    // keeps the bars honest about the same boundaries the color itself
+    // is drawn from, rather than an independent linear split.
     var barHeights = [10, 18, 26, 34];
-    var litBars = has ? Math.max(1, Math.ceil(pct / 25)) : 0;
+    var litBars = has ? (RSRP_ZONES.length - sigZoneIndex(val, RSRP_ZONES)) : 0;
     barsEl.innerHTML = barHeights.map(function (h, i) {
       return '<div class="om-sig-bar" style="height:' + h + 'px;background:' + (i < litBars ? color : 'var(--border)') + '"></div>';
     }).join('');
@@ -1124,7 +1134,9 @@
 
     // C. Gauge — semicircle arc, track always full, fill arc length
     // scaled by pct via stroke-dasharray/dashoffset (141.4 ~= arc
-    // length for this path's radius-45 semicircle).
+    // length for this path's radius-45 semicircle). Percent text is an
+    // SVG <text> node inside the arc's own enclosed area (~(50,38) in
+    // the arc's 0-100/0-55 viewBox), not separate HTML below it.
     var gaugeEl = document.getElementById('om-sig-gauge');
     var arcLen = 141.4;
     var offset = arcLen * (1 - pct / 100);
@@ -1133,24 +1145,14 @@
       '<path d="M5,50 A45,45 0 0 1 95,50" fill="none" stroke="var(--border)" stroke-width="9" stroke-linecap="round"/>' +
       '<path d="M5,50 A45,45 0 0 1 95,50" fill="none" stroke="' + color + '" stroke-width="9" stroke-linecap="round" ' +
       'stroke-dasharray="' + arcLen + '" stroke-dashoffset="' + offset + '"/>' +
-      '</svg>' +
-      '<div class="om-sig-gauge-val" style="color:' + color + '">' + (has ? pct + '%' : '—') + '</div>';
+      '<text x="50" y="40" text-anchor="middle" font-size="15" font-weight="700" fill="' + color + '">' + (has ? pct + '%' : '—') + '</text>' +
+      '</svg>';
 
     // D. Word + color
     var wordEl = document.getElementById('om-sig-word');
     wordEl.innerHTML =
       '<div class="om-sig-word-label" style="color:' + color + '">' + label + '</div>' +
       '<div class="om-sig-word-val">' + (has ? val + ' dBm' : 'No reading') + '</div>';
-
-    // E. Segmented dots — 5 segments, lit count scaled by pct.
-    var dotsEl = document.getElementById('om-sig-dots');
-    var segCount = 5;
-    var litSegs = has ? Math.max(1, Math.round((pct / 100) * segCount)) : 0;
-    var segs = [];
-    for (var i = 0; i < segCount; i++) {
-      segs.push('<span class="om-sig-dot" style="background:' + (i < litSegs ? color : 'var(--border)') + '"></span>');
-    }
-    dotsEl.innerHTML = segs.join('');
   }
 
   function initNetPrefs() {
