@@ -107,34 +107,40 @@
      metric, continuing that metric's own existing step size one more
      increment (RSRP: -10 dB steps -> -110; RSRQ: -5 dB steps -> -25;
      SINR: ~5 dB step -> -5, matching SINR_MIN's existing -10 floor).
-     Critical's color is --bad-pill (#b3382c) from style.css's palette
-     — reused as-is rather than inventing a new hue or reassigning what
-     any existing tier's color means, since these same hex values are
-     also the site's shared green/amber/red status vocabulary
-     elsewhere (registration ring dots, etc.) and shouldn't drift out
-     of sync with what they mean there. */
+
+     Color scheme (also 2026-08-17): a genuine 5-step dark-green ->
+     green -> yellow -> orange -> red gradient, replacing the earlier
+     pass's green/green/amber/red/dark-red (which reused the site's
+     flat green/amber/red status-dot palette plus its one spare dark-
+     red token). This gradient is a deliberate LOCAL exception to that
+     shared vocabulary, scoped to these three signal-quality arrays
+     only — registration dots, the connection-status footer, etc. all
+     keep the fixed green/amber/red/gray set from the status-indicator
+     style guide, since a 5-step severity gradient reads naturally for
+     a continuous physical measurement in a way it wouldn't for a
+     handful of discrete states like "Registered"/"Denied". */
   var RSRP_MIN = -140, RSRP_MAX = -75;
   var SINR_MIN = -10, SINR_MAX = 30;
   var RSRP_ZONES = [
-    { thresh: -80, bar: '#34c777', label: 'Excellent' },
-    { thresh: -90, bar: '#2fa66b', label: 'Good' },
-    { thresh: -100, bar: '#e0a63e', label: 'Fair' },
-    { thresh: -110, bar: '#e05a4e', label: 'Poor' },
-    { thresh: -999, bar: '#b3382c', label: 'Critical' }
+    { thresh: -80, bar: '#1e8a4e', label: 'Excellent' },
+    { thresh: -90, bar: '#34c777', label: 'Good' },
+    { thresh: -100, bar: '#f0c64c', label: 'Fair' },
+    { thresh: -110, bar: '#e0873a', label: 'Poor' },
+    { thresh: -999, bar: '#e0473e', label: 'Critical' }
   ];
   var SINR_ZONES = [
-    { thresh: 20, bar: '#34c777', label: 'Excellent' },
-    { thresh: 13, bar: '#2fa66b', label: 'Good' },
-    { thresh: 0, bar: '#e0a63e', label: 'Fair' },
-    { thresh: -5, bar: '#e05a4e', label: 'Poor' },
-    { thresh: -999, bar: '#b3382c', label: 'Critical' }
+    { thresh: 20, bar: '#1e8a4e', label: 'Excellent' },
+    { thresh: 13, bar: '#34c777', label: 'Good' },
+    { thresh: 0, bar: '#f0c64c', label: 'Fair' },
+    { thresh: -5, bar: '#e0873a', label: 'Poor' },
+    { thresh: -999, bar: '#e0473e', label: 'Critical' }
   ];
   var RSRQ_ZONES = [
-    { thresh: -10, bar: '#34c777', label: 'Excellent' },
-    { thresh: -15, bar: '#2fa66b', label: 'Good' },
-    { thresh: -20, bar: '#e0a63e', label: 'Fair' },
-    { thresh: -25, bar: '#e05a4e', label: 'Poor' },
-    { thresh: -999, bar: '#b3382c', label: 'Critical' }
+    { thresh: -10, bar: '#1e8a4e', label: 'Excellent' },
+    { thresh: -15, bar: '#34c777', label: 'Good' },
+    { thresh: -20, bar: '#f0c64c', label: 'Fair' },
+    { thresh: -25, bar: '#e0873a', label: 'Poor' },
+    { thresh: -999, bar: '#e0473e', label: 'Critical' }
   ];
 
   function sigZoneColor(val, zones) {
