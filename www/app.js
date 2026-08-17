@@ -304,9 +304,23 @@
     return 'rgba(' + r + ',' + g + ',' + b + ',' + alpha + ')';
   }
 
+  /* Re-triggers the CSS ring-flash animation (see .om-ring-dot.om-dot-
+     flash in style.css) even though the class may already be present
+     from the last poll cycle — simply re-adding an already-present
+     class doesn't restart a finished CSS animation, so this removes it,
+     forces a reflow (reading offsetWidth flushes pending style changes,
+     which is what actually makes the browser treat the next class add
+     as a fresh animation start rather than a no-op), then re-adds it. */
+  function flashRingDot(el) {
+    el.classList.remove('om-dot-flash');
+    void el.offsetWidth;
+    el.classList.add('om-dot-flash');
+  }
+
   function setRingDotColor(el, color) {
     el.style.color = color;
     el.style.boxShadow = '0 0 0 3px ' + hexToRgba(color, 0.25);
+    flashRingDot(el);
   }
 
   function applyRingDot(field, zones, state) {

@@ -248,6 +248,7 @@ body {
    rgba() with that same color at ~25% opacity — recomputed per status,
    per the guide's own note, not a fixed alpha reused across colors. */
 .om-ring-dot {
+  position: relative;
   display: inline-block;
   width: 8px;
   height: 8px;
@@ -257,6 +258,32 @@ body {
   box-shadow: 0 0 0 3px rgba(92, 92, 94, 0.25);
   vertical-align: middle;
   flex-shrink: 0;
+}
+
+/* One-shot "just refreshed" flash — not a continuous loop (that's what
+   made the earlier Pulsing Dot pass too busy with 8 of these on one
+   page). app.js re-triggers this ::after ring on every genuine
+   state.sh refresh (see flashRingDot()'s remove/reflow/re-add), so it
+   plays once per poll cycle and fades out rather than animating
+   indefinitely — the halo itself (.om-ring-dot's own box-shadow above)
+   stays static the rest of the time. */
+.om-ring-dot::after {
+  content: "";
+  position: absolute;
+  inset: -4px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.om-ring-dot.om-dot-flash::after {
+  animation: om-dot-flash-ring 0.7s ease-out;
+}
+
+@keyframes om-dot-flash-ring {
+  0%   { opacity: 0.6; transform: scale(0.6); }
+  100% { opacity: 0;   transform: scale(2.2); }
 }
 
 /* A value too long to fit next to its label (long hostnames, IPv6
