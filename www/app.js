@@ -62,14 +62,14 @@
     }).join('');
   }
 
-  /* Footer markup (connection status + "Updated Xs ago" + status dot)
-     is identical on every page, so it's injected here alongside the
-     nav links rather than hand-duplicated across 6 HTML files — same
-     reasoning as buildNavLinks() itself. Each page just carries an
-     empty <footer id="om-footer"> for this to fill. refreshState()/
-     tickAge() then drive #om-conn-status/[data-field="_polled_at"]/
-     #om-footer-dot exactly as before, just relocated from the topbar
-     + a page-local <p class="om-updated"> into this one shared spot. */
+  /* Footer markup (connection status + "Updated Xs ago") is identical
+     on every page, so it's injected here alongside the nav links rather
+     than hand-duplicated across 6 HTML files — same reasoning as
+     buildNavLinks() itself. Each page just carries an empty
+     <footer id="om-footer"> for this to fill. refreshState()/tickAge()
+     then drive #om-conn-status/[data-field="_polled_at"] exactly as
+     before, just relocated from the topbar + a page-local
+     <p class="om-updated"> into this one shared spot. */
   function initShell(activeKey) {
     var links = buildNavLinks(activeKey);
 
@@ -81,8 +81,7 @@
 
     var footer = document.getElementById('om-footer');
     if (footer) {
-      footer.innerHTML = '<span class="om-ring-dot" id="om-footer-dot"></span>' +
-        '<span id="om-conn-status">Loading…</span> - Updated ' +
+      footer.innerHTML = '<span id="om-conn-status">Loading…</span> | Updated ' +
         '<span data-field="_polled_at">—</span>';
     }
   }
@@ -601,8 +600,6 @@
           statusEl.textContent = state._error ? state._message : 'Connected';
           statusEl.classList.toggle('bad', !!state._error);
         }
-        var dotEl = document.getElementById('om-footer-dot');
-        if (dotEl) setRingDotColor(dotEl, state._error ? '#e05a4e' : '#34c777', false);
         if (!state._error && state._polled_at !== lastSeenPolledAt) {
           lastSeenPolledAt = state._polled_at;
           renderState(state);
@@ -624,8 +621,6 @@
           statusEl.textContent = 'Unreachable';
           statusEl.classList.add('bad');
         }
-        var dotEl = document.getElementById('om-footer-dot');
-        if (dotEl) setRingDotColor(dotEl, '#e05a4e', false);
         scheduleRefresh(FAST_POLL_MS);
       });
   }
