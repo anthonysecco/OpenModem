@@ -225,53 +225,38 @@ body {
   align-self: center;
 }
 
-/* Pulsing status dot (Pattern 2 of the status-indicator style guide)
-   after a row label — RSRP/RSRQ/SINR on the LTE/5G NR cards, one per
-   metric, each an independently-polled live value rather than one
-   generic "connected" indicator, which is why several of these can
-   coexist on one page without violating that guide's "max 1-2 animated
-   indicators per view" rule. Color isn't a fixed online/offline binary
-   here (the guide's own .pulse-dot only defines two states) — it's
-   whichever zone color app.js's sigZoneColor() computed against this
-   site's existing RSRP/RSRQ/SINR thresholds, set as this element's own
-   `color` so both the dot and its glow ring (background:currentColor)
-   pick it up from one JS-set value instead of needing a CSS class per
-   zone. */
-.om-pulse-dot {
-  position: relative;
+/* Groups a value with its status dot (see .om-ring-dot below) so the
+   pair reads as .om-row's single "right side" flex item — without
+   this, a bare 3rd child (label / value / dot) would space-between
+   the dot away from its value out to the row's far edge instead of
+   sitting right beside it. Inherits color/min-width/overflow-wrap/
+   align-self from .om-row > span:not(.om-row-label) below since it's
+   itself an unlabeled direct child of .om-row. */
+.om-row-value-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+/* Ring/Halo Dot (Pattern 3 of the status-indicator style guide) —
+   static, no animation, next to Registration and each RSRP/RSRQ/SINR
+   value on the LTE/5G NR cards. Color isn't a fixed online/offline
+   binary (the guide's own .ring-dot example only shows two states) —
+   app.js computes the right zone/registration color and sets both this
+   element's `color` (so the dot's own background:currentColor picks it
+   up) and its box-shadow halo directly, since the halo needs a real
+   rgba() with that same color at ~25% opacity — recomputed per status,
+   per the guide's own note, not a fixed alpha reused across colors. */
+.om-ring-dot {
   display: inline-block;
   width: 8px;
   height: 8px;
-  margin-left: 0.4rem;
   border-radius: 50%;
   background: currentColor;
   color: var(--text-muted);
+  box-shadow: 0 0 0 3px rgba(92, 92, 94, 0.25);
   vertical-align: middle;
   flex-shrink: 0;
-}
-
-.om-pulse-dot::after {
-  content: "";
-  position: absolute;
-  inset: -4px;
-  border-radius: 50%;
-  background: currentColor;
-  opacity: 0.6;
-  animation: om-pulse-ring 5s cubic-bezier(0.4, 0, 0.6, 1) infinite;
-}
-
-/* No signal reading yet (not connected on this RAT) — go inert per the
-   guide's rule 3: gray (the default `color` above) and no animation,
-   rather than pulsing a meaningless value. */
-.om-pulse-dot-offline::after {
-  animation: none;
-  opacity: 0;
-}
-
-@keyframes om-pulse-ring {
-  0%   { transform: scale(0.6); opacity: 0.7; }
-  70%  { transform: scale(1.8); opacity: 0; }
-  100% { transform: scale(1.8); opacity: 0; }
 }
 
 /* A value too long to fit next to its label (long hostnames, IPv6

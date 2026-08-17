@@ -269,37 +269,69 @@
     if (nrStateEl) nrStateEl.title = CELL_STATE_TOOLTIPS[state.cell_nr_state] || '';
   }
 
-  /* ── RSRP/RSRQ/SINR pulsing status dots (Cellular page) ──────────────
-     Pattern 2 (Pulsing Dot) from the status-indicator style guide,
-     after each signal metric's row label. Color is this site's own
-     existing zone thresholds (RSRP_ZONES/RSRQ_ZONES/SINR_ZONES, the
-     same ones sigBarCell() already draws the CA table's bars from), not
-     a plain online/offline binary — see .om-pulse-dot's CSS comment for
-     why one currentColor-driven class covers every zone. No value
-     (metric's RAT not connected) goes inert via .om-pulse-dot-offline,
-     which the markup already carries by default until this sets real
-     data — same "go gray and stop animating" rule the guide specifies
-     for offline state. */
-  function applyPulseDot(field, zones, state) {
-    var el = document.querySelector('[data-pulse="' + field + '"]');
-    if (!el) return;
-    var val = state[field];
-    if (typeof val === 'number') {
-      el.style.color = sigZoneColor(val, zones);
-      el.classList.remove('om-pulse-dot-offline');
-    } else {
-      el.classList.add('om-pulse-dot-offline');
-    }
+  /* ── Registration/RSRP/RSRQ/SINR ring status dots (Cellular page) ────
+     Pattern 3 (Ring/Halo Dot) from the status-indicator style guide,
+     next to Registration and each signal metric's value. Static, no
+     animation — unlike the pulsing-dot pass this replaced, there's no
+     "offline" CSS modifier class here: an absent reading is just
+     another color (gray) taking the exact same code path as any real
+     zone/registration color, set straight onto the element rather than
+     toggled via a class.
+
+     Signal dot colors come from this site's own existing zone
+     thresholds (RSRP_ZONES/RSRQ_ZONES/SINR_ZONES, the same ones
+     sigBarCell() draws the CA table's bars from). Registration's colors
+     are a deliberate choice within the guide's fixed green/amber/red/
+     gray vocabulary (confirmed with the user before implementing):
+     green=Registered (home, fully normal), amber=Searching or Roaming
+     (still connected/working but an exception state worth a glance —
+     roaming specifically isn't full home service and can carry cost),
+     red=Denied, gray=Not registered/Unknown. */
+  var REG_DOT_COLORS = {
+    0: '#5c5c5e', // Not registered -> gray
+    1: '#34c777', // Registered -> green
+    2: '#e0a63e', // Searching -> amber
+    3: '#e05a4e', // Denied -> red
+    4: '#5c5c5e', // Unknown -> gray
+    5: '#e0a63e'  // Roaming -> amber
+  };
+
+  function hexToRgba(hex, alpha) {
+    var h = hex.replace('#', '');
+    var r = parseInt(h.substring(0, 2), 16);
+    var g = parseInt(h.substring(2, 4), 16);
+    var b = parseInt(h.substring(4, 6), 16);
+    return 'rgba(' + r + ',' + g + ',' + b + ',' + alpha + ')';
   }
 
-  function renderSignalPulseDots(state) {
-    if (!document.querySelector('[data-pulse="signal_lte_rsrp"]')) return; // not on this page
-    applyPulseDot('signal_lte_rsrp', RSRP_ZONES, state);
-    applyPulseDot('signal_lte_rsrq', RSRQ_ZONES, state);
-    applyPulseDot('signal_lte_sinr', SINR_ZONES, state);
-    applyPulseDot('signal_nr_rsrp', RSRP_ZONES, state);
-    applyPulseDot('signal_nr_rsrq', RSRQ_ZONES, state);
-    applyPulseDot('signal_nr_sinr', SINR_ZONES, state);
+  function setRingDotColor(el, color) {
+    el.style.color = color;
+    el.style.boxShadow = '0 0 0 3px ' + hexToRgba(color, 0.25);
+  }
+
+  function applyRingDot(field, zones, state) {
+    var el = document.querySelector('[data-ring="' + field + '"]');
+    if (!el) return;
+    var val = state[field];
+    setRingDotColor(el, typeof val === 'number' ? sigZoneColor(val, zones) : '#5c5c5e');
+  }
+
+  function applyRegRingDot(field, state) {
+    var el = document.querySelector('[data-ring="' + field + '"]');
+    if (!el) return;
+    setRingDotColor(el, REG_DOT_COLORS[state[field]] || '#5c5c5e');
+  }
+
+  function renderStatusDots(state) {
+    if (!document.querySelector('[data-ring="signal_lte_rsrp"]')) return; // not on this page
+    applyRegRingDot('reg_lte', state);
+    applyRegRingDot('reg_nr', state);
+    applyRingDot('signal_lte_rsrp', RSRP_ZONES, state);
+    applyRingDot('signal_lte_rsrq', RSRQ_ZONES, state);
+    applyRingDot('signal_lte_sinr', SINR_ZONES, state);
+    applyRingDot('signal_nr_rsrp', RSRP_ZONES, state);
+    applyRingDot('signal_nr_rsrq', RSRQ_ZONES, state);
+    applyRingDot('signal_nr_sinr', SINR_ZONES, state);
   }
 
   /* ── Polling: fetches fast, renders only on genuine new data ─────────
@@ -345,7 +377,7 @@
           renderCarrierAggregation(state);
           renderNetPrefs(state);
           renderCellTooltips(state);
-          renderSignalPulseDots(state);
+          renderStatusDots(state);
           markRefreshedNow();
         }
         scheduleRefresh(FAST_POLL_MS);
