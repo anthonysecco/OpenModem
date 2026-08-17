@@ -97,7 +97,9 @@
     var topbarSignal = document.getElementById('om-topbar-signal');
     if (topbarSignal) {
       topbarSignal.innerHTML = '<span class="om-topbar-sigbars" id="om-topbar-sigbars"></span>' +
-        '<span class="om-topbar-signal-text" id="om-topbar-signal-text"></span>' +
+        '<span class="om-topbar-carrier" id="om-topbar-carrier"></span>' +
+        '<span class="om-topbar-sep">·</span>' +
+        '<span class="om-topbar-nettype" id="om-topbar-nettype"></span>' +
         '<span class="om-topbar-sep">·</span>' +
         '<span class="om-topbar-conn-text" id="om-topbar-conn-text"></span>' +
         '<span class="om-ring-dot" id="om-topbar-conn-dot"></span>';
@@ -1706,14 +1708,16 @@
 
   function renderTopbarSignal(state) {
     var barsEl = document.getElementById('om-topbar-sigbars');
-    var textEl = document.getElementById('om-topbar-signal-text');
-    if (!barsEl || !textEl) return; // shouldn't happen, every page carries this
+    var carrierEl = document.getElementById('om-topbar-carrier');
+    var nettypeEl = document.getElementById('om-topbar-nettype');
+    if (!barsEl || !carrierEl || !nettypeEl) return; // shouldn't happen, every page carries this
 
     var val = currentRsrp(state);
     var has = typeof val === 'number';
     var color = has ? sigZoneColor(val, RSRP_ZONES) : '#5c5c5e';
     barsEl.innerHTML = sigBarsHtml(val, has, color, TOPBAR_SIG_BAR_HEIGHTS, 'om-topbar-sigbar');
-    textEl.textContent = (state.carrier_name || '—') + ' · ' + networkTypeText(state);
+    carrierEl.textContent = state.carrier_name || '—';
+    nettypeEl.textContent = networkTypeText(state);
   }
 
   /* Connectivity Check (the HTTP 204 check, not the ICMP ping check) —
