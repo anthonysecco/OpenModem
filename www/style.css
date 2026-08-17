@@ -238,6 +238,37 @@ body {
   gap: 0.4rem;
 }
 
+/* A <select> used as a row's value (Network Mode/Data Roaming) rather
+   than a stacked .om-form-row — sized to its content, not the row's
+   full width, matching how every other row's plain-text value sits to
+   the right of its label (e.g. PLMN, right above these in the Network
+   card). */
+.om-row select {
+  width: auto;
+  max-width: 60%;
+  font: inherit;
+  font-size: 0.85rem;
+  padding: 0.3rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-inset);
+  color: var(--text);
+  align-self: center;
+}
+
+/* Gold link-styled row value (QuecControl's "View Available Networks"
+   treatment) — a value that looks like a value, not a button, but
+   still reads clearly against the dark background (unlike a default
+   link color, which was the original complaint this replaced). */
+.om-link-gold {
+  color: var(--gold);
+  text-decoration: none;
+  font-size: 0.9rem;
+  align-self: center;
+  cursor: pointer;
+}
+.om-link-gold:hover { text-decoration: underline; }
+
 /* Ring/Halo Dot (Pattern 3 of the status-indicator style guide) —
    static, no animation, next to Registration and each RSRP/RSRQ/SINR
    value on the LTE/5G NR cards. Color isn't a fixed online/offline
@@ -969,6 +1000,44 @@ body {
   background: var(--surface-inset);
   color: var(--text);
 }
+
+/* Carrier Scan's results table/spinner inside #om-scan-modal — modeled
+   on QuecControl's carrierscan.html look: a wider modal to comfortably
+   fit the 4-column results table, a spinning-ring progress indicator
+   instead of plain "Scanning…" text, and status text colored per
+   result the same way QuecControl's does (Current intentionally reads
+   amber/fair, not green — QuecControl's own choice, kept for fidelity,
+   since a network you're already registered on isn't a "better" result
+   than an available one, just a different one). */
+#om-scan-modal .om-modal {
+  max-width: 520px;
+}
+
+.om-scan-progress {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  color: var(--text-dim);
+  font-size: 0.85rem;
+}
+
+.om-spinner {
+  width: 18px;
+  height: 18px;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: om-spin 0.8s linear infinite;
+  flex-shrink: 0;
+}
+
+@keyframes om-spin {
+  to { transform: rotate(360deg); }
+}
+
+.om-scan-status-available { color: var(--good-bar); font-weight: 600; }
+.om-scan-status-current   { color: var(--warn-bar); font-weight: 600; }
+.om-scan-status-forbidden { color: var(--bad); font-weight: 600; }
 
 /* ── Desktop layout ── */
 @media (min-width: 768px) {

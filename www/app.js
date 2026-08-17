@@ -821,13 +821,51 @@
   }
 
   /* ── Carrier scan (Cellular page) ──────────────────────────────────
-     "Scan for available carriers" is a link that opens a modal, rather
-     than a card button + inline results: a real scan takes up to ~2
-     minutes and briefly interrupts data service while the modem
-     searches, so the modal walks through confirm -> scanning -> results
-     as three phases of the same dialog instead of a window.confirm()
-     gate in front of an always-visible card. */
+     "Carrier Scan" is a row whose value is a gold link that opens a
+     modal, matching QuecControl's own info-row "View Available
+     Networks" treatment (see cellular.html) — rather than a card
+     button + inline results, since a real scan takes up to ~2 minutes
+     and briefly interrupts data service while the modem searches, so
+     the modal walks through confirm -> scanning -> results as three
+     phases of the same dialog instead of a window.confirm() gate in
+     front of an always-visible card. Results table styling (4-column
+     Operator/PLMN/Status/Tech, dedupe-by-PLMN+AcT, sort-by-name,
+     Current colored amber not green) also matches QuecControl's
+     carrierscan.html for the same reason. */
   var STATUS_LABELS = { 0: 'Unknown', 1: 'Available', 2: 'Current', 3: 'Forbidden' };
+  var SCAN_STATUS_CLASS = { 1: 'om-scan-status-available', 2: 'om-scan-status-current', 3: 'om-scan-status-forbidden' };
+
+  // 3GPP TS 27.007 Table — AcT value -> compact label, same table
+  // QuecControl's carrierscan.html uses.
+  var SCAN_ACT_LABELS = {
+    0: 'GSM', 1: 'GSM Compact', 2: 'UTRAN', 3: 'GSM/EGPRS',
+    4: 'UTRAN W/HSDPA', 5: 'UTRAN W/HSUPA', 6: 'UTRAN W/HSDPA+HSUPA',
+    7: 'E-UTRAN (LTE)', 8: 'EC-GSM-IoT', 9: 'E-UTRAN NB-S1',
+    10: 'E-UTRAN NB-S1 w/ NB-IoT', 11: 'NR (5G)', 12: 'E-UTRAN+NR (5G NSA)'
+  };
+
+  function scanActLabel(v) {
+    var n = parseInt(v, 10);
+    return SCAN_ACT_LABELS[n] !== undefined ? SCAN_ACT_LABELS[n] : 'Unknown (' + v + ')';
+  }
+
+  function scanStatusHtml(v) {
+    var n = parseInt(v, 10);
+    var cls = SCAN_STATUS_CLASS[n];
+    var label = STATUS_LABELS[n] || String(v);
+    return cls ? '<span class="' + cls + '">' + label + '</span>' : escapeHtml(label);
+  }
+
+  // Current (2) first, then Available (1), then Forbidden (3), then
+  // anything else — same priority QuecControl sorts/dedupes by.
+  function scanStatusSortOrder(v) {
+    switch (parseInt(v, 10)) {
+      case 2: return 0;
+      case 1: return 1;
+      case 3: return 2;
+      default: return 3;
+    }
+  }
 
   function scanConfirmHtml() {
     return '<p>Scanning for carriers (AT+COPS=?) searches all available ' +
@@ -845,20 +883,45 @@
       '</div>';
   }
 
-  function scanResultsListHtml(operators) {
+  function scanResultsHtml(operators) {
     if (!operators || !operators.length) {
       return '<p class="om-note">No operators found.</p>';
     }
-    return operators.map(function (op) {
-      return '<div class="om-row"><span class="om-row-label">' +
-        escapeHtml(op.name) + ' (' + escapeHtml(op.plmn) + ')</span><span>' +
-        (STATUS_LABELS[op.status] || op.status) + '</span></div>';
+
+    // Dedupe by PLMN+AcT, keeping whichever entry has the best status —
+    // the modem can report the same network more than once per scan.
+    var seen = {};
+    operators.forEach(function (op) {
+      var key = (op.plmn || '') + ':' + (op.act || '');
+      if (!seen[key] || scanStatusSortOrder(op.status) < scanStatusSortOrder(seen[key].status)) {
+        seen[key] = op;
+      }
+    });
+    var deduped = Object.keys(seen).map(function (k) { return seen[k]; });
+
+    deduped.sort(function (a, b) {
+      var nameA = (a.name || '').toLowerCase();
+      var nameB = (b.name || '').toLowerCase();
+      if (nameA !== nameB) return nameA < nameB ? -1 : 1;
+      return scanStatusSortOrder(a.status) - scanStatusSortOrder(b.status);
+    });
+
+    var rows = deduped.map(function (op) {
+      return '<tr><td>' + escapeHtml(op.name || '—') + '</td>' +
+        '<td>' + escapeHtml(op.plmn || '—') + '</td>' +
+        '<td>' + scanStatusHtml(op.status) + '</td>' +
+        '<td>' + escapeHtml(scanActLabel(op.act)) + '</td></tr>';
     }).join('');
+
+    return '<div class="om-table-wrap"><table class="om-table">' +
+      '<thead><tr><th>Operator</th><th>PLMN</th><th>Status</th><th>Tech</th></tr></thead>' +
+      '<tbody>' + rows + '</tbody></table></div>';
   }
 
   function runCarrierScan() {
     var body = document.getElementById('om-scan-modal-body');
-    body.innerHTML = '<p class="om-note">Scanning… this can take up to 2 minutes.</p>';
+    body.innerHTML = '<div class="om-scan-progress"><span class="om-spinner"></span>' +
+      '<span>Scanning for networks… this can take up to 2 minutes.</span></div>';
 
     fetch('/cgi-bin/carrier_scan.sh')
       .then(function (r) { return r.json(); })
@@ -867,8 +930,7 @@
           body.innerHTML = '<p class="om-note">Scan failed: ' + escapeHtml(data.error) + '</p>' + scanCloseHtml();
           return;
         }
-        body.innerHTML = '<p>Found ' + data.operators.length + ' operator(s).</p>' +
-          scanResultsListHtml(data.operators) + scanCloseHtml();
+        body.innerHTML = scanResultsHtml(data.operators) + scanCloseHtml();
       })
       .catch(function (err) {
         body.innerHTML = '<p class="om-note">Scan failed: ' + escapeHtml(String(err)) + '</p>' + scanCloseHtml();
@@ -881,7 +943,8 @@
     var body = document.getElementById('om-scan-modal-body');
     if (!btn || !modal || !body) return;
 
-    btn.addEventListener('click', function () {
+    btn.addEventListener('click', function (e) {
+      e.preventDefault();
       body.innerHTML = scanConfirmHtml();
       openModal('om-scan-modal');
     });

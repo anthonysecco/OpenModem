@@ -25,8 +25,8 @@
         <h2>Network</h2>
         <div class="om-row"><span class="om-row-label">Operator</span><span data-field="carrier_name">—</span></div>
         <div class="om-row"><span class="om-row-label">PLMN</span><span data-field="carrier_plmn">—</span></div>
-        <div class="om-form-row">
-          <label for="om-netmode-select">Network Mode</label>
+        <div class="om-row">
+          <span class="om-row-label">Network Mode</span>
           <select id="om-netmode-select">
             <option value="AUTO">Auto</option>
             <option value="LTE">LTE only</option>
@@ -34,32 +34,32 @@
             <option value="LTE:NR5G">LTE + 5G</option>
           </select>
         </div>
-        <div class="om-form-row">
-          <label for="om-roaming-select">Data Roaming</label>
+        <div class="om-row">
+          <span class="om-row-label">Data Roaming</span>
           <select id="om-roaming-select">
             <option value="1">Enabled</option>
             <option value="0">Disabled</option>
           </select>
         </div>
-        <button type="button" id="om-scan-btn">Scan for Available Carriers</button>
+        <div class="om-row"><span class="om-row-label">Carrier Scan</span><a href="#" id="om-scan-btn" class="om-link-gold">View Available Networks</a></div>
       </div>
       <div class="om-card">
         <h2>LTE</h2>
         <div class="om-row"><span class="om-row-label">Registration</span><span class="om-row-value-wrap"><span data-field="reg_lte">—</span><span class="om-ring-dot" data-ring="reg_lte"></span></span></div>
+        <div class="om-row"><span class="om-row-label">State</span><span class="om-hint" data-field="cell_lte_state">—</span></div>
+        <div class="om-row"><span class="om-row-label">Band</span><span class="om-hint" data-field="cell_lte_band">—</span></div>
         <div class="om-row"><span class="om-row-label">RSRP</span><span class="om-row-value-wrap"><span data-field="signal_lte_rsrp">—</span><span class="om-ring-dot" data-ring="signal_lte_rsrp"></span></span></div>
         <div class="om-row"><span class="om-row-label">RSRQ</span><span class="om-row-value-wrap"><span data-field="signal_lte_rsrq">—</span><span class="om-ring-dot" data-ring="signal_lte_rsrq"></span></span></div>
         <div class="om-row"><span class="om-row-label">SINR</span><span class="om-row-value-wrap"><span data-field="signal_lte_sinr">—</span><span class="om-ring-dot" data-ring="signal_lte_sinr"></span></span></div>
-        <div class="om-row"><span class="om-row-label">State</span><span class="om-hint" data-field="cell_lte_state">—</span></div>
-        <div class="om-row"><span class="om-row-label">Band</span><span class="om-hint" data-field="cell_lte_band">—</span></div>
       </div>
       <div class="om-card">
         <h2><span>5G NR</span><span class="om-card-title-value" data-field="cell_nr_type">—</span></h2>
         <div class="om-row"><span class="om-row-label">Registration</span><span class="om-row-value-wrap"><span data-field="reg_nr">—</span><span class="om-ring-dot" data-ring="reg_nr"></span></span></div>
+        <div class="om-row"><span class="om-row-label">State</span><span class="om-hint" data-field="cell_nr_state">—</span></div>
+        <div class="om-row"><span class="om-row-label">Band</span><span class="om-hint" data-field="cell_nr_band">—</span></div>
         <div class="om-row"><span class="om-row-label">RSRP</span><span class="om-row-value-wrap"><span data-field="signal_nr_rsrp">—</span><span class="om-ring-dot" data-ring="signal_nr_rsrp"></span></span></div>
         <div class="om-row"><span class="om-row-label">RSRQ</span><span class="om-row-value-wrap"><span data-field="signal_nr_rsrq">—</span><span class="om-ring-dot" data-ring="signal_nr_rsrq"></span></span></div>
         <div class="om-row"><span class="om-row-label">SINR</span><span class="om-row-value-wrap"><span data-field="signal_nr_sinr">—</span><span class="om-ring-dot" data-ring="signal_nr_sinr"></span></span></div>
-        <div class="om-row"><span class="om-row-label">State</span><span class="om-hint" data-field="cell_nr_state">—</span></div>
-        <div class="om-row"><span class="om-row-label">Band</span><span class="om-hint" data-field="cell_nr_band">—</span></div>
       </div>
       <div class="om-card om-card-wide">
         <h2>Carrier Aggregation</h2>
