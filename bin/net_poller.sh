@@ -8,16 +8,17 @@
 # stall the other — an AT broker hiccup shouldn't delay "is the internet
 # reachable", and a slow/backed-off WAN check shouldn't delay AT state.
 #
-# Two independent loops (icmp_loop, check204_loop) are forked as
-# background subshells of this same process and joined with `wait`, each
-# free-running on its own cadence. Only icmp_loop writes the combined
-# state file the front end actually polls (STATE_FILE, atomic
-# write-to-.tmp-then-mv, same pattern as at_poller.sh's STATE_FILE) —
-# check204_loop instead writes its own tiny scratch file (CHECK204_FILE,
-# a bare status token, not JSON) that icmp_loop reads and merges in on
-# every cycle. That keeps STATE_FILE single-writer with no cross-loop
-# write race, while still picking up a check204 status change within one
-# ICMP cycle (<= NET_ICMP_INTERVAL seconds) of it happening.
+# Three independent loops (icmp_loop, check204_loop, geo_loop) are
+# forked as background subshells of this same process and joined with
+# `wait`, each free-running on its own cadence. Only icmp_loop writes
+# the combined state file the front end actually polls (STATE_FILE,
+# atomic write-to-.tmp-then-mv, same pattern as at_poller.sh's
+# STATE_FILE) — check204_loop and geo_loop instead each write their own
+# tiny scratch file (CHECK204_FILE/GEO_FILE, bare tokens, not JSON) that
+# icmp_loop reads and merges in on every cycle. That keeps STATE_FILE
+# single-writer with no cross-loop write race, while still picking up a
+# status change within one ICMP cycle (<= NET_ICMP_INTERVAL seconds) of
+# it happening.
 
 CONF_FILE="/usrdata/openmodem/config/openmodem.conf"
 LOG_LEVEL=1
@@ -28,6 +29,9 @@ NET_CHECK204_URL=http://connectivitycheck.gstatic.com/generate_204
 NET_CHECK204_HEALTHY_INTERVAL=60
 NET_CHECK204_RETRY_INTERVAL=10
 NET_CHECK204_RECOVER_SUCCESSES=2
+NET_GEO_TRACE_URL=https://1.1.1.1/cdn-cgi/trace
+NET_GEO_IPINFO_URL=https://ipinfo.io/json
+NET_GEO_INTERVAL=300
 HISTORY_WINDOW_SAMPLES=60
 [ -f "$CONF_FILE" ] && . "$CONF_FILE"
 
@@ -35,6 +39,7 @@ RUN_DIR="/tmp/openmodem"
 LOG_FILE="$RUN_DIR/net_poller.log"
 STATE_FILE="$RUN_DIR/net_state.json"
 CHECK204_FILE="$RUN_DIR/net_check204_status"
+GEO_FILE="$RUN_DIR/net_geo_status"
 HISTORY_FILE="$RUN_DIR/history_net.json"
 HISTORY_SCRATCH="$RUN_DIR/history_net_scratch"
 LOG_MAX_BYTES=262144
@@ -65,8 +70,16 @@ json_num_or_null() {
     printf '%s' "$1" | grep -qE '^-?[0-9]+(\.[0-9]+)?$' && printf '%s' "$1" || printf 'null'
 }
 
+# Escapes backslash/quote and strips newlines — matters now that
+# json_str_or_null also carries externally-sourced text (geo_loop's
+# city/region names from ipinfo.io), not just internal config strings
+# like NET_ICMP_TARGET whose content this project fully controls.
 json_str_or_null() {
-    [ -z "$1" ] && printf 'null' || printf '"%s"' "$1"
+    if [ -z "$1" ]; then
+        printf 'null'
+    else
+        printf '"%s"' "$(printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g' | tr -d '\n\r')"
+    fi
 }
 
 # Bare status token ("online"/"offline"/anything else incl. empty) -> JSON.
@@ -195,12 +208,19 @@ icmp_loop() {
         _check204_status=""
         [ -f "$CHECK204_FILE" ] && _check204_status=$(cat "$CHECK204_FILE" 2>/dev/null)
 
+        _geo_colo=""
+        _geo_location=""
+        if [ -f "$GEO_FILE" ]; then
+            _geo_colo=$(sed -n '1p' "$GEO_FILE")
+            _geo_location=$(sed -n '2p' "$GEO_FILE")
+        fi
+
         _cycle_t=$(date +%s)
-        _json='{"_polled_at":'"$_cycle_t"',"icmp_target":'"$(json_str_or_null "$NET_ICMP_TARGET")"',"icmp_status":'"$(json_status "$_icmp_status")"',"icmp_avg_rtt_ms":'"$(json_num_or_null "$_icmp_avg")"',"icmp_jitter_ms":'"$(json_num_or_null "$_icmp_jitter")"',"check204_status":'"$(json_status "$_check204_status")"'}'
+        _json='{"_polled_at":'"$_cycle_t"',"icmp_target":'"$(json_str_or_null "$NET_ICMP_TARGET")"',"icmp_status":'"$(json_status "$_icmp_status")"',"icmp_avg_rtt_ms":'"$(json_num_or_null "$_icmp_avg")"',"icmp_jitter_ms":'"$(json_num_or_null "$_icmp_jitter")"',"check204_status":'"$(json_status "$_check204_status")"',"cf_pop":'"$(json_str_or_null "$_geo_colo")"',"geo_location":'"$(json_str_or_null "$_geo_location")"'}'
         printf '%s\n' "$_json" > "${STATE_FILE}.tmp" && mv "${STATE_FILE}.tmp" "$STATE_FILE"
         append_net_history "$_cycle_t"
 
-        log_dbg "icmp=$_icmp_status avg=${_icmp_avg}ms jitter=${_icmp_jitter}ms check204=$_check204_status window=[$_window]"
+        log_dbg "icmp=$_icmp_status avg=${_icmp_avg}ms jitter=${_icmp_jitter}ms check204=$_check204_status cf_pop=${_geo_colo:-unknown} geo=${_geo_location:-unknown} window=[$_window]"
         rotate_log
         sleep "$NET_ICMP_INTERVAL"
     done
@@ -277,8 +297,62 @@ check204_loop() {
     done
 }
 
-log_op "net_poller starting (icmp_target=$NET_ICMP_TARGET interval=${NET_ICMP_INTERVAL}s window=$NET_ICMP_WINDOW; check204_url=$NET_CHECK204_URL healthy=${NET_CHECK204_HEALTHY_INTERVAL}s retry=${NET_CHECK204_RETRY_INTERVAL}s recover=${NET_CHECK204_RECOVER_SUCCESSES})"
+# -- Cloudflare PoP + IP geolocation loop -----------------------------------
+# Both values change rarely (only when the device actually roams to a
+# different tower/region or gets handed a new public IP) — polling them
+# every NET_ICMP_INTERVAL like latency would be wasted requests against
+# third-party services for no benefit, so this is its own much slower
+# loop (NET_GEO_INTERVAL, default 5 min).
+#
+# Cloudflare's own trace endpoint (already used for the 204/latency
+# comparisons earlier) returns plain "key=value" lines including
+# colo=<3-letter airport code> for the Cloudflare datacenter/PoP the
+# request landed on — confirmed live (2026-08-17): colo=SJC while
+# physically nowhere near San Jose, i.e. this reflects network routing,
+# not GPS position, which is exactly why it's shown as a distinct field
+# from geolocation rather than folded into it.
+#
+# ipinfo.io/json is a free, unauthenticated IP-geolocation lookup
+# (confirmed live: returns city/region for this device's public IP,
+# well under its free-tier rate limit at one request per
+# NET_GEO_INTERVAL) — city+region only, not the full response (org/
+# postal/timezone/lat-long aren't surfaced anywhere in the UI, no
+# reason to carry them through). Parsed with sed rather than a JSON
+# library (none available in BusyBox ash, see CLAUDE.md's Conventions)
+# — safe here because the field shape is simple and stable (a flat
+# "key": "value" pair per line in ipinfo's own pretty-printed output,
+# confirmed live), same pragmatic approach at_poller.sh already takes
+# for AT command responses.
+geo_loop() {
+    while :; do
+        _trace=$(curl -4 -fsS -m 5 "$NET_GEO_TRACE_URL" 2>/dev/null)
+        _colo=$(printf '%s' "$_trace" | sed -n 's/^colo=\(.*\)$/\1/p' | tr -d '\r\n')
+
+        _ipinfo=$(curl -4 -fsS -m 5 "$NET_GEO_IPINFO_URL" 2>/dev/null)
+        _city=$(printf '%s' "$_ipinfo" | sed -n 's/.*"city" *: *"\([^"]*\)".*/\1/p')
+        _region=$(printf '%s' "$_ipinfo" | sed -n 's/.*"region" *: *"\([^"]*\)".*/\1/p')
+        _geo=""
+        if [ -n "$_city" ] && [ -n "$_region" ]; then
+            _geo="${_city}, ${_region}"
+        elif [ -n "$_city" ]; then
+            _geo="$_city"
+        elif [ -n "$_region" ]; then
+            _geo="$_region"
+        fi
+
+        {
+            printf '%s\n' "$_colo"
+            printf '%s\n' "$_geo"
+        } > "${GEO_FILE}.tmp" && mv "${GEO_FILE}.tmp" "$GEO_FILE"
+
+        log_dbg "geo colo=${_colo:-unknown} location=${_geo:-unknown}"
+        sleep "$NET_GEO_INTERVAL"
+    done
+}
+
+log_op "net_poller starting (icmp_target=$NET_ICMP_TARGET interval=${NET_ICMP_INTERVAL}s window=$NET_ICMP_WINDOW; check204_url=$NET_CHECK204_URL healthy=${NET_CHECK204_HEALTHY_INTERVAL}s retry=${NET_CHECK204_RETRY_INTERVAL}s recover=${NET_CHECK204_RECOVER_SUCCESSES}; geo_interval=${NET_GEO_INTERVAL}s)"
 
 icmp_loop &
 check204_loop &
+geo_loop &
 wait

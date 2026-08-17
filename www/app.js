@@ -84,6 +84,23 @@
       footer.innerHTML = '<span id="om-conn-status">Loading…</span> | Updated ' +
         '<span data-field="_polled_at">—</span>';
     }
+
+    // Static skeleton, built once — renderTopbarSignal (driven by
+    // state.sh/refreshState, the AT-poller cycle) and
+    // renderTopbarConnectivity (driven by net_state.sh/refreshNetState,
+    // a separate cycle) each own a distinct child and update it in
+    // place. Rebuilding the whole container's innerHTML from either
+    // function, like the old single-function version did, would let
+    // whichever poll cycle's tick landed last silently erase the
+    // other's content — the two cycles aren't synchronized, so that's a
+    // real race, not just a hypothetical one.
+    var topbarSignal = document.getElementById('om-topbar-signal');
+    if (topbarSignal) {
+      topbarSignal.innerHTML = '<span class="om-topbar-sigbars" id="om-topbar-sigbars"></span>' +
+        '<span class="om-topbar-signal-text" id="om-topbar-signal-text"></span>' +
+        '<span class="om-topbar-conn-text" id="om-topbar-conn-text"></span>' +
+        '<span class="om-ring-dot" id="om-topbar-conn-dot"></span>';
+    }
   }
 
   /* ── Signal quality thresholds (RSRP/RSRQ/SINR) ──────────────────────
@@ -542,6 +559,15 @@
     if (check204TextEl) check204TextEl.textContent = connStatusText(check204Status);
     var check204DotEl = document.getElementById('om-conn-check204-dot');
     if (check204DotEl) setRingDotColor(check204DotEl, connStatusColor(check204Status), false);
+
+    // Both change rarely (net_poller.sh's geo_loop only refreshes every
+    // NET_GEO_INTERVAL, 5 min by default) — plain text, no ring dot,
+    // since there's no online/offline or quality tier to color here.
+    var cfPopEl = document.getElementById('om-conn-cf-pop');
+    if (cfPopEl) cfPopEl.textContent = netState.cf_pop || '—';
+
+    var geoEl = document.getElementById('om-conn-geo-location');
+    if (geoEl) geoEl.textContent = netState.geo_location || '—';
   }
 
   /* ── 5-minute trend history (Dashboard) ──────────────────────────────
@@ -884,8 +910,15 @@
     netRefreshTimer = setTimeout(refreshNetState, delayMs);
   }
 
+  // Runs on every page now (guarded on the topbar's own container,
+  // present everywhere), not just the Dashboard — the topbar's
+  // Connectivity Check indicator (renderTopbarConnectivity) needs this
+  // data globally. renderConnectivityCard/pushNetHistorySample keep
+  // their own internal "not on this page" guards for their
+  // Dashboard-only elements, so this broader guard doesn't change their
+  // behavior on other pages.
   function refreshNetState() {
-    if (!document.getElementById('om-conn-icmp-status-text')) return; // not on this page
+    if (!document.getElementById('om-topbar-signal')) return; // shouldn't happen, every page carries this
     fetch('/cgi-bin/net_state.sh')
       .then(function (r) { return r.json(); })
       .then(function (netState) {
@@ -893,6 +926,7 @@
           lastSeenNetPolledAt = netState._polled_at;
           renderConnectivityCard(netState);
           pushNetHistorySample(netState);
+          renderTopbarConnectivity(netState);
         }
         scheduleNetRefresh(NET_FAST_POLL_MS);
       })
@@ -1628,20 +1662,40 @@
      page you're on — same reasoning as moving connection status into
      the shared footer: this is global state, not page-specific.
      Smaller bar heights than the Dashboard card (topbar is ~56px
-     tall), same tier-boundary logic via sigBarsHtml(). */
+     tall), same tier-boundary logic via sigBarsHtml(). Updates its own
+     two sub-elements (initShell built the skeleton) rather than
+     rebuilding #om-topbar-signal's whole innerHTML, so it can't race
+     renderTopbarConnectivity below — see initShell's comment. */
   var TOPBAR_SIG_BAR_HEIGHTS = [5, 8, 11, 14, 17];
 
   function renderTopbarSignal(state) {
-    var el = document.getElementById('om-topbar-signal');
-    if (!el) return; // shouldn't happen, every page carries this
+    var barsEl = document.getElementById('om-topbar-sigbars');
+    var textEl = document.getElementById('om-topbar-signal-text');
+    if (!barsEl || !textEl) return; // shouldn't happen, every page carries this
 
     var val = currentRsrp(state);
     var has = typeof val === 'number';
     var color = has ? sigZoneColor(val, RSRP_ZONES) : '#5c5c5e';
-    var barsHtml = sigBarsHtml(val, has, color, TOPBAR_SIG_BAR_HEIGHTS, 'om-topbar-sigbar');
+    barsEl.innerHTML = sigBarsHtml(val, has, color, TOPBAR_SIG_BAR_HEIGHTS, 'om-topbar-sigbar');
+    textEl.textContent = (state.carrier_name || '—') + ' · ' + networkTypeText(state);
+  }
 
-    el.innerHTML = '<span class="om-topbar-sigbars">' + barsHtml + '</span>' +
-      '<span class="om-topbar-signal-text">' + escapeHtml(state.carrier_name || '—') + ' · ' + escapeHtml(networkTypeText(state)) + '</span>';
+  /* Connectivity Check (the HTTP 204 check, not the ICMP ping check) —
+     shown to the right of the carrier/network text on every page's
+     topbar, since it's global "is the internet actually reachable"
+     state, same reasoning as the signal indicator beside it. Driven by
+     net_state.sh/refreshNetState, a separate poll cycle from the AT
+     state above it, hence its own sub-elements (see initShell). Static
+     halo, not flash-on-refresh — binary online/offline, same as the
+     Connectivity card's own dots, not a live-varying measurement. */
+  function renderTopbarConnectivity(netState) {
+    var textEl = document.getElementById('om-topbar-conn-text');
+    var dotEl = document.getElementById('om-topbar-conn-dot');
+    if (!textEl) return; // shouldn't happen, every page carries this
+
+    var status = netState.check204_status;
+    textEl.textContent = connStatusText(status);
+    if (dotEl) setRingDotColor(dotEl, connStatusColor(status), false);
   }
 
   function initNetPrefs() {

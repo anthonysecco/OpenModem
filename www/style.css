@@ -853,6 +853,14 @@ body {
   max-width: 140px;
 }
 
+/* Connectivity Check status, right of the carrier/network text — short
+   fixed strings ("Online"/"Offline"/"—"), no truncation needed unlike
+   the carrier name beside it. */
+.om-topbar-conn-text {
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
 /* ── AT Terminal ──
    Modeled on a real terminal emulator (QuecControl's system.html
    terminal), styled with this same theme's own surface/border/text
