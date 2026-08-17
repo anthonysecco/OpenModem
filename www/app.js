@@ -143,6 +143,30 @@
     { thresh: -999, bar: '#e0473e', label: 'Critical' }
   ];
 
+  /* Latency/jitter quality thresholds (2026-08-17) — same 5-step dark-
+     green -> green -> yellow -> orange -> red gradient and color values
+     as RSRP/RSRQ/SINR_ZONES above, for one consistent severity palette
+     site-wide, but walked in ASCENDING order (ascZoneColor/ascZoneLabel
+     below, not sigZoneColor/sigZoneLabel) since lower is better for
+     latency/jitter — the opposite polarity from RSRP/RSRQ/SINR, where
+     higher (less negative) is better. Centralized here (not inlined in
+     renderConnectivityCard) so any other page/element that wants to
+     color a latency or jitter value can reuse the exact same buckets. */
+  var LATENCY_ZONES = [
+    { thresh: 50, bar: '#1e8a4e', label: 'Excellent' },
+    { thresh: 100, bar: '#34c777', label: 'Good' },
+    { thresh: 150, bar: '#f0c64c', label: 'Fair' },
+    { thresh: 300, bar: '#e0873a', label: 'Poor' },
+    { thresh: Infinity, bar: '#e0473e', label: 'Critical' }
+  ];
+  var JITTER_ZONES = [
+    { thresh: 5, bar: '#1e8a4e', label: 'Excellent' },
+    { thresh: 15, bar: '#34c777', label: 'Good' },
+    { thresh: 30, bar: '#f0c64c', label: 'Fair' },
+    { thresh: 50, bar: '#e0873a', label: 'Poor' },
+    { thresh: Infinity, bar: '#e0473e', label: 'Critical' }
+  ];
+
   function sigZoneColor(val, zones) {
     for (var i = 0; i < zones.length; i++) {
       if (val >= zones[i].thresh) return zones[i].bar;
@@ -163,6 +187,23 @@
       if (val >= zones[i].thresh) return i;
     }
     return zones.length - 1;
+  }
+
+  // Ascending-order counterpart of sigZoneColor/sigZoneLabel, for
+  // lower-is-better metrics (LATENCY_ZONES/JITTER_ZONES) — first zone
+  // whose thresh is >= val wins, zones listed best (lowest ceiling) first.
+  function ascZoneColor(val, zones) {
+    for (var i = 0; i < zones.length; i++) {
+      if (val <= zones[i].thresh) return zones[i].bar;
+    }
+    return zones[zones.length - 1].bar;
+  }
+
+  function ascZoneLabel(val, zones) {
+    for (var i = 0; i < zones.length; i++) {
+      if (val <= zones[i].thresh) return zones[i].label || '';
+    }
+    return zones[zones.length - 1].label || '';
   }
 
   function sigPct(val, min, max) {
@@ -436,11 +477,15 @@
   }
 
   /* ── Connectivity card (Dashboard) ───────────────────────────────────
-     Binary online/offline, not a live-changing measurement like RSRP/
-     RSRQ/SINR, so these dots stay a static halo (flash=false) — same
-     reasoning as Registration's dot in applyRegRingDot above. Colors
-     reuse the site's fixed green/red/gray status vocabulary rather than
-     the signal-quality gradient, since there's no in-between tier here. */
+     Connectivity/Ping Check are binary online/offline, not a live-
+     changing measurement, so those two dots stay a static halo
+     (flash=false) — same reasoning as Registration's dot in
+     applyRegRingDot above, and they use the site's fixed green/red/gray
+     status vocabulary rather than a gradient, since there's no
+     in-between tier for a binary state. Latency/Jitter are live-
+     changing measurements like RSRP/RSRQ/SINR, so those two dots flash
+     on refresh (flash=true) and color against LATENCY_ZONES/
+     JITTER_ZONES via ascZoneColor. */
   function connStatusColor(status) {
     if (status === 'online') return '#34c777';
     if (status === 'offline') return '#e05a4e';
@@ -466,12 +511,16 @@
     if (latencyEl) {
       var avg = netState.icmp_avg_rtt_ms;
       latencyEl.textContent = typeof avg === 'number' ? avg + ' ms' : '—';
+      var latencyDotEl = document.getElementById('om-conn-icmp-latency-dot');
+      if (latencyDotEl) setRingDotColor(latencyDotEl, typeof avg === 'number' ? ascZoneColor(avg, LATENCY_ZONES) : '#5c5c5e', true);
     }
 
     var jitterEl = document.getElementById('om-conn-icmp-jitter-text');
     if (jitterEl) {
       var jitter = netState.icmp_jitter_ms;
       jitterEl.textContent = typeof jitter === 'number' ? jitter + ' ms' : '—';
+      var jitterDotEl = document.getElementById('om-conn-icmp-jitter-dot');
+      if (jitterDotEl) setRingDotColor(jitterDotEl, typeof jitter === 'number' ? ascZoneColor(jitter, JITTER_ZONES) : '#5c5c5e', true);
     }
 
     var check204Status = netState.check204_status;
