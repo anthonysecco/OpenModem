@@ -154,11 +154,17 @@
     return (v / Math.pow(1024, i)).toFixed(i === 0 ? 0 : 2) + ' ' + units[i];
   }
   function fmtSimSlot(v) { return v === 1 ? 'SIM1' : v === 2 ? 'SIM2' : null; }
+  function fmtLteBandNum(v) { return (typeof v === 'string' && v) ? 'B' + v : null; }
+  function fmtNrBandNum(v) { return (typeof v === 'string' && v) ? 'n' + v : null; }
+  function fmtNrType(v) {
+    return v === 'NR5G-SA' ? 'Standalone (SA)' : v === 'NR5G-NSA' ? 'Non-Standalone (NSA)' : null;
+  }
 
   var FORMATTERS = {
     reg_lte: fmtReg, reg_nr: fmtReg, reg_creg: fmtReg,
     signal_lte_rsrp: fmtDbm, signal_lte_rsrq: fmtDbm, signal_lte_sinr: fmtDbm,
     signal_nr_rsrp: fmtDbm, signal_nr_rsrq: fmtDbm, signal_nr_sinr: fmtDbm,
+    cell_lte_band: fmtLteBandNum, cell_nr_band: fmtNrBandNum, cell_nr_type: fmtNrType,
     wan_active: fmtBool,
     ca_total_bw_mhz: fmtMhz,
     ca_dl_estimated_mbps: fmtMbps, ca_dl_maximum_mbps: fmtMbps,
@@ -222,6 +228,7 @@
           renderState(state);
           renderSimSlots(state);
           renderCarrierAggregation(state);
+          renderNetPrefs(state);
           markRefreshedNow();
         }
         scheduleRefresh(FAST_POLL_MS);
@@ -661,56 +668,183 @@
     bindApplyButton(bandLockApply);
   }
 
+  /* ── Generic modal overlay ───────────────────────────────────────────
+     One overlay element per page (see #om-scan-modal in cellular.html);
+     app.js only ever toggles its .open class and swaps its body's
+     innerHTML between phases, rather than mounting/unmounting DOM. */
+  function openModal(id) {
+    var el = document.getElementById(id);
+    if (!el) return;
+    el.classList.add('open');
+    el.setAttribute('aria-hidden', 'false');
+  }
+
+  function closeModal(id) {
+    var el = document.getElementById(id);
+    if (!el) return;
+    el.classList.remove('open');
+    el.setAttribute('aria-hidden', 'true');
+  }
+
   /* ── Carrier scan (Cellular page) ──────────────────────────────────
-     A real scan takes up to ~2 minutes and briefly interrupts data
-     service while the modem searches — confirm() warns about both. */
+     "Scan for available carriers" is a link that opens a modal, rather
+     than a card button + inline results: a real scan takes up to ~2
+     minutes and briefly interrupts data service while the modem
+     searches, so the modal walks through confirm -> scanning -> results
+     as three phases of the same dialog instead of a window.confirm()
+     gate in front of an always-visible card. */
   var STATUS_LABELS = { 0: 'Unknown', 1: 'Available', 2: 'Current', 3: 'Forbidden' };
 
-  function renderScanResults(operators) {
-    var list = document.getElementById('om-scan-results');
-    if (!list) return;
+  function scanConfirmHtml() {
+    return '<p>Scanning for carriers (AT+COPS=?) searches all available ' +
+      'networks and will disrupt data connectivity for up to 2 minutes ' +
+      'while the modem searches. Continue?</p>' +
+      '<div class="om-modal-actions">' +
+      '<button type="button" class="om-secondary" data-scan-action="cancel">Cancel</button>' +
+      '<button type="button" data-scan-action="start">Scan for Carriers</button>' +
+      '</div>';
+  }
+
+  function scanCloseHtml() {
+    return '<div class="om-modal-actions">' +
+      '<button type="button" class="om-secondary" data-scan-action="close">Close</button>' +
+      '</div>';
+  }
+
+  function scanResultsListHtml(operators) {
     if (!operators || !operators.length) {
-      list.innerHTML = '<p class="om-note">No operators found.</p>';
-      return;
+      return '<p class="om-note">No operators found.</p>';
     }
-    list.innerHTML = operators.map(function (op) {
+    return operators.map(function (op) {
       return '<div class="om-row"><span class="om-row-label">' +
         escapeHtml(op.name) + ' (' + escapeHtml(op.plmn) + ')</span><span>' +
         (STATUS_LABELS[op.status] || op.status) + '</span></div>';
     }).join('');
   }
 
+  function runCarrierScan() {
+    var body = document.getElementById('om-scan-modal-body');
+    body.innerHTML = '<p class="om-note">Scanning… this can take up to 2 minutes.</p>';
+
+    fetch('/cgi-bin/carrier_scan.sh')
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        if (data.error) {
+          body.innerHTML = '<p class="om-note">Scan failed: ' + escapeHtml(data.error) + '</p>' + scanCloseHtml();
+          return;
+        }
+        body.innerHTML = '<p>Found ' + data.operators.length + ' operator(s).</p>' +
+          scanResultsListHtml(data.operators) + scanCloseHtml();
+      })
+      .catch(function (err) {
+        body.innerHTML = '<p class="om-note">Scan failed: ' + escapeHtml(String(err)) + '</p>' + scanCloseHtml();
+      });
+  }
+
   function initCarrierScan() {
-    var btn = document.getElementById('om-scan-btn');
-    if (!btn) return;
-    var statusEl = document.getElementById('om-scan-status');
+    var link = document.getElementById('om-scan-link');
+    var modal = document.getElementById('om-scan-modal');
+    var body = document.getElementById('om-scan-modal-body');
+    if (!link || !modal || !body) return;
 
-    btn.addEventListener('click', function () {
-      if (!window.confirm(
-        'Are you sure? Scanning for carriers (AT+COPS=?) will disrupt ' +
-        'connectivity for up to 2 minutes while the modem searches. ' +
-        'Click Cancel to back out, or OK to proceed.'
-      )) return;
-
-      btn.disabled = true;
-      statusEl.textContent = 'Scanning… this can take up to 2 minutes.';
-      document.getElementById('om-scan-results').innerHTML = '';
-
-      fetch('/cgi-bin/carrier_scan.sh')
-        .then(function (r) { return r.json(); })
-        .then(function (data) {
-          if (data.error) {
-            statusEl.textContent = 'Scan failed: ' + data.error;
-            return;
-          }
-          statusEl.textContent = 'Found ' + data.operators.length + ' operator(s).';
-          renderScanResults(data.operators);
-        })
-        .catch(function (err) {
-          statusEl.textContent = 'Scan failed: ' + err;
-        })
-        .finally(function () { btn.disabled = false; });
+    link.addEventListener('click', function (e) {
+      e.preventDefault();
+      body.innerHTML = scanConfirmHtml();
+      openModal('om-scan-modal');
     });
+
+    // Delegated: the body's actual buttons get replaced wholesale on
+    // every phase transition, so one listener bound at init (matched by
+    // data-scan-action) covers cancel/start/close across all of them.
+    body.addEventListener('click', function (e) {
+      var action = e.target.getAttribute && e.target.getAttribute('data-scan-action');
+      if (action === 'start') runCarrierScan();
+      else if (action === 'cancel' || action === 'close') closeModal('om-scan-modal');
+    });
+
+    var closeBtn = document.getElementById('om-scan-modal-close');
+    if (closeBtn) closeBtn.addEventListener('click', function () { closeModal('om-scan-modal'); });
+
+    modal.addEventListener('click', function (e) {
+      if (e.target === modal) closeModal('om-scan-modal');
+    });
+
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape' && modal.classList.contains('open')) closeModal('om-scan-modal');
+    });
+  }
+
+  /* ── Network Mode / Data Roaming (Cellular page) ─────────────────────
+     Both apply immediately on click behind a confirm() — same
+     immediate-apply pattern as SIM slot switching, not the shared
+     Apply-changes bar (Band Lock already owns that on this page, and
+     each of these is a single-value toggle, not a multi-field form
+     worth batching). Highlighted button is re-synced from real modem
+     state on every poll tick via renderNetPrefs(), same as SIM slot's
+     toggle — there's no in-progress edit here to protect from being
+     clobbered by a background refresh. */
+  var NET_MODE_LABELS = { AUTO: 'Auto', LTE: 'LTE only', NR5G: '5G only', 'LTE:NR5G': 'LTE + 5G' };
+
+  function renderNetPrefs(state) {
+    if (!document.getElementById('om-netmode-toggle')) return; // not on this page
+    setToggleActive('om-netmode-toggle', 'data-mode', state.net_mode_pref);
+    var roam = state.net_data_roaming === true ? '1' : state.net_data_roaming === false ? '0' : null;
+    setToggleActive('om-roaming-toggle', 'data-roam', roam);
+  }
+
+  function applyNetPref(url, confirmMsg, btn) {
+    var statusEl = document.getElementById('om-netprefs-status');
+    if (!window.confirm(confirmMsg)) return;
+
+    btn.disabled = true;
+    statusEl.textContent = 'Applying…';
+    fetch(url)
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        statusEl.textContent = data.success ? data.message : ('Failed: ' + data.error);
+      })
+      .catch(function (err) { statusEl.textContent = 'Failed: ' + err; })
+      .finally(function () { btn.disabled = false; });
+  }
+
+  function initNetPrefs() {
+    var modeGroup = document.getElementById('om-netmode-toggle');
+    var roamGroup = document.getElementById('om-roaming-toggle');
+    if (!modeGroup && !roamGroup) return; // not on this page
+
+    if (modeGroup) {
+      var modeBtns = modeGroup.querySelectorAll('button');
+      for (var i = 0; i < modeBtns.length; i++) {
+        (function (btn) {
+          btn.addEventListener('click', function () {
+            if (btn.classList.contains('active')) return;
+            var mode = btn.getAttribute('data-mode');
+            applyNetPref(
+              '/cgi-bin/network_action.sh?action=set_mode&mode=' + encodeURIComponent(mode),
+              'Switch network mode to ' + (NET_MODE_LABELS[mode] || mode) + '? The connection may briefly drop while the modem re-searches. Continue?',
+              btn
+            );
+          });
+        })(modeBtns[i]);
+      }
+    }
+
+    if (roamGroup) {
+      var roamBtns = roamGroup.querySelectorAll('button');
+      for (var j = 0; j < roamBtns.length; j++) {
+        (function (btn) {
+          btn.addEventListener('click', function () {
+            if (btn.classList.contains('active')) return;
+            var value = btn.getAttribute('data-roam');
+            applyNetPref(
+              '/cgi-bin/network_action.sh?action=set_roaming&value=' + value,
+              'Set data roaming to ' + (value === '1' ? 'Enabled' : 'Disabled') + '? Continue?',
+              btn
+            );
+          });
+        })(roamBtns[j]);
+      }
+    }
   }
 
   /* ── Carrier center-frequency calculation (Cellular page) ────────────
@@ -1355,6 +1489,7 @@
     initPowerButtons();
     initBandLock();
     initCarrierScan();
+    initNetPrefs();
     initLanConfig();
     initWanConfig();
     initWanInternet();

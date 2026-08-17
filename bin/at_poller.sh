@@ -243,11 +243,11 @@ collect_sim() {
 
     # +CNUM: [alpha],"<number>",<type> — alpha tag is usually empty; not
     # every carrier/SIM provisions this, ERROR or a bare OK is normal.
-    # Kept as the LAST command in the whole-cycle chain (block 30, see
+    # Kept as the LAST command in the whole-cycle chain (block 32, see
     # ALL_CMD): a chain aborts at the first ERROR, so an expected CNUM
     # failure only nulls this one field instead of losing everything
     # queried after it.
-    _cnum=$(nth_block "$_blob" 30)
+    _cnum=$(nth_block "$_blob" 32)
     F_SIM_PHONE=$(json_str "$(printf '%s' "$_cnum" | grep '^+CNUM:' | head -1 | sed 's/^+CNUM: //' | cut -d',' -f2 | tr -d '"\r\n')")
 }
 
@@ -287,46 +287,102 @@ collect_signal() {
     F_NR_SINR=$(json_num "$(printf '%s' "$_sinr" | grep '+QSINR:.*,NR5G' | sed 's/+QSINR: //; s/,NR5G$//' | cut -d',' -f1 | tr -d ' \r\n')")
 }
 
-# Only the well-established leading QENG "servingcell" fields are parsed
-# (state, RAT, duplex, MCC, MNC, cellID, PCID, EARFCN, band, TAC).
+# The well-established leading QENG "servingcell" fields are parsed
+# (state, RAT, duplex, MCC, MNC, cellID, PCID, EARFCN/ARFCN, band, TAC).
 # Trailing fields (RSRP/RSRQ/RSSI/SINR/CQI/TA/...) are ambiguous across
 # firmware revisions and are skipped here — collect_signal()'s dedicated
 # QRSRP/QRSRQ/QSINR commands are the trusted source for those instead.
+#
+# AT+QENG="servingcell" answers with ONE line while camped on LTE or
+# NR5G-SA, but TWO lines while in NR5G-NSA (an "LTE" anchor line — same
+# shape/state as pure LTE, since the LTE leg genuinely is the anchor
+# cell — followed by a second "NR5G-NSA" line for the secondary NR
+# carrier) — so every line in the block is scanned rather than just the
+# first, and LTE/NR fields are collected independently into their own
+# F_CELL_LTE_*/F_CELL_NR_* sets rather than one shared set, so the LTE
+# and 5G NR cards can each show real data for their own leg even while
+# NSA has both active simultaneously. The LTE branch's field layout is
+# confirmed live (same as before this split). The NR5G-SA/NSA layouts
+# below are ported from Quectel's documented QENG field order but are
+# NOT independently confirmed against this hardware (this connection
+# has never carried an active NR component through this whole project,
+# same caveat as collect_carrier_aggregation's NR5G branch) — verify
+# once a real 5G session is observed and correct field offsets if wrong.
 collect_serving_cell() {
-    F_CELL_STATE="null"; F_CELL_RAT="null"
-    F_CELL_MCC="null"; F_CELL_MNC="null"; F_CELL_ID="null"
-    F_CELL_PCID="null"; F_CELL_EARFCN="null"; F_CELL_BAND="null"; F_CELL_TAC="null"
-    F_CELL_UL_BW_MHZ="null"
+    F_CELL_LTE_ACTIVE="0"; F_CELL_LTE_STATE="null"
+    F_CELL_LTE_MCC="null"; F_CELL_LTE_MNC="null"; F_CELL_LTE_ID="null"
+    F_CELL_LTE_PCID="null"; F_CELL_LTE_EARFCN="null"; F_CELL_LTE_BAND="null"; F_CELL_LTE_TAC="null"
+    F_CELL_LTE_UL_BW_MHZ="null"
+
+    F_CELL_NR_ACTIVE="0"; F_CELL_NR_TYPE="null"; F_CELL_NR_STATE="null"
+    F_CELL_NR_MCC="null"; F_CELL_NR_MNC="null"; F_CELL_NR_ID="null"
+    F_CELL_NR_PCID="null"; F_CELL_NR_ARFCN="null"; F_CELL_NR_BAND="null"; F_CELL_NR_TAC="null"
 
     _serv=$(nth_block "$1" 15)
-    _line=$(printf '%s' "$_serv" | grep '+QENG:.*"servingcell"' | head -1)
-    [ -z "$_line" ] && return
+    _lines=$(printf '%s' "$_serv" | grep '^+QENG:.*"servingcell"')
+    [ -z "$_lines" ] && return
 
-    _state=$(printf '%s' "$_line" | sed 's/.*"servingcell","//' | cut -d'"' -f1)
-    F_CELL_STATE=$(json_str "$_state")
+    _oldifs="$IFS"
+    IFS='
+'
+    for _line in $_lines; do
+        if printf '%s' "$_line" | grep -qE '"LTE"'; then
+            _state=$(printf '%s' "$_line" | sed 's/.*"servingcell","//' | cut -d'"' -f1)
+            F_CELL_LTE_ACTIVE="1"
+            F_CELL_LTE_STATE=$(json_str "$_state")
 
-    _rat=""
-    if printf '%s' "$_line" | grep -qE '"NR5G-SA"'; then _rat="NR5G-SA"
-    elif printf '%s' "$_line" | grep -qE '"NR5G-NSA"|"NR5G"'; then _rat="NR5G-NSA"
-    elif printf '%s' "$_line" | grep -qE '"LTE"'; then _rat="LTE"
-    fi
-    F_CELL_RAT=$(json_str "$_rat")
+            # Rest of line after the 4th quoted field
+            # ("servingcell","STATE","LTE","FDD"/"TDD"):
+            # MCC,MNC,cellID,PCID,EARFCN,band,ul_bw,dl_bw,TAC,...
+            _rest=$(printf '%s' "$_line" | sed 's/.*"LTE","[A-Z]*",//')
+            F_CELL_LTE_MCC=$(json_str    "$(printf '%s' "$_rest" | cut -d',' -f1 | tr -d ' \r\n')")
+            F_CELL_LTE_MNC=$(json_str    "$(printf '%s' "$_rest" | cut -d',' -f2 | tr -d ' \r\n')")
+            F_CELL_LTE_ID=$(json_str     "$(printf '%s' "$_rest" | cut -d',' -f3 | tr -d ' \r\n')")
+            F_CELL_LTE_PCID=$(json_str   "$(printf '%s' "$_rest" | cut -d',' -f4 | tr -d ' \r\n')")
+            F_CELL_LTE_EARFCN=$(json_str "$(printf '%s' "$_rest" | cut -d',' -f5 | tr -d ' \r\n')")
+            F_CELL_LTE_BAND=$(json_str   "$(printf '%s' "$_rest" | cut -d',' -f6 | tr -d ' \r\n')")
+            F_CELL_LTE_TAC=$(json_str    "$(printf '%s' "$_rest" | cut -d',' -f9 | tr -d ' \r\n')")
 
-    [ "$_rat" = "LTE" ] || return
+            _ul_bw_code=$(printf '%s' "$_rest" | cut -d',' -f7 | tr -d ' \r\n')
+            F_CELL_LTE_UL_BW_MHZ=$(json_num "$(qeng_bw_mhz "$_ul_bw_code")")
 
-    # Rest of line after the 4th quoted field ("servingcell","STATE","LTE","FDD"/"TDD"):
-    # MCC,MNC,cellID,PCID,EARFCN,band,ul_bw,dl_bw,TAC,...
-    _rest=$(printf '%s' "$_line" | sed 's/.*"LTE","[A-Z]*",//')
-    F_CELL_MCC=$(json_str    "$(printf '%s' "$_rest" | cut -d',' -f1 | tr -d ' \r\n')")
-    F_CELL_MNC=$(json_str    "$(printf '%s' "$_rest" | cut -d',' -f2 | tr -d ' \r\n')")
-    F_CELL_ID=$(json_str     "$(printf '%s' "$_rest" | cut -d',' -f3 | tr -d ' \r\n')")
-    F_CELL_PCID=$(json_str   "$(printf '%s' "$_rest" | cut -d',' -f4 | tr -d ' \r\n')")
-    F_CELL_EARFCN=$(json_str "$(printf '%s' "$_rest" | cut -d',' -f5 | tr -d ' \r\n')")
-    F_CELL_BAND=$(json_str   "$(printf '%s' "$_rest" | cut -d',' -f6 | tr -d ' \r\n')")
-    F_CELL_TAC=$(json_str    "$(printf '%s' "$_rest" | cut -d',' -f9 | tr -d ' \r\n')")
+        elif printf '%s' "$_line" | grep -qE '"NR5G-SA"'; then
+            _state=$(printf '%s' "$_line" | sed 's/.*"servingcell","//' | cut -d'"' -f1)
+            F_CELL_NR_ACTIVE="1"
+            F_CELL_NR_TYPE=$(json_str "NR5G-SA")
+            F_CELL_NR_STATE=$(json_str "$_state")
 
-    _ul_bw_code=$(printf '%s' "$_rest" | cut -d',' -f7 | tr -d ' \r\n')
-    F_CELL_UL_BW_MHZ=$(json_num "$(qeng_bw_mhz "$_ul_bw_code")")
+            # UNCONFIRMED layout — after ("servingcell","STATE","NR5G-SA","FDD"/"TDD"):
+            # MCC,MNC,cellID,PCID,TAC,ARFCN,band,dl_bw,rsrp,rsrq,sinr,scs
+            _rest=$(printf '%s' "$_line" | sed 's/.*"NR5G-SA","[A-Z]*",//')
+            F_CELL_NR_MCC=$(json_str   "$(printf '%s' "$_rest" | cut -d',' -f1 | tr -d ' \r\n')")
+            F_CELL_NR_MNC=$(json_str   "$(printf '%s' "$_rest" | cut -d',' -f2 | tr -d ' \r\n')")
+            F_CELL_NR_ID=$(json_str    "$(printf '%s' "$_rest" | cut -d',' -f3 | tr -d ' \r\n')")
+            F_CELL_NR_PCID=$(json_str  "$(printf '%s' "$_rest" | cut -d',' -f4 | tr -d ' \r\n')")
+            F_CELL_NR_TAC=$(json_str   "$(printf '%s' "$_rest" | cut -d',' -f5 | tr -d ' \r\n')")
+            F_CELL_NR_ARFCN=$(json_str "$(printf '%s' "$_rest" | cut -d',' -f6 | tr -d ' \r\n')")
+            F_CELL_NR_BAND=$(json_str  "$(printf '%s' "$_rest" | cut -d',' -f7 | tr -d ' \r\n')")
+
+        elif printf '%s' "$_line" | grep -qE '"NR5G-NSA"'; then
+            F_CELL_NR_ACTIVE="1"
+            F_CELL_NR_TYPE=$(json_str "NR5G-NSA")
+            # No own <state> field — NSA's secondary line describes the
+            # NR component of a connection whose state is the LTE
+            # anchor line's above; leaving F_CELL_NR_STATE null (rather
+            # than copying the LTE state) keeps this field honest about
+            # what was actually reported for the NR leg itself.
+
+            # UNCONFIRMED layout — no leading state/duplex fields on
+            # this line, just: MCC,MNC,PCID,rsrp,sinr,rsrq,ARFCN,band,dl_bw,scs
+            _rest=$(printf '%s' "$_line" | sed 's/.*"NR5G-NSA",//')
+            F_CELL_NR_MCC=$(json_str   "$(printf '%s' "$_rest" | cut -d',' -f1 | tr -d ' \r\n')")
+            F_CELL_NR_MNC=$(json_str   "$(printf '%s' "$_rest" | cut -d',' -f2 | tr -d ' \r\n')")
+            F_CELL_NR_PCID=$(json_str  "$(printf '%s' "$_rest" | cut -d',' -f3 | tr -d ' \r\n')")
+            F_CELL_NR_ARFCN=$(json_str "$(printf '%s' "$_rest" | cut -d',' -f7 | tr -d ' \r\n')")
+            F_CELL_NR_BAND=$(json_str  "$(printf '%s' "$_rest" | cut -d',' -f8 | tr -d ' \r\n')")
+        fi
+    done
+    IFS="$_oldifs"
 }
 
 collect_carrier() {
@@ -367,12 +423,14 @@ collect_carrier() {
 # when there's no NR resource to report on, same as QCAINFO/QENG's NR
 # fields going empty rather than an actual failure).
 # Builds "pci,freq,layers|pci,freq,layers|..." across both subcommands'
-# blocks (28 and 29 in ALL_CMD) for compute_ca_throughput to match
+# blocks (28 and 31 in ALL_CMD — not adjacent: mode_pref/data_roaming
+# sit between them, see ALL_CMD's block-number comment) for
+# compute_ca_throughput to match
 # against each carrier's own pci/earfcn — RAT-agnostic since both LTE
 # and NR5G entries in ca_bands already carry pci/earfcn fields.
 build_mimo_lookup() {
     _out=""
-    for _blk in 28 29; do
+    for _blk in 28 31; do
         _mi=$(nth_block "$1" "$_blk")
         _mi_lines=$(printf '%s' "$_mi" | grep -E '^\+QNWCFG: "(lte|nr5g)_mimo_info"')
         [ -z "$_mi_lines" ] && continue
@@ -436,7 +494,7 @@ collect_carrier_aggregation() {
             # <UL_configured>,<UL_bandwidth>,<UL_EARFCN> — SCC-only per
             # Quectel's manual (PCC's QCAINFO line never carries them;
             # its real UL bandwidth comes from QENG="servingcell"
-            # instead, see F_CELL_UL_BW_MHZ) and only meaningful when
+            # instead, see F_CELL_LTE_UL_BW_MHZ) and only meaningful when
             # UL_configured=1 — confirmed live: a 3-CC session had one
             # SCC with ul_configured=0 (no uplink grant on that carrier
             # at all, normal with more than 2 active CCs) and another
@@ -505,7 +563,7 @@ collect_carrier_aggregation() {
 #   1. carriers JSON array, each object gaining bw_mhz/mimo_layers/
 #      ul_bw_mhz/dl_estimated_mbps/dl_maximum_mbps. ul_bw_mhz is real
 #      polled data, not assumed equal to bw_mhz: the PCC's comes from
-#      F_CELL_UL_BW_MHZ (AT+QENG="servingcell", passed in as
+#      F_CELL_LTE_UL_BW_MHZ (AT+QENG="servingcell", passed in as
 #      pcc_ul_bw_mhz below since QCAINFO never carries UL fields for
 #      the PCC line); each SCC's comes from its own QCAINFO
 #      ul_bandwidth_raw field, left null when that SCC has no uplink
@@ -527,7 +585,7 @@ compute_ca_throughput() {
         -v fb_lte_rsrq="${F_LTE_RSRQ:-null}" \
         -v fb_nr_rsrq="${F_NR_RSRQ:-null}" \
         -v mimo_lookup="${2:-}" \
-        -v pcc_ul_bw_mhz="${F_CELL_UL_BW_MHZ:-null}" \
+        -v pcc_ul_bw_mhz="${F_CELL_LTE_UL_BW_MHZ:-null}" \
     '
     function lte_bw_mhz(rb,    n) {
         n = int(rb)
@@ -799,6 +857,26 @@ collect_band_pref() {
     F_BAND_PREF_NR5G=$(json_str "$(printf '%s' "$_nr" | grep '+QNWPREFCFG:' | sed 's/.*"nr5g_band",//' | tr -d ' \r\n')")
 }
 
+# Network Mode (AT+QNWPREFCFG="mode_pref") and Data Roaming
+# (AT+QNWCFG="data_roaming") — both confirmed live against this
+# hardware (2026-08-17): mode_pref currently reads "AUTO" and accepts a
+# colon-separated RAT list the same way lte_band/nr5g_band do (this
+# module's own AT+QNWPREFCFG=? lists it as "mode_pref",RAT1:...:RATN);
+# data_roaming currently reads 0 and is a plain (0,1) toggle per its own
+# AT+QNWCFG=? entry. There is NO "roamservice" QCFG key on this
+# firmware (queried live, not present in AT+QCFG=?'s full list) —
+# data_roaming is the real roaming control here, not that.
+collect_network_prefs() {
+    F_NET_MODE_PREF="null"; F_NET_DATA_ROAMING="null"
+    _blob="$1"
+
+    _mode=$(nth_block "$_blob" 29)
+    F_NET_MODE_PREF=$(json_str "$(printf '%s' "$_mode" | grep '+QNWPREFCFG:' | sed 's/.*"mode_pref",//' | tr -d ' \r\n')")
+
+    _roam=$(nth_block "$_blob" 30)
+    F_NET_DATA_ROAMING=$(json_bool "$(printf '%s' "$_roam" | grep '+QNWCFG:' | sed 's/.*"data_roaming",//' | tr -d ' \r\n')")
+}
+
 # WAN state for PDP context 1 (the primary/default context on this
 # hardware — "broadband" APN, confirmed live). Context 3 ("sos") is
 # emergency-only and deliberately not surfaced.
@@ -897,18 +975,30 @@ write_state() {
   "signal_nr_rsrp": ${F_NR_RSRP},
   "signal_nr_rsrq": ${F_NR_RSRQ},
   "signal_nr_sinr": ${F_NR_SINR},
-  "cell_state": ${F_CELL_STATE},
-  "cell_rat": ${F_CELL_RAT},
-  "cell_mcc": ${F_CELL_MCC},
-  "cell_mnc": ${F_CELL_MNC},
-  "cell_id": ${F_CELL_ID},
-  "cell_pcid": ${F_CELL_PCID},
-  "cell_earfcn": ${F_CELL_EARFCN},
-  "cell_band": ${F_CELL_BAND},
-  "cell_tac": ${F_CELL_TAC},
+  "cell_lte_active": $(json_bool "$F_CELL_LTE_ACTIVE"),
+  "cell_lte_state": ${F_CELL_LTE_STATE},
+  "cell_lte_mcc": ${F_CELL_LTE_MCC},
+  "cell_lte_mnc": ${F_CELL_LTE_MNC},
+  "cell_lte_id": ${F_CELL_LTE_ID},
+  "cell_lte_pcid": ${F_CELL_LTE_PCID},
+  "cell_lte_earfcn": ${F_CELL_LTE_EARFCN},
+  "cell_lte_band": ${F_CELL_LTE_BAND},
+  "cell_lte_tac": ${F_CELL_LTE_TAC},
+  "cell_nr_active": $(json_bool "$F_CELL_NR_ACTIVE"),
+  "cell_nr_type": ${F_CELL_NR_TYPE},
+  "cell_nr_state": ${F_CELL_NR_STATE},
+  "cell_nr_mcc": ${F_CELL_NR_MCC},
+  "cell_nr_mnc": ${F_CELL_NR_MNC},
+  "cell_nr_id": ${F_CELL_NR_ID},
+  "cell_nr_pcid": ${F_CELL_NR_PCID},
+  "cell_nr_arfcn": ${F_CELL_NR_ARFCN},
+  "cell_nr_band": ${F_CELL_NR_BAND},
+  "cell_nr_tac": ${F_CELL_NR_TAC},
   "carrier_name": ${F_CARRIER_NAME},
   "carrier_act": ${F_CARRIER_ACT},
   "carrier_plmn": ${F_CARRIER_PLMN},
+  "net_mode_pref": ${F_NET_MODE_PREF},
+  "net_data_roaming": ${F_NET_DATA_ROAMING},
   "ca_count": ${F_CA_COUNT},
   "ca_bands": ${F_CA_BANDS},
   "ca_total_bw_mhz": ${F_CA_TOTAL_BW_MHZ},
@@ -967,21 +1057,26 @@ log_op "Starting — interval=${POLL_INTERVAL}s log_level=${LOG_LEVEL}"
 #  19 QNWPREFCFG=lte_band 20 QNWPREFCFG=nr5g_band
 #  21 CGDCONT 22 CGPADDR 23 CGACT 24 QGDCNT
 #  25 QMAP=LANIP 26 QMAP=MPDN_rule 27 QMAP=DHCPV4DNS
-#  28 QNWPREFCFG=lte_mimo_info 29 QNWPREFCFG=nr5g_mimo_info
-#  30 CNUM
+#  28 QNWCFG=lte_mimo_info
+#  29 QNWPREFCFG=mode_pref 30 QNWCFG=data_roaming
+#  31 QNWCFG=nr5g_mimo_info
+#  32 CNUM
 # CNUM is placed last, out of its natural SIM-info grouping, because a
 # chain aborts at the first ERROR (confirmed live) and it's the one
 # command here documented to legitimately ERROR on some SIMs — putting
 # it last means that failure only nulls sim_phone instead of losing
-# every field queried after it. The two mimo_info commands go right
-# before it for the same reason, in the same order: nr5g_mimo_info is
-# the one of the two confirmed live to ERROR whenever there's no active
-# NR component carrier (a common state on this LTE-heavy test
-# connection) — see build_mimo_lookup()'s header comment — so it's
-# ordered after lte_mimo_info (which every live sample this session
-# answered successfully) rather than before it or CNUM, so its failure
-# can't take out lte_mimo_info's data too.
-ALL_CMD='AT+GSN;+QGMR;I;+QTEMP;+CPIN?;+CIMI;+QCCID;+QUIMSLOT?;+CEREG?;+C5GREG?;+CREG?;+QRSRP;+QRSRQ;+QSINR;+QENG="servingcell";+COPS?;+QSPN;+QCAINFO;+QNWPREFCFG="lte_band";+QNWPREFCFG="nr5g_band";+CGDCONT?;+CGPADDR;+CGACT?;+QGDCNT?;+QMAP="LANIP";+QMAP="MPDN_rule";+QMAP="DHCPV4DNS";+QNWCFG="lte_mimo_info";+QNWCFG="nr5g_mimo_info";+CNUM'
+# every field queried after it. nr5g_mimo_info sits right before it for
+# the same reason: it's the one command here confirmed LIVE to ERROR
+# whenever there's no active NR component carrier (a common state on
+# this LTE-heavy test connection — confirmed 2026-08-17: it aborted the
+# entire rest of the chain, silently nulling everything queried after
+# it, back when mode_pref/data_roaming were placed after it instead of
+# before) — see build_mimo_lookup()'s header comment. mode_pref and
+# data_roaming both answered OK in that same live test and are ordered
+# right after lte_mimo_info (which also always answered OK), ahead of
+# nr5g_mimo_info, specifically so nr5g_mimo_info's expected failure
+# can't take them out too.
+ALL_CMD='AT+GSN;+QGMR;I;+QTEMP;+CPIN?;+CIMI;+QCCID;+QUIMSLOT?;+CEREG?;+C5GREG?;+CREG?;+QRSRP;+QRSRQ;+QSINR;+QENG="servingcell";+COPS?;+QSPN;+QCAINFO;+QNWPREFCFG="lte_band";+QNWPREFCFG="nr5g_band";+CGDCONT?;+CGPADDR;+CGACT?;+QGDCNT?;+QMAP="LANIP";+QMAP="MPDN_rule";+QMAP="DHCPV4DNS";+QNWCFG="lte_mimo_info";+QNWPREFCFG="mode_pref";+QNWCFG="data_roaming";+QNWCFG="nr5g_mimo_info";+CNUM'
 
 _cycle=0
 
@@ -1001,6 +1096,7 @@ while true; do
     collect_carrier "$_blob"
     collect_carrier_aggregation "$_blob"
     collect_band_pref "$_blob"
+    collect_network_prefs "$_blob"
     collect_wan "$_blob"
     collect_lan "$_blob"
 

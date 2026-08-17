@@ -755,6 +755,93 @@ body {
   color: #fff;
 }
 
+/* ── Modal overlay (Cellular page: Carrier Scan) ──
+   Single reusable overlay per page: hidden via display:none until
+   .open is toggled, rather than mounted/unmounted, so app.js only ever
+   swaps its body's innerHTML between confirm/scanning/results phases
+   instead of managing DOM lifecycle. */
+.om-modal-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  z-index: 100;
+}
+
+.om-modal-overlay.open {
+  display: flex;
+}
+
+.om-modal {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  width: 100%;
+  max-width: 420px;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.om-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.om-modal-header h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.om-modal-close {
+  background: none;
+  border: none;
+  font-size: 1.4rem;
+  line-height: 1;
+  color: var(--text-dim);
+  cursor: pointer;
+  padding: 0;
+}
+
+.om-modal-body {
+  padding: 1rem;
+  overflow-y: auto;
+}
+
+.om-modal-body .om-row:last-of-type {
+  border-bottom: 1px solid var(--border);
+}
+
+.om-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-top: 1rem;
+}
+
+.om-modal-actions button {
+  font: inherit;
+  padding: 0.5rem 0.9rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--accent);
+  color: #fff;
+  cursor: pointer;
+}
+
+.om-modal-actions button.om-secondary {
+  background: var(--bg);
+  color: var(--text);
+}
+
 /* ── Desktop layout ── */
 @media (min-width: 768px) {
   .om-sidebar {
