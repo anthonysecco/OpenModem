@@ -226,17 +226,17 @@ body {
 
 /* Trends card (Dashboard) — one row label + chart per metric (RSRP,
    Latency, Jitter, Est. Speed), all sharing the same .om-chart-wrap
-   line-chart look below. Unit sits right-aligned on the same line as
-   the metric name, same space-between idea as .om-card-title-value but
-   at row scale rather than the card's own <h2>. */
+   line-chart look below. The metric name carries its own unit inline
+   (e.g. "Latency (ms)") rather than a separate unit span; the right
+   side of the row instead shows that metric's latest value — the chart
+   itself already reads oldest-to-newest left-to-right, so the right
+   edge is where a reader's eye lands on "now" anyway. app.js's
+   renderLineChart sets both the text and its color (matching that
+   value's own zone) on every re-render. */
 .om-chart-row-label {
   display: flex;
   justify-content: space-between;
   align-items: baseline;
-  color: var(--text-dim);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  font-size: 0.7rem;
   margin: 0.9rem 0 0.2rem;
 }
 
@@ -244,9 +244,17 @@ body {
   margin-top: 0;
 }
 
-.om-chart-row-label .om-chart-row-unit {
-  text-transform: none;
-  letter-spacing: normal;
+.om-chart-row-label > span:first-child {
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 0.7rem;
+}
+
+.om-chart-row-value {
+  font-size: 0.85rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
 }
 
 /* Smoothed line chart (Trends card: RSRP, Latency, Jitter, Est. Speed

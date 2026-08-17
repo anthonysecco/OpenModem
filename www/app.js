@@ -668,7 +668,25 @@
       pts.push({ x: chartX(i, samples.length), y: chartY(v, min, max), v: v, t: rec.t });
     });
     chartPoints[containerId] = pts;
-    if (pts.length < 2) return; // not enough data yet — leave blank
+
+    // Latest value, shown at the row label's right side — the chart
+    // itself already reads left-to-right oldest-to-newest, so "right
+    // side" is where a reader's eye lands on "now" anyway. Updated even
+    // with fewer than 2 points (the line itself needs at least 2 to
+    // draw a path, but a single sample is still a real "latest" value).
+    var latestEl = document.getElementById(containerId + '-latest');
+    if (latestEl) {
+      if (pts.length > 0) {
+        var last = pts[pts.length - 1];
+        latestEl.textContent = Math.round(last.v);
+        latestEl.style.color = chartZoneColor(last.v, zones, ascending);
+      } else {
+        latestEl.textContent = '—';
+        latestEl.style.color = '';
+      }
+    }
+
+    if (pts.length < 2) return; // not enough data yet — leave the chart blank
 
     var coords = pts.map(function (p) { return [p.x, p.y]; });
     var segs = catmullRomSegments(coords);
