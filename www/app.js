@@ -166,25 +166,29 @@
     { thresh: Infinity, bar: '#e0473e', label: 'Critical' }
   ];
 
-  /* Estimated-download-speed thresholds (2026-08-17), chosen for an RV/
-     mobile-home use case — a single cellular link usually serving the
-     whole household, not a per-device figure: Excellent (25+ Mbps)
-     covers 4K streaming plus normal simultaneous use without thinking
-     about it (matches the FCC's own 25 Mbps "broadband" floor). Good
-     (10-25) comfortably covers HD streaming, video calls, and general
-     browsing at once. Fair (5-10) is usable but starts to limit
-     simultaneous heavy use — HD may buffer, plan around it. Poor (1-5)
-     is basic-use-only: browsing/email fine, streaming needs to drop to
-     SD or fails outright, video calls degrade badly. Critical (under 1)
-     is effectively unusable for anything beyond text. Same descending-
-     threshold, higher-is-better shape as RSRP/SINR_ZONES (val >= thresh
-     wins), reusing sigZoneColor/sigZoneLabel/sigZoneIndex directly
-     rather than ascZoneColor's lower-is-better direction. */
+  /* Estimated-download-speed thresholds, chosen for an RV/mobile-home
+     use case — a single cellular link usually serving the whole
+     household, not a per-device figure. Originally anchored to the
+     FCC's 25 Mbps "broadband" floor as Excellent (2026-08-17); up-
+     leveled by request (2026-08-17) to Excellent=200 for a modem
+     capable of strong CA-aggregated 5G/LTE-A throughput well past that
+     floor, with every other tier scaled by the same 8x factor (200/25)
+     to preserve the original tier shape/ratios rather than picking new
+     boundaries from scratch: Good (80-200) comfortably covers HD/4K
+     streaming, video calls, and general browsing at once, several
+     devices deep. Fair (40-80) is usable but starts to limit
+     simultaneous heavy use. Poor (8-40) is basic-use-only: browsing/
+     email fine, streaming needs to drop to SD or fails outright, video
+     calls degrade badly. Critical (under 8) is effectively unusable for
+     anything beyond text. Same descending-threshold, higher-is-better
+     shape as RSRP/SINR_ZONES (val >= thresh wins), reusing
+     sigZoneColor/sigZoneLabel/sigZoneIndex directly rather than
+     ascZoneColor's lower-is-better direction. */
   var SPEED_ZONES = [
-    { thresh: 25, bar: '#1e8a4e', label: 'Excellent' },
-    { thresh: 10, bar: '#34c777', label: 'Good' },
-    { thresh: 5, bar: '#f0c64c', label: 'Fair' },
-    { thresh: 1, bar: '#e0873a', label: 'Poor' },
+    { thresh: 200, bar: '#1e8a4e', label: 'Excellent' },
+    { thresh: 80, bar: '#34c777', label: 'Good' },
+    { thresh: 40, bar: '#f0c64c', label: 'Fair' },
+    { thresh: 8, bar: '#e0873a', label: 'Poor' },
     { thresh: 0, bar: '#e0473e', label: 'Critical' }
   ];
 
@@ -804,9 +808,9 @@
 
   function renderHistoryCharts() {
     renderLineChart('om-hist-rsrp-chart', historySignalSamples, historyRsrp, RSRP_ZONES, RSRP_MIN, RSRP_MAX, false);
+    renderLineChart('om-hist-speed-chart', historySignalSamples, function (r) { return r.dl_est_mbps; }, SPEED_ZONES, 0, 400, false);
     renderLineChart('om-hist-latency-chart', historyNetSamples, function (r) { return r.latency_ms; }, LATENCY_ZONES, 0, 300, true);
     renderLineChart('om-hist-jitter-chart', historyNetSamples, function (r) { return r.jitter_ms; }, JITTER_ZONES, 0, 50, true);
-    renderLineChart('om-hist-speed-chart', historySignalSamples, function (r) { return r.dl_est_mbps; }, SPEED_ZONES, 0, 50, false);
   }
 
   // One-time seed from the server's already-accumulated ring buffer — the
@@ -2377,9 +2381,9 @@
     refreshNetState();
     seedHistoryOnce();
     initChartHover('om-hist-rsrp-chart', 'dBm', RSRP_ZONES, false);
+    initChartHover('om-hist-speed-chart', 'Mbps', SPEED_ZONES, false);
     initChartHover('om-hist-latency-chart', 'ms', LATENCY_ZONES, true);
     initChartHover('om-hist-jitter-chart', 'ms', JITTER_ZONES, true);
-    initChartHover('om-hist-speed-chart', 'Mbps', SPEED_ZONES, false);
     setInterval(tickAge, 1000);
     initUpdateButton();
     initAtTerminal();
