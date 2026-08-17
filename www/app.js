@@ -132,8 +132,8 @@
      below) so it can tick every second independent of how often the
      state actually refreshes, rather than only updating on fetch. */
   var REG_LABELS = {
-    0: 'Not registered', 1: 'Registered (home)', 2: 'Searching',
-    3: 'Denied', 4: 'Unknown', 5: 'Registered (roaming)'
+    0: 'Not registered', 1: 'Registered', 2: 'Searching',
+    3: 'Denied', 4: 'Unknown', 5: 'Roaming'
   };
 
   function fmtDbm(v) { return (v === null || v === undefined) ? null : v + ' dBm'; }
@@ -154,8 +154,39 @@
     return (v / Math.pow(1024, i)).toFixed(i === 0 ? 0 : 2) + ' ' + units[i];
   }
   function fmtSimSlot(v) { return v === 1 ? 'SIM1' : v === 2 ? 'SIM2' : null; }
-  function fmtLteBandNum(v) { return (typeof v === 'string' && v) ? 'B' + v : null; }
-  function fmtNrBandNum(v) { return (typeof v === 'string' && v) ? 'n' + v : null; }
+  /* Standard industry nominal band frequency (e.g. "B13" = "700 MHz
+     band"), NOT the precise DL-low-edge math LTE_BAND_TABLE/nrArfcnToMhz
+     use further below for the CA bandwidth bar (band 13's real DL edge
+     is 746MHz; its nominal name is still "700") — these two tables
+     serve different purposes and are deliberately kept separate.
+     Covers the same band universes as LTE_BANDS/NR_BANDS (Band Lock's
+     own checkbox lists), dual-block bands (e.g. AWS) shown as
+     "low/high" rather than picking one arbitrarily. */
+  var LTE_BAND_NOMINAL_MHZ = {
+    1: '2100', 2: '1900', 3: '1800', 4: '1700/2100', 5: '850', 7: '2600', 8: '900',
+    12: '700', 13: '700', 14: '700', 17: '700', 18: '800', 19: '800', 20: '800',
+    25: '1900', 26: '850', 28: '700', 29: '700', 30: '2300', 32: '1500', 34: '2000',
+    38: '2600', 39: '1900', 40: '2300', 41: '2500', 42: '3500', 43: '3700',
+    46: '5200', 48: '3500', 65: '2100', 66: '1700/2100', 71: '600'
+  };
+  var NR_BAND_NOMINAL_MHZ = {
+    1: '2100', 2: '1900', 3: '1800', 5: '850', 7: '2600', 8: '900',
+    12: '700', 13: '700', 14: '700', 18: '800', 20: '800', 25: '1900', 26: '850',
+    28: '700', 29: '700', 30: '2300', 38: '2600', 40: '2300', 41: '2500', 48: '3500',
+    66: '1700/2100', 70: '1700/2100', 71: '600', 75: '1500', 76: '1500',
+    77: '3700', 78: '3500', 79: '4700'
+  };
+
+  function fmtLteBandNum(v) {
+    if (typeof v !== 'string' || !v) return null;
+    var mhz = LTE_BAND_NOMINAL_MHZ[Number(v)];
+    return 'B' + v + (mhz ? ' (' + mhz + ')' : '');
+  }
+  function fmtNrBandNum(v) {
+    if (typeof v !== 'string' || !v) return null;
+    var mhz = NR_BAND_NOMINAL_MHZ[Number(v)];
+    return 'n' + v + (mhz ? ' (' + mhz + ')' : '');
+  }
   function fmtNrType(v) {
     return v === 'NR5G-SA' ? 'Standalone (SA)' : v === 'NR5G-NSA' ? 'Non-Standalone (NSA)' : null;
   }
@@ -185,6 +216,46 @@
       var out = fmt ? fmt(raw) : raw;
       node.textContent = (out === null || out === undefined || out === '') ? '—' : out;
     }
+  }
+
+  /* ── LTE/5G NR Band & State tooltips (Cellular page) ─────────────────
+     EARFCN/PCID/Cell ID/TAC used to be their own rows; folded into the
+     Band value's title attribute instead (native tooltip, same pattern
+     already used for the CA table's carrier-name badges) to keep the
+     card short while still making the detail available on hover/tap.
+     State's title explains what each QENG servingcell state actually
+     means, since "NOCONN"/"LIMSRV" aren't self-explanatory. This can't
+     go through the generic renderState()/FORMATTERS path since that
+     only ever sets textContent, never an element attribute. */
+  var CELL_STATE_TOOLTIPS = {
+    SEARCH: 'Searching for a cell to camp on',
+    LIMSRV: 'Limited service — camped on a cell but not fully registered (e.g. emergency calls only)',
+    NOCONN: 'Registered and idle — camped on this cell with no active data connection',
+    CONNECT: 'RRC connected — actively transferring data'
+  };
+
+  function renderCellTooltips(state) {
+    var lteBandEl = document.querySelector('[data-field="cell_lte_band"]');
+    if (!lteBandEl) return; // not on this page
+
+    lteBandEl.title = 'EARFCN ' + (state.cell_lte_earfcn || '—') +
+      ' · PCID ' + (state.cell_lte_pcid || '—') +
+      ' · Cell ID ' + (state.cell_lte_id || '—') +
+      ' · TAC ' + (state.cell_lte_tac || '—');
+
+    var nrBandEl = document.querySelector('[data-field="cell_nr_band"]');
+    if (nrBandEl) {
+      nrBandEl.title = 'ARFCN ' + (state.cell_nr_arfcn || '—') +
+        ' · PCID ' + (state.cell_nr_pcid || '—') +
+        ' · Cell ID ' + (state.cell_nr_id || '—') +
+        ' · TAC ' + (state.cell_nr_tac || '—');
+    }
+
+    var lteStateEl = document.querySelector('[data-field="cell_lte_state"]');
+    if (lteStateEl) lteStateEl.title = CELL_STATE_TOOLTIPS[state.cell_lte_state] || '';
+
+    var nrStateEl = document.querySelector('[data-field="cell_nr_state"]');
+    if (nrStateEl) nrStateEl.title = CELL_STATE_TOOLTIPS[state.cell_nr_state] || '';
   }
 
   /* ── Polling: fetches fast, renders only on genuine new data ─────────
@@ -229,6 +300,7 @@
           renderSimSlots(state);
           renderCarrierAggregation(state);
           renderNetPrefs(state);
+          renderCellTooltips(state);
           markRefreshedNow();
         }
         scheduleRefresh(FAST_POLL_MS);

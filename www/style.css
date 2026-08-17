@@ -240,6 +240,16 @@ body {
   align-self: center;
 }
 
+/* A value carrying extra detail in its title attribute (e.g. LTE/5G
+   NR's Band value holding EARFCN/PCID/Cell ID/TAC, or State holding an
+   explanation of what that state means) — dotted underline is the
+   conventional "hover for more" affordance, cursor:help backs it up
+   for anyone who doesn't recognize the underline alone. */
+.om-hint {
+  cursor: help;
+  border-bottom: 1px dotted var(--text-dim);
+}
+
 .om-note {
   margin: 0;
   font-size: 0.85rem;
