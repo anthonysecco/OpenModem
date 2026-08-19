@@ -318,8 +318,9 @@
      assumption the self-rescheduling fetch loop already makes, kept
      simple rather than accounting for a delayed/skipped poll. */
   function fmtThroughput(bitsPerSec) {
-    if (bitsPerSec >= 1e6) return (bitsPerSec / 1e6).toFixed(1) + 'Mbps';
-    return Math.round(bitsPerSec / 1e3) + 'Kbps';
+    if (bitsPerSec >= 1e6) return (bitsPerSec / 1e6).toFixed(1) + ' Mbps';
+    var kbps = bitsPerSec / 1e3;
+    return (kbps < 10 ? kbps.toFixed(1) : Math.round(kbps)) + ' Kbps';
   }
 
   var wanThroughputPrev = null;
