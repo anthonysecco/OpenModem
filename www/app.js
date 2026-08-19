@@ -1046,6 +1046,22 @@
     refreshTimer = setTimeout(refreshState, delayMs);
   }
 
+  /* refreshState() used to call each render*(state) function directly
+     in one chain — a throw from any single one (an unexpected/partial
+     field shape) stopped every call after it that cycle AND fell into
+     the fetch-layer .catch() below, mislabeling a rendering bug as
+     "Unreachable" even though the modem answered fine. Wrapping each
+     call isolates it: one bad card logs and skips itself, the other
+     nine still update, and the "Unreachable" state stays reserved for
+     actual fetch/parse failures. Fixed 2026-08-19. */
+  function safeRender(fn, state) {
+    try {
+      fn(state);
+    } catch (e) {
+      console.error('[OpenModem] ' + (fn.name || 'render') + ' failed:', e);
+    }
+  }
+
   function refreshState() {
     fetch('/cgi-bin/state.sh')
       .then(function (r) { return r.json(); })
@@ -1057,18 +1073,18 @@
         }
         if (!state._error && state._polled_at !== lastSeenPolledAt) {
           lastSeenPolledAt = state._polled_at;
-          renderState(state);
-          renderSimSlots(state);
-          renderCarrierAggregation(state);
-          renderNetPrefs(state);
-          renderNetworkType(state);
-          renderNetworkRoaming(state);
-          renderSignalCard(state);
-          renderTopbarSignal(state);
-          renderCellTooltips(state);
-          renderStatusDots(state);
-          renderWanThroughput(state);
-          pushSignalHistorySample(state);
+          safeRender(renderState, state);
+          safeRender(renderSimSlots, state);
+          safeRender(renderCarrierAggregation, state);
+          safeRender(renderNetPrefs, state);
+          safeRender(renderNetworkType, state);
+          safeRender(renderNetworkRoaming, state);
+          safeRender(renderSignalCard, state);
+          safeRender(renderTopbarSignal, state);
+          safeRender(renderCellTooltips, state);
+          safeRender(renderStatusDots, state);
+          safeRender(renderWanThroughput, state);
+          safeRender(pushSignalHistorySample, state);
           markRefreshedNow();
         }
         scheduleRefresh(FAST_POLL_MS);
