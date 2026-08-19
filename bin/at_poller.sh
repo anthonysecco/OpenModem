@@ -282,11 +282,20 @@ collect_sim() {
 
     # +CNUM: [alpha],"<number>",<type> — alpha tag is usually empty; not
     # every carrier/SIM provisions this, ERROR or a bare OK is normal.
-    # Kept as the LAST command in the whole-cycle chain (block 32, see
-    # ALL_CMD): a chain aborts at the first ERROR, so an expected CNUM
-    # failure only nulls this one field instead of losing everything
-    # queried after it.
-    _cnum=$(nth_block "$_blob" 32)
+    # Placed right before nr5g_mimo_info (block 31, see ALL_CMD) rather
+    # than after it: nr5g_mimo_info reliably ERRORs whenever there's no
+    # active NR component carrier (the normal state on an LTE-only
+    # connection, not just an edge case — see build_mimo_lookup()'s
+    # header comment), and a chain aborts at the first ERROR. With CNUM
+    # after nr5g_mimo_info, that near-permanent NR failure was silently
+    # nulling sim_phone even on SIMs with a provisioned number —
+    # confirmed live 2026-08-19: AT+CNUM queried standalone returned a
+    # real number while the poller's chain reported sim_phone null.
+    # nr5g_mimo_info failing to run at all (because CNUM aborted ahead
+    # of it) has the same net effect on its own field as it running and
+    # erroring itself — build_mimo_lookup() just sees an empty block
+    # either way — so this reordering loses nothing.
+    _cnum=$(nth_block "$_blob" 31)
     F_SIM_PHONE=$(json_str "$(printf '%s' "$_cnum" | grep '^+CNUM:' | head -1 | sed 's/^+CNUM: //' | cut -d',' -f2 | tr -d '"\r\n')")
 }
 
@@ -462,14 +471,14 @@ collect_carrier() {
 # when there's no NR resource to report on, same as QCAINFO/QENG's NR
 # fields going empty rather than an actual failure).
 # Builds "pci,freq,layers|pci,freq,layers|..." across both subcommands'
-# blocks (28 and 31 in ALL_CMD — not adjacent: mode_pref/data_roaming
-# sit between them, see ALL_CMD's block-number comment) for
+# blocks (28 and 32 in ALL_CMD — not adjacent: mode_pref/data_roaming/
+# CNUM sit between them, see ALL_CMD's block-number comment) for
 # compute_ca_throughput to match
 # against each carrier's own pci/earfcn — RAT-agnostic since both LTE
 # and NR5G entries in ca_bands already carry pci/earfcn fields.
 build_mimo_lookup() {
     _out=""
-    for _blk in 28 31; do
+    for _blk in 28 32; do
         _mi=$(nth_block "$1" "$_blk")
         _mi_lines=$(printf '%s' "$_mi" | grep -E '^\+QNWCFG: "(lte|nr5g)_mimo_info"')
         [ -z "$_mi_lines" ] && continue
@@ -1099,24 +1108,25 @@ log_op "Starting — interval=${POLL_INTERVAL}s log_level=${LOG_LEVEL}"
 #  25 QMAP=LANIP 26 QMAP=MPDN_rule 27 QMAP=DHCPV4DNS
 #  28 QNWCFG=lte_mimo_info
 #  29 QNWPREFCFG=mode_pref 30 QNWCFG=data_roaming
-#  31 QNWCFG=nr5g_mimo_info
-#  32 CNUM
-# CNUM is placed last, out of its natural SIM-info grouping, because a
-# chain aborts at the first ERROR (confirmed live) and it's the one
-# command here documented to legitimately ERROR on some SIMs — putting
-# it last means that failure only nulls sim_phone instead of losing
-# every field queried after it. nr5g_mimo_info sits right before it for
-# the same reason: it's the one command here confirmed LIVE to ERROR
-# whenever there's no active NR component carrier (a common state on
-# this LTE-heavy test connection — confirmed 2026-08-17: it aborted the
-# entire rest of the chain, silently nulling everything queried after
-# it, back when mode_pref/data_roaming were placed after it instead of
-# before) — see build_mimo_lookup()'s header comment. mode_pref and
-# data_roaming both answered OK in that same live test and are ordered
-# right after lte_mimo_info (which also always answered OK), ahead of
-# nr5g_mimo_info, specifically so nr5g_mimo_info's expected failure
-# can't take them out too.
-ALL_CMD='AT+GSN;+QGMR;I;+QTEMP;+CPIN?;+CIMI;+QCCID;+QUIMSLOT?;+CEREG?;+C5GREG?;+CREG?;+QRSRP;+QRSRQ;+QSINR;+QENG="servingcell";+COPS?;+QSPN;+QCAINFO;+QNWPREFCFG="lte_band";+QNWPREFCFG="nr5g_band";+CGDCONT?;+CGPADDR;+CGACT?;+QGDCNT?;+QMAP="LANIP";+QMAP="MPDN_rule";+QMAP="DHCPV4DNS";+QNWCFG="lte_mimo_info";+QNWPREFCFG="mode_pref";+QNWCFG="data_roaming";+QNWCFG="nr5g_mimo_info";+CNUM'
+#  31 CNUM
+#  32 QNWCFG=nr5g_mimo_info
+# Both CNUM and nr5g_mimo_info are documented to legitimately ERROR —
+# CNUM on SIMs without a provisioned MSISDN, nr5g_mimo_info whenever
+# there's no active NR component carrier (confirmed LIVE: this is the
+# NORMAL state on an LTE-only connection, not an edge case — see
+# build_mimo_lookup()'s header comment) — and a chain aborts at the
+# first ERROR. Both are placed last, in that order (CNUM ahead of
+# nr5g_mimo_info), so each failure only nulls its own field: if CNUM
+# ERRORs, nr5g_mimo_info simply never runs, which has the same net
+# effect on its field as it running and erroring itself. The reverse
+# order was tried first and confirmed live 2026-08-19 to be wrong —
+# nr5g_mimo_info's near-permanent failure on this LTE-heavy test
+# connection was silently nulling sim_phone even though AT+CNUM queried
+# standalone returned a real number. mode_pref and data_roaming
+# (confirmed live 2026-08-17 to always answer OK) are ordered right
+# after lte_mimo_info, ahead of both risky commands, so neither
+# failure can take them out too.
+ALL_CMD='AT+GSN;+QGMR;I;+QTEMP;+CPIN?;+CIMI;+QCCID;+QUIMSLOT?;+CEREG?;+C5GREG?;+CREG?;+QRSRP;+QRSRQ;+QSINR;+QENG="servingcell";+COPS?;+QSPN;+QCAINFO;+QNWPREFCFG="lte_band";+QNWPREFCFG="nr5g_band";+CGDCONT?;+CGPADDR;+CGACT?;+QGDCNT?;+QMAP="LANIP";+QMAP="MPDN_rule";+QMAP="DHCPV4DNS";+QNWCFG="lte_mimo_info";+QNWPREFCFG="mode_pref";+QNWCFG="data_roaming";+CNUM;+QNWCFG="nr5g_mimo_info"'
 
 _cycle=0
 
