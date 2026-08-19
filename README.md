@@ -7,7 +7,9 @@ with no cloud dependency and no build step.
 Architecture takes inspiration from [QuecControl](https://github.com/anthonysecco/QuecControl),
 an existing project for the same modem, but is a standalone replacement, not
 a fork — deliberately different in scope and simplicity. See `SCOPE.md` for
-what's in/out and why.
+what's in/out and why, and `DEPENDENCIES.md` for the small set of external
+web services the backend calls out to (connectivity checks, IP
+geolocation) and how often.
 
 - **No additional software installed on the modem.** The backend stays on
   whatever BusyBox already provides on-device (`ash`, `httpd`, coreutils
