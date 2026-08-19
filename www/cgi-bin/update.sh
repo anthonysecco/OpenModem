@@ -66,13 +66,26 @@ fi
 
 touch "$LOCK_FILE"
 
-# Redirect the background job's stdout/stderr to the log file (not
-# inherited) so busybox httpd doesn't hold the response open waiting on
-# a child process. Installer removes RUN_DIR/LOCK_FILE as part of its own
-# /tmp/openmodem cleanup, so drop the lock explicitly once it exits too.
-sh -c '
-    curl -fsSL "'"$INSTALLER_URL"'" | sh
-    rm -f "'"$LOCK_FILE"'"
-' > "$LOG_FILE" 2>&1 &
+# Launched via systemd-run rather than a plain background `&` job: this
+# script runs as a CGI child of openmodem-httpd.service, so a bare `&`
+# job stays in that service's cgroup. installer.sh's own cleanup step
+# runs `systemctl stop openmodem-httpd` (it's one of the services it
+# removes/reinstalls) — with the default KillMode=control-group, that
+# kills every process in the cgroup, including the installer itself,
+# mid-run. Confirmed live: the installer died right after "Remounting /
+# as read-write", having stopped openmodem-poller/-broker/-httpd but
+# never reaching -iptables/-netpoller in the same cleanup loop, with no
+# process left alive anywhere — self-inflicted, not a hang or a slow
+# install. systemd-run gives the installer its own independent
+# transient unit/cgroup (confirmed live: stopping openmodem-httpd does
+# not touch it), so it survives stopping/restarting the very service
+# that's running this script. --collect garbage-collects the transient
+# unit once it exits so repeated updates don't accumulate dead units.
+systemd-run --unit=openmodem-update --collect \
+    --description="OpenModem Installer/Update" \
+    /bin/sh -c '
+        curl -fsSL "'"$INSTALLER_URL"'" | sh > "'"$LOG_FILE"'" 2>&1
+        rm -f "'"$LOCK_FILE"'"
+    ' > /dev/null 2>&1
 
 printf '{"status":"started","log":"%s"}\n' "$LOG_FILE"
