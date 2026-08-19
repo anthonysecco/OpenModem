@@ -52,6 +52,26 @@
         <p id="om-wan-reset-status" class="om-note"></p>
       </div>
 
+      <div class="om-card om-card-wide">
+        <h2>Bandwidth (5 min)</h2>
+
+        <div class="om-hero-label">Receive Rate (Mbps)</div>
+        <div class="om-chart-wrap">
+          <span class="om-chart-axis om-chart-axis-max" id="om-wan-rx-chart-axis-max">—</span>
+          <span class="om-chart-axis om-chart-axis-min">0</span>
+          <svg class="om-chart-svg" id="om-wan-rx-chart"></svg>
+          <div class="om-chart-tooltip" id="om-wan-rx-chart-tooltip"></div>
+        </div>
+
+        <div class="om-hero-label">Send Rate (Mbps)</div>
+        <div class="om-chart-wrap">
+          <span class="om-chart-axis om-chart-axis-max" id="om-wan-tx-chart-axis-max">—</span>
+          <span class="om-chart-axis om-chart-axis-min">0</span>
+          <svg class="om-chart-svg" id="om-wan-tx-chart"></svg>
+          <div class="om-chart-tooltip" id="om-wan-tx-chart-tooltip"></div>
+        </div>
+      </div>
+
       <div class="om-card">
         <h2 class="om-hint" title="Makes traffic from other devices behind this modem look like it's coming from the modem itself — can prevent your carrier from detecting and throttling tethering/hotspot use.">TTL Spoofing</h2>
         <div class="om-ttl-carriers">

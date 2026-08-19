@@ -359,16 +359,68 @@
 
     // No prior sample, missing data, or the counter went backwards
     // (Reset Counter button, or a reboot) — no rate for this tick.
-    if (typeof rx !== 'number' || typeof tx !== 'number' || !windowS || !prev ||
-        typeof prev.rx !== 'number' || typeof prev.tx !== 'number' ||
-        rx < prev.rx || tx < prev.tx) {
-      if (rxEl) rxEl.textContent = '—';
-      if (txEl) txEl.textContent = '—';
-      return;
-    }
+    var valid = typeof rx === 'number' && typeof tx === 'number' && windowS && prev &&
+      typeof prev.rx === 'number' && typeof prev.tx === 'number' &&
+      rx >= prev.rx && tx >= prev.tx;
 
-    if (rxEl) rxEl.textContent = fmtThroughput((rx - prev.rx) * 8 / windowS);
-    if (txEl) txEl.textContent = fmtThroughput((tx - prev.tx) * 8 / windowS);
+    var rxBps = valid ? (rx - prev.rx) * 8 / windowS : null;
+    var txBps = valid ? (tx - prev.tx) * 8 / windowS : null;
+
+    if (rxEl) rxEl.textContent = (rxBps === null) ? '—' : fmtThroughput(rxBps);
+    if (txEl) txEl.textContent = (txBps === null) ? '—' : fmtThroughput(txBps);
+
+    // Bandwidth graphs (WAN page) — same per-tick rate, kept as its own
+    // 5-min ring buffer since there's no server-side history for it
+    // (wan_data_rx/tx are cumulative counters; the poller never persists
+    // a derived rate). Mirrors historySignalSamples/historyNetSamples's
+    // pattern but seeded from nothing (no history_wan.sh endpoint to
+    // seed from) — the graph just fills in over the first 5 minutes a
+    // tab is open.
+    pushCapped(historyWanRateSamples, {
+      t: state._polled_at,
+      rx_mbps: rxBps === null ? null : rxBps / 1e6,
+      tx_mbps: txBps === null ? null : txBps / 1e6
+    });
+    renderWanBandwidthCharts();
+  }
+
+  var historyWanRateSamples = [];
+
+  // Flat single-color "zone" tables (always matches, since rate >= 0)
+  // rather than the severity-gradient RSRP/SPEED/LATENCY_ZONES use —
+  // instantaneous throughput isn't a "good/bad" metric the way signal
+  // quality or latency are, so reusing chartZoneColor's plumbing with a
+  // one-entry table just gets a flat Receive/Send color out of the same
+  // renderLineChart/initChartHover code the other trend charts use.
+  var WAN_RX_ZONE = [{ thresh: 0, bar: '#2f6fed', label: 'Receive' }];
+  var WAN_TX_ZONE = [{ thresh: 0, bar: '#8b5cf6', label: 'Send' }];
+  var WAN_RATE_MIN_RANGE = 0.1; // Mbps floor so an idle link doesn't collapse the axis to a zero-width range
+
+  function fmtAxisMbps(v) {
+    return v >= 10 ? String(Math.round(v)) : v.toFixed(1);
+  }
+
+  // Each graph's y-axis max is the actual peak in its own visible 5-min
+  // window (not a fixed ceiling like SPEED_ZONES' 250) — WAN throughput
+  // has no natural upper bound to anchor a fixed scale to, and Receive/
+  // Send commonly differ by an order of magnitude, so they're scaled
+  // independently rather than sharing one max.
+  function renderWanBandwidthCharts() {
+    if (!document.getElementById('om-wan-rx-chart')) return; // not on this page
+
+    var rxMax = WAN_RATE_MIN_RANGE, txMax = WAN_RATE_MIN_RANGE;
+    historyWanRateSamples.forEach(function (r) {
+      if (typeof r.rx_mbps === 'number' && r.rx_mbps > rxMax) rxMax = r.rx_mbps;
+      if (typeof r.tx_mbps === 'number' && r.tx_mbps > txMax) txMax = r.tx_mbps;
+    });
+
+    var rxAxisEl = document.getElementById('om-wan-rx-chart-axis-max');
+    if (rxAxisEl) rxAxisEl.textContent = fmtAxisMbps(rxMax);
+    var txAxisEl = document.getElementById('om-wan-tx-chart-axis-max');
+    if (txAxisEl) txAxisEl.textContent = fmtAxisMbps(txMax);
+
+    renderLineChart('om-wan-rx-chart', historyWanRateSamples, function (r) { return r.rx_mbps; }, WAN_RX_ZONE, 0, rxMax, false);
+    renderLineChart('om-wan-tx-chart', historyWanRateSamples, function (r) { return r.tx_mbps; }, WAN_TX_ZONE, 0, txMax, false);
   }
 
   /* System (Application Processor) uptime — the poller supplies raw
@@ -2955,6 +3007,8 @@
     initChartHover('om-hist-speed-chart', 'Mbps', SPEED_ZONES, false);
     initChartHover('om-hist-latency-chart', 'ms', LATENCY_ZONES, true);
     initChartHover('om-hist-jitter-chart', 'ms', JITTER_ZONES, true);
+    initChartHover('om-wan-rx-chart', 'Mbps', WAN_RX_ZONE, false);
+    initChartHover('om-wan-tx-chart', 'Mbps', WAN_TX_ZONE, false);
     setInterval(tickAge, 1000);
     initUpdateButton();
     initAtTerminal();
