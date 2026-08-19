@@ -289,7 +289,11 @@
   function fmtBool(v) { return v === true ? 'Active' : v === false ? 'Inactive' : null; }
   function fmtBands(v) { return (typeof v === 'string' && v.length) ? v.split(':').join(', ') : v; }
   function fmtMhz(v) { return (typeof v === 'number') ? v + ' MHz' : null; }
-  function fmtTempC(v) { return (typeof v === 'number') ? v + '°C' : null; }
+  function fmtTempC(v) {
+    if (typeof v !== 'number') return null;
+    var f = Math.round((v * 9 / 5) + 32);
+    return v + '°C / ' + f + '°F';
+  }
   function fmtMbps(v) { return (typeof v === 'number') ? v + ' Mbps' : null; }
   function fmtDnsMode(v) {
     return v === 'local' ? 'Local (Modem DNS)' : v === 'carrier' ? 'Carrier (PDP Context)' : null;
