@@ -553,7 +553,10 @@
   }
 
   function renderStatusDots(state) {
-    if (!document.querySelector('[data-ring="signal_lte_rsrp"]')) return; // not on this page
+    // No page-level guard here: applyRegRingDot/applyRingDot each check
+    // their own element's existence and no-op if absent, so this is
+    // safe to call on any page — e.g. Dashboard's Network card only has
+    // the reg_lte/reg_nr dots, not the full Cellular signal-dot suite.
     applyRegRingDot('reg_lte', state);
     applyRegRingDot('reg_nr', state);
     applyRingDot('signal_lte_rsrp', RSRP_ZONES, state);
