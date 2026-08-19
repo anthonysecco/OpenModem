@@ -2531,17 +2531,30 @@
     setToggleActive('om-sim-slot-toggle', 'data-slot', active === 1 || active === 2 ? String(active) : null);
   }
 
-  function applySimSlot(slot) {
+  /* Unlike every other disruptive action here (Power buttons, Apply
+     bars — see the .disabled=true/.finally(...disabled=false) pattern
+     throughout this file), these buttons had no re-entrancy guard even
+     though the switch they trigger is explicitly documented to
+     disconnect the whole web UI for several seconds — a double-tap in
+     that visible gap queued two disruptive AT+QUIMSLOT reinit cycles
+     back to back. Fixed 2026-08-19. */
+  function setSimSlotButtonsDisabled(buttons, disabled) {
+    for (var i = 0; i < buttons.length; i++) buttons[i].disabled = disabled;
+  }
+
+  function applySimSlot(slot, buttons) {
     var statusEl = document.getElementById('om-sim-slot-status');
     if (!window.confirm('Switch to SIM' + slot + '? This briefly disconnects the modem (including this web UI) while it reinitializes.')) return;
 
+    setSimSlotButtonsDisabled(buttons, true);
     statusEl.textContent = 'Switching…';
     fetch('/cgi-bin/sim_action.sh?action=set_slot&slot=' + slot)
       .then(function (r) { return r.json(); })
       .then(function (data) {
         statusEl.textContent = data.success ? data.message : ('Failed: ' + data.error);
       })
-      .catch(function (err) { statusEl.textContent = 'Failed: ' + err; });
+      .catch(function (err) { statusEl.textContent = 'Failed: ' + err; })
+      .finally(function () { setSimSlotButtonsDisabled(buttons, false); });
   }
 
   function initSimSlotToggle() {
@@ -2550,7 +2563,7 @@
     var buttons = group.querySelectorAll('button');
     for (var i = 0; i < buttons.length; i++) {
       (function (btn) {
-        btn.addEventListener('click', function () { applySimSlot(btn.getAttribute('data-slot')); });
+        btn.addEventListener('click', function () { applySimSlot(btn.getAttribute('data-slot'), buttons); });
       })(buttons[i]);
     }
   }
