@@ -28,6 +28,22 @@ INSTALL_DIR="/usrdata/openmodem"
 CONFIG_DIR="$INSTALL_DIR/config"
 CONF_FILE="$CONFIG_DIR/openmodem.conf"
 
+# Everything is downloaded here first and only swapped into INSTALL_DIR
+# once every file has arrived successfully (step 4). Both dirs live on
+# /usrdata (always-writable UBI volume, confirmed in CLAUDE.md's
+# "Development" section), so the swap is a same-filesystem `mv` — a
+# single rename(2), not a copy — same atomic write-then-rename pattern
+# at_poller.sh/net_poller.sh already use for their own state files.
+# Found the hard way: the previous version of this script removed the
+# existing install *before* downloading anything, so any download
+# failure (or the carrier connection dropping mid-update — a real
+# scenario for a cellular modem) left the device with no admin UI and
+# no clean way to recover except adb. Staging first means a failed
+# download changes nothing observable — the old install keeps running.
+STAGING_DIR="/usrdata/openmodem.new"
+STAGING_CONFIG_DIR="$STAGING_DIR/config"
+STAGING_CONF_FILE="$STAGING_CONFIG_DIR/openmodem.conf"
+
 echo "==============================="
 echo "  OpenModem Installer"
 echo "==============================="
@@ -51,15 +67,120 @@ iptables -C INPUT -p tcp --dport 8080 -j DROP 2>/dev/null || \
     iptables -A INPUT -p tcp --dport 8080 -j DROP
 echo "  Done."
 
+# --- Download everything into a staging directory first ---
+# Nothing about the existing install (old or otherwise) is touched in
+# this step — a failure here (network drop, GitHub hiccup, a carrier
+# connection blip) leaves the running install exactly as it was.
+echo "[2/7] Downloading files to staging area..."
+
+rm -rf "$STAGING_DIR"
+mkdir -p "$STAGING_DIR/bin"
+mkdir -p "$STAGING_DIR/www/cgi-bin"
+mkdir -p "$STAGING_CONFIG_DIR"
+
+# Preserve openmodem.conf across an update: if a config already exists
+# from a prior install, copy it straight into staging now (the old
+# install directory hasn't been removed yet, so it's still right there)
+# rather than downloading a fresh default over an operator's settings.
+_conf_preserved=0
+if [ -f "$CONF_FILE" ]; then
+    cp "$CONF_FILE" "$STAGING_CONF_FILE"
+    _conf_preserved=1
+fi
+
+# Capture any existing SimpleFirewall TTL value before it's removed
+# further down, so switching mechanisms doesn't silently reset an
+# operator's TTL spoofing back to disabled. Read-only, so it's safe to
+# do this early — applied to the staged openmodem.conf below.
+_migrated_ttl=""
+if [ -f /usrdata/simplefirewall/ttlvalue ]; then
+    _migrated_ttl=$(grep -o '[0-9]\{1,3\}' /usrdata/simplefirewall/ttlvalue | head -1)
+    echo "$_migrated_ttl" | grep -qE '^[0-9]+$' || _migrated_ttl=""
+fi
+
+download() {
+    _url="$1"
+    _dest="$2"
+    echo "    $_dest"
+    # -4: force IPv4. Confirmed live (2026-08-17, after a modem reset)
+    # that this device's cellular WAN can reach raw.githubusercontent.com
+    # over IPv4 in ~0.3-5s but times out over IPv6 (curl's default
+    # Happy-Eyeballs racing doesn't fall back fast enough within a
+    # single download's window) — github.com and objects.githubusercontent.com
+    # both answered fine meanwhile, so this isn't a general outage, just
+    # a broken/blackholed IPv6 path to Fastly's raw.githubusercontent.com
+    # range specifically over this carrier connection. Forcing IPv4
+    # sidesteps it rather than depending on Happy-Eyeballs recovering in time.
+    # --max-time 30: a stalled/hung connection (not an outright refusal,
+    # which -fsSL already handles) would otherwise block the rest of the
+    # install indefinitely — bound each file to a generous but finite wait.
+    curl -4 -fsSL --max-time 30 -o "$_dest" "$_url"
+    if [ $? -ne 0 ]; then
+        echo "  ERROR: Failed to download $_url"
+        return 1
+    fi
+    return 0
+}
+
+FAIL=0
+
+echo "  Downloading bin scripts..."
+for script in at_broker.sh at_command.sh at_poller.sh apply_iptables.sh net_poller.sh; do
+    download "$REPO/bin/$script" "$STAGING_DIR/bin/$script" || FAIL=1
+done
+
+echo "  Downloading web pages..."
+for page in style.css app.js index.html cellular.html sim.html wan.html lan.html system.html; do
+    download "$REPO/www/$page" "$STAGING_DIR/www/$page" || FAIL=1
+done
+
+echo "  Downloading CGI scripts..."
+for cgi in state.sh update.sh at_cmd.sh band_lock.sh carrier_scan.sh lan_action.sh wan_action.sh internet_info.sh sim_action.sh network_action.sh net_state.sh history_signal.sh history_net.sh; do
+    download "$REPO/www/cgi-bin/$cgi" "$STAGING_DIR/www/cgi-bin/$cgi" || FAIL=1
+done
+
+echo "  Downloading config files..."
+if [ "$_conf_preserved" = "1" ]; then
+    echo "    Preserved existing $CONF_FILE"
+else
+    download "$REPO/config/openmodem.conf" "$STAGING_CONF_FILE" || FAIL=1
+fi
+
+if [ -n "$_migrated_ttl" ] && [ "$_migrated_ttl" -gt 0 ]; then
+    echo "    Migrating TTL value from SimpleFirewall ($_migrated_ttl)..."
+    grep -v '^TTL_VALUE=' "$STAGING_CONF_FILE" > "${STAGING_CONF_FILE}.tmp" 2>/dev/null
+    echo "TTL_VALUE=${_migrated_ttl}" >> "${STAGING_CONF_FILE}.tmp"
+    mv "${STAGING_CONF_FILE}.tmp" "$STAGING_CONF_FILE"
+fi
+
+download "$REPO/installer.sh" "$STAGING_DIR/installer.sh" || FAIL=1
+
+if [ "$FAIL" = "1" ]; then
+    echo ""
+    echo "ERROR: One or more required files failed to download."
+    echo "Check your internet connection and try again."
+    echo "Nothing on the device has been changed — the existing install is still running."
+    rm -rf "$STAGING_DIR"
+    exit 1
+fi
+
+echo "  Setting permissions..."
+chmod +x "$STAGING_DIR/bin/"*.sh
+chmod +x "$STAGING_DIR/www/cgi-bin/"*.sh
+chmod +x "$STAGING_DIR/installer.sh"
+chmod 755 "$STAGING_DIR/www/cgi-bin"
+echo "  Done."
+
 # --- Remove other/prior installs ---
-# QuecControl and OpenModem service/path names are confirmed. SimpleAdmin's
-# were verified against a real iamromulan/quectel-rgmii-toolkit install:
-# it runs simpleadmin_httpd.service + simpleadmin_generate_status.service
-# out of /usrdata/simpleadmin, plus a separate socat-at-bridge toolkit
-# (socat-smd11*/socat-smd7* units out of /usrdata/socat-at-bridge) that
-# bridges /dev/smd11 to pty pairs for it. The socat bridge has to go too,
-# not just simpleadmin itself — it and our own at_broker.sh would otherwise
-# both try to own /dev/smd11 at once.
+# Every download above succeeded, so it's now safe to actually disturb
+# the running system. QuecControl and OpenModem service/path names are
+# confirmed. SimpleAdmin's were verified against a real
+# iamromulan/quectel-rgmii-toolkit install: it runs simpleadmin_httpd.service
+# + simpleadmin_generate_status.service out of /usrdata/simpleadmin, plus a
+# separate socat-at-bridge toolkit (socat-smd11*/socat-smd7* units out of
+# /usrdata/socat-at-bridge) that bridges /dev/smd11 to pty pairs for it.
+# The socat bridge has to go too, not just simpleadmin itself — it and our
+# own at_broker.sh would otherwise both try to own /dev/smd11 at once.
 #
 # SimpleFirewall (also part of that toolkit — simplefirewall.service +
 # ttl-override.service, out of /usrdata/simplefirewall) is fully removed
@@ -72,14 +193,14 @@ echo "  Done."
 # project's only bash dependency (SimpleFirewall's scripts are #!/bin/bash;
 # everything OpenModem owns is POSIX ash). Tailscale is still left alone —
 # unrelated, no overlap with anything here.
-echo "[2/7] Removing existing installs (QuecControl, SimpleAdmin, SimpleFirewall, OpenModem)..."
+echo "[3/7] Removing existing installs (QuecControl, SimpleAdmin, SimpleFirewall, OpenModem)..."
 
 # /lib/systemd/system lives on the root filesystem, which is read-only by
 # default (confirmed UBIFS on real hardware) — remount rw before touching
-# it. Stays rw through step 5's install, then gets remounted ro at the end
-# of that step. Note: /etc/systemd/system and /usrdata are on a separate,
-# always-writable volume, so this doesn't affect the /etc/systemd/system
-# rm's below.
+# it. Stays rw through step 6's autostart install, then gets remounted ro
+# at the end of that step. Note: /etc/systemd/system and /usrdata are on a
+# separate, always-writable volume, so this doesn't affect the
+# /etc/systemd/system rm's below.
 echo "  Remounting / as read-write..."
 mount -o remount,rw /
 
@@ -150,24 +271,6 @@ rm -rf /tmp/queccontrol
 rm -rf /tmp/simpleadmin
 rm -rf /tmp/openmodem
 
-# Preserve openmodem.conf across an update: stash it, restore after the
-# fresh directories are created below.
-_conf_backup=""
-if [ -f "$CONF_FILE" ]; then
-    _conf_backup="/tmp/openmodem.conf.preserved"
-    cp "$CONF_FILE" "$_conf_backup"
-fi
-
-# Capture any existing SimpleFirewall TTL value before removing it, so
-# switching mechanisms doesn't silently reset an operator's TTL spoofing
-# back to disabled — applied to openmodem.conf's TTL_VALUE further down,
-# once the file is guaranteed to exist (preserved or freshly downloaded).
-_migrated_ttl=""
-if [ -f /usrdata/simplefirewall/ttlvalue ]; then
-    _migrated_ttl=$(grep -o '[0-9]\{1,3\}' /usrdata/simplefirewall/ttlvalue | head -1)
-    echo "$_migrated_ttl" | grep -qE '^[0-9]+$' || _migrated_ttl=""
-fi
-
 rm -rf "$INSTALL_DIR"
 rm -rf "/usrdata/quecmanager"
 rm -rf "/usrdata/simpleadmin"
@@ -176,88 +279,12 @@ rm -rf "/usrdata/simplefirewall"
 
 echo "  Done."
 
-# --- Create directories ---
-echo "[3/7] Creating directories..."
-mkdir -p "$INSTALL_DIR/bin"
-mkdir -p "$INSTALL_DIR/www/cgi-bin"
-mkdir -p "$CONFIG_DIR"
-if [ -n "$_conf_backup" ]; then
-    mv "$_conf_backup" "$CONF_FILE"
-fi
-echo "  Done."
-
-# --- Download files ---
-echo "[4/7] Downloading files from GitHub..."
-
-download() {
-    _url="$1"
-    _dest="$2"
-    echo "    $_dest"
-    # -4: force IPv4. Confirmed live (2026-08-17, after a modem reset)
-    # that this device's cellular WAN can reach raw.githubusercontent.com
-    # over IPv4 in ~0.3-5s but times out over IPv6 (curl's default
-    # Happy-Eyeballs racing doesn't fall back fast enough within a
-    # single download's window) — github.com and objects.githubusercontent.com
-    # both answered fine meanwhile, so this isn't a general outage, just
-    # a broken/blackholed IPv6 path to Fastly's raw.githubusercontent.com
-    # range specifically over this carrier connection. Forcing IPv4
-    # sidesteps it rather than depending on Happy-Eyeballs recovering in time.
-    curl -4 -fsSL -o "$_dest" "$_url"
-    if [ $? -ne 0 ]; then
-        echo "  ERROR: Failed to download $_url"
-        return 1
-    fi
-    return 0
-}
-
-FAIL=0
-
-echo "  Downloading bin scripts..."
-for script in at_broker.sh at_command.sh at_poller.sh apply_iptables.sh net_poller.sh; do
-    download "$REPO/bin/$script" "$INSTALL_DIR/bin/$script" || FAIL=1
-done
-
-echo "  Downloading web pages..."
-for page in style.css app.js index.html cellular.html sim.html wan.html lan.html system.html; do
-    download "$REPO/www/$page" "$INSTALL_DIR/www/$page" || FAIL=1
-done
-
-echo "  Downloading CGI scripts..."
-for cgi in state.sh update.sh at_cmd.sh band_lock.sh carrier_scan.sh lan_action.sh wan_action.sh internet_info.sh sim_action.sh network_action.sh net_state.sh history_signal.sh history_net.sh; do
-    download "$REPO/www/cgi-bin/$cgi" "$INSTALL_DIR/www/cgi-bin/$cgi" || FAIL=1
-done
-
-echo "  Downloading config files..."
-# Only download openmodem.conf if one does not already exist (preserved
-# above) — an existing file means this is an update, keep the operator's
-# settings.
-if [ -f "$CONF_FILE" ]; then
-    echo "    Preserved existing $CONF_FILE"
-else
-    download "$REPO/config/openmodem.conf" "$CONF_FILE" || FAIL=1
-fi
-
-if [ -n "$_migrated_ttl" ] && [ "$_migrated_ttl" -gt 0 ]; then
-    echo "    Migrating TTL value from SimpleFirewall ($_migrated_ttl)..."
-    grep -v '^TTL_VALUE=' "$CONF_FILE" > "${CONF_FILE}.tmp" 2>/dev/null
-    echo "TTL_VALUE=${_migrated_ttl}" >> "${CONF_FILE}.tmp"
-    mv "${CONF_FILE}.tmp" "$CONF_FILE"
-fi
-
-download "$REPO/installer.sh" "$INSTALL_DIR/installer.sh" || FAIL=1
-
-if [ "$FAIL" = "1" ]; then
-    echo ""
-    echo "ERROR: One or more required files failed to download."
-    echo "Check your internet connection and try again."
-    exit 1
-fi
-
-echo "  Setting permissions..."
-chmod +x "$INSTALL_DIR/bin/"*.sh
-chmod +x "$INSTALL_DIR/www/cgi-bin/"*.sh
-chmod +x "$INSTALL_DIR/installer.sh"
-chmod 755 "$INSTALL_DIR/www/cgi-bin"
+# --- Install downloaded files ---
+# Staging directory already has everything — config preserved/migrated,
+# permissions set. This is the one step that actually changes what's on
+# disk for OpenModem itself, and it's a single same-filesystem rename.
+echo "[4/7] Installing downloaded files..."
+mv "$STAGING_DIR" "$INSTALL_DIR"
 echo "  Done."
 
 # --- Create systemd service files ---
@@ -351,7 +378,7 @@ echo "  Service files created."
 # --- Install systemd services ---
 echo "[6/7] Installing systemd autostart..."
 
-# Still read-write from step 1's remount.
+# Still read-write from step 3's remount.
 echo "  Installing service files to /lib/systemd/system/..."
 cp /tmp/openmodem-broker.service    /lib/systemd/system/
 cp /tmp/openmodem-poller.service    /lib/systemd/system/

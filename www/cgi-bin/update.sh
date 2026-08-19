@@ -12,12 +12,21 @@
 #   Reports whether an update is currently running and the tail of its
 #   log, so the frontend can poll after the httpd comes back up.
 
+# "Is an update running" is answered by asking systemd about the
+# openmodem-update unit directly (systemctl is-active), not a lock
+# file — a lock file has no recovery path if the update dies before it
+# gets a chance to clean up after itself (confirmed live: a crashed run
+# left a stale lock that blocked every future update until removed by
+# hand). systemd-run's --collect below already unloads the transient
+# unit as soon as it goes inactive-or-failed, so `is-active` naturally
+# reports "not running" again the instant a run ends, however it ended.
+#
 # Deliberately NOT under /tmp/openmodem — installer.sh rm -rf's that
-# directory as part of its own cleanup step, which would delete the lock
-# and log out from under this still-running update.
-LOCK_FILE="/tmp/openmodem_update.lock"
+# directory as part of its own cleanup step, which would delete the log
+# out from under this still-running update.
 LOG_FILE="/tmp/openmodem_update.log"
 INSTALLER_URL="https://raw.githubusercontent.com/anthonysecco/OpenModem/main/installer.sh"
+UPDATE_UNIT="openmodem-update"
 
 echo "Content-Type: application/json"
 echo "Cache-Control: no-cache, no-store, must-revalidate"
@@ -38,7 +47,7 @@ json_escape() {
 }
 
 if [ "$ACTION" = "status" ]; then
-    if [ -f "$LOCK_FILE" ]; then
+    if systemctl is-active --quiet "$UPDATE_UNIT"; then
         RUNNING="true"
     else
         RUNNING="false"
@@ -59,12 +68,10 @@ if [ "$CONFIRM" != "1" ]; then
     exit 0
 fi
 
-if [ -f "$LOCK_FILE" ]; then
+if systemctl is-active --quiet "$UPDATE_UNIT"; then
     printf '{"error":"already_running"}\n'
     exit 0
 fi
-
-touch "$LOCK_FILE"
 
 # Launched via systemd-run rather than a plain background `&` job: this
 # script runs as a CGI child of openmodem-httpd.service, so a bare `&`
@@ -80,12 +87,16 @@ touch "$LOCK_FILE"
 # transient unit/cgroup (confirmed live: stopping openmodem-httpd does
 # not touch it), so it survives stopping/restarting the very service
 # that's running this script. --collect garbage-collects the transient
-# unit once it exits so repeated updates don't accumulate dead units.
-systemd-run --unit=openmodem-update --collect \
+# unit once it exits so repeated updates don't accumulate dead units —
+# and so `is-active` above naturally goes back to "false" on its own,
+# whether the run finished, failed, or never managed to start.
+if systemd-run --unit="$UPDATE_UNIT" --collect \
     --description="OpenModem Installer/Update" \
     /bin/sh -c '
         curl -fsSL "'"$INSTALLER_URL"'" | sh > "'"$LOG_FILE"'" 2>&1
-        rm -f "'"$LOCK_FILE"'"
     ' > /dev/null 2>&1
-
-printf '{"status":"started","log":"%s"}\n' "$LOG_FILE"
+then
+    printf '{"status":"started","log":"%s"}\n' "$LOG_FILE"
+else
+    printf '{"error":"failed_to_start","message":"systemd-run could not launch the update — check that systemd-run is available."}\n'
+fi
