@@ -146,7 +146,21 @@ while true; do
             wait "$CPID" 2>/dev/null
 
             if [ -s "$POLL_FILE" ]; then
-                RESPONSE="${RESPONSE}$(cat "$POLL_FILE")"
+                # Command substitution strips ALL trailing newlines, not
+                # just one — if a given 100ms window happens to end
+                # exactly at a line boundary (the normal case for
+                # line-oriented AT output, not an edge case), the \n
+                # separating it from the next window's first line was
+                # silently dropped, merging two response lines into one.
+                # nth_block()/collectors in at_poller.sh split on blank
+                # lines and grep '^+FIELD:' — both break silently on a
+                # merged line, producing a null field even though the
+                # modem answered it. Trailing-X-then-strip preserves
+                # whatever newlines cat actually captured. Confirmed
+                # live 2026-08-19 as the same failure shape as the CNUM
+                # \r-anchor bug (see SCOPE.md), different root cause.
+                _chunk="$(cat "$POLL_FILE"; printf 'X')"
+                RESPONSE="${RESPONSE}${_chunk%X}"
                 if printf '%s' "$RESPONSE" | tr -d '\r' | grep -qE '^(OK|ERROR|\+CME ERROR|\+CMS ERROR)'; then
                     rm -f "$POLL_FILE"
                     break
