@@ -54,6 +54,29 @@
       (ICONS[key] || '') + '</svg>';
   }
 
+  /* Shared good/warning/critical/info vocabulary — same shape language
+     as the nav icons above (24x24, stroke=currentColor), reused by both
+     the Dashboard's Status card and the generic confirm modal below so
+     "how alarming does this look" stays consistent everywhere on the
+     site. Shapes differ (circle/triangle/octagon), not just color, so
+     severity still reads for anyone who can't distinguish the colors. */
+  var STATUS_ICONS = {
+    good: '<circle cx="12" cy="12" r="9"/><path d="M8 12.5l2.5 2.5L16 9"/>',
+    info: '<circle cx="12" cy="12" r="9"/><line x1="12" y1="11" x2="12" y2="16"/>' +
+      '<circle cx="12" cy="7.6" r="0.9" fill="currentColor" stroke="none"/>',
+    warning: '<path d="M12 3L22 20H2L12 3Z"/><line x1="12" y1="9" x2="12" y2="13.5"/>' +
+      '<circle cx="12" cy="16.3" r="0.9" fill="currentColor" stroke="none"/>',
+    critical: '<path d="M8 3h8l5 5v8l-5 5H8l-5-5V8l5-5Z"/><line x1="12" y1="8" x2="12" y2="13"/>' +
+      '<circle cx="12" cy="16" r="0.9" fill="currentColor" stroke="none"/>'
+  };
+  var STATUS_COLORS = { good: '#34c777', info: '#2f6fed', warning: '#e0a63e', critical: '#e05a4e' };
+
+  function statusIconSvg(level) {
+    return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" ' +
+      'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+      (STATUS_ICONS[level] || '') + '</svg>';
+  }
+
   function buildNavLinks(activeKey) {
     return NAV.map(function (item) {
       var cls = item.key === activeKey ? ' class="active"' : '';
@@ -1080,6 +1103,7 @@
           safeRender(renderNetworkType, state);
           safeRender(renderNetworkRoaming, state);
           safeRender(renderSignalCard, state);
+          safeRender(renderStatusHealth, state);
           safeRender(renderTopbarSignal, state);
           safeRender(renderCellTooltips, state);
           safeRender(renderStatusDots, state);
@@ -1171,29 +1195,32 @@
   }
 
   function startUpdate() {
-    var warned = window.confirm(
-      'This downloads and installs the latest OpenModem from GitHub, ' +
-      'replacing the current install. It can take several minutes and ' +
-      'will restart all services — you may briefly lose connection to ' +
-      'this page. Continue?'
-    );
-    if (!warned) return;
-
-    setUpdateStatus('Starting update…');
-    fetch('/cgi-bin/update.sh?action=start&confirm=1')
-      .then(function (r) { return r.json(); })
-      .then(function (data) {
-        if (data.error) {
-          setUpdateStatus('Could not start update: ' + data.error);
-          return;
-        }
-        setUpdateStatus('Update started…');
-        updatePollStartedAt = Date.now();
-        updatePollTimer = setInterval(pollUpdateStatus, UPDATE_POLL_MS);
-      })
-      .catch(function (err) {
-        setUpdateStatus('Could not start update: ' + err);
-      });
+    confirmDialog({
+      severity: 'high',
+      title: 'Update OpenModem',
+      message: 'This downloads and installs the latest OpenModem from GitHub, ' +
+        'replacing the current install. It can take several minutes and ' +
+        'will restart all services — you may briefly lose connection to ' +
+        'this page.',
+      confirmLabel: 'Install Update',
+      onConfirm: function () {
+        setUpdateStatus('Starting update…');
+        fetch('/cgi-bin/update.sh?action=start&confirm=1')
+          .then(function (r) { return r.json(); })
+          .then(function (data) {
+            if (data.error) {
+              setUpdateStatus('Could not start update: ' + data.error);
+              return;
+            }
+            setUpdateStatus('Update started…');
+            updatePollStartedAt = Date.now();
+            updatePollTimer = setInterval(pollUpdateStatus, UPDATE_POLL_MS);
+          })
+          .catch(function (err) {
+            setUpdateStatus('Could not start update: ' + err);
+          });
+      }
+    });
   }
 
   function initUpdateButton() {
@@ -1348,15 +1375,18 @@
   var POWER_ACTIONS = {
     reboot: {
       cmd: 'AT+CFUN=1,1',
-      confirm: 'This reboots the modem (AT+CFUN=1,1). The connection will drop for about 30 seconds. Continue?'
+      severity: 'high',
+      confirm: 'This reboots the modem (AT+CFUN=1,1). The connection will drop for about 30 seconds.'
     },
     radio_off: {
       cmd: 'AT+CFUN=0',
-      confirm: 'This turns the radio off (AT+CFUN=0). The modem stays powered but loses all cellular connectivity until turned back on. Continue?'
+      severity: 'high',
+      confirm: 'This turns the radio off (AT+CFUN=0). The modem stays powered but loses all cellular connectivity until turned back on — there is no auto-recovery, you have to come back and press Radio On.'
     },
     radio_on: {
       cmd: 'AT+CFUN=1',
-      confirm: 'This restores full radio function (AT+CFUN=1). Continue?'
+      severity: 'medium',
+      confirm: 'This restores full radio function (AT+CFUN=1).'
     }
   };
 
@@ -1367,9 +1397,16 @@
         var action = POWER_ACTIONS[btn.getAttribute('data-power-action')];
         if (!action) return;
         btn.addEventListener('click', function () {
-          if (!window.confirm(action.confirm)) return;
-          btn.disabled = true;
-          sendAtCommand(action.cmd).finally(function () { btn.disabled = false; });
+          confirmDialog({
+            severity: action.severity,
+            title: btn.textContent,
+            message: action.confirm,
+            confirmLabel: btn.textContent,
+            onConfirm: function () {
+              btn.disabled = true;
+              sendAtCommand(action.cmd).finally(function () { btn.disabled = false; });
+            }
+          });
         });
       })(buttons[i]);
     }
@@ -1522,6 +1559,86 @@
     if (!el) return;
     el.classList.remove('open');
     el.setAttribute('aria-hidden', 'true');
+  }
+
+  /* ── Generic confirm modal ───────────────────────────────────────────
+     Replaces window.confirm() for every destructive/disruptive action
+     on the site (Update, Reboot/Radio Off/Radio On, Apply bars, Reset
+     Counter, SIM slot switch). A plain browser confirm() looks and
+     behaves identically no matter what it's confirming — a user who's
+     clicked through ten harmless ones learns to click through the
+     eleventh (a reboot) just as fast, without reading it. This modal
+     instead scales its icon/color/shape with severity: low = info
+     (blue circle), medium = warning (amber triangle), high = critical
+     (red octagon) — same shape vocabulary as the Status card, so
+     "this looks scarier" tracks "this actually is more disruptive"
+     even for a colorblind reader. One shared overlay, built lazily on
+     first use and reused for every call (same reasoning as the Carrier
+     Scan modal being one overlay reused across its confirm/scanning/
+     results phases), rather than a modal per page/action. */
+  var CONFIRM_SEVERITY_ICON = { low: 'info', medium: 'warning', high: 'critical' };
+
+  function ensureConfirmModal() {
+    if (document.getElementById('om-confirm-modal')) return;
+    var el = document.createElement('div');
+    el.className = 'om-modal-overlay';
+    el.id = 'om-confirm-modal';
+    el.setAttribute('aria-hidden', 'true');
+    el.innerHTML =
+      '<div class="om-modal om-confirm-modal" role="alertdialog" aria-modal="true" aria-labelledby="om-confirm-title">' +
+        '<div class="om-modal-header">' +
+          '<div class="om-confirm-header-left">' +
+            '<span class="om-confirm-icon" id="om-confirm-icon"></span>' +
+            '<h3 id="om-confirm-title"></h3>' +
+          '</div>' +
+          '<button type="button" class="om-modal-close" id="om-confirm-close" aria-label="Close">&times;</button>' +
+        '</div>' +
+        '<div class="om-modal-body">' +
+          '<p id="om-confirm-message"></p>' +
+          '<div class="om-modal-actions">' +
+            '<button type="button" class="om-secondary" id="om-confirm-cancel">Cancel</button>' +
+            '<button type="button" id="om-confirm-ok"></button>' +
+          '</div>' +
+        '</div>' +
+      '</div>';
+    document.body.appendChild(el);
+
+    function close() { closeModal('om-confirm-modal'); }
+    document.getElementById('om-confirm-close').addEventListener('click', close);
+    document.getElementById('om-confirm-cancel').addEventListener('click', close);
+    el.addEventListener('click', function (e) { if (e.target === el) close(); });
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape' && el.classList.contains('open')) close();
+    });
+  }
+
+  /* opts: { severity: 'low'|'medium'|'high', title, message, confirmLabel, onConfirm } */
+  function confirmDialog(opts) {
+    ensureConfirmModal();
+    var iconKey = CONFIRM_SEVERITY_ICON[opts.severity] || 'warning';
+    var color = STATUS_COLORS[iconKey];
+
+    document.querySelector('#om-confirm-modal .om-modal').style.setProperty('--sev-color', color);
+    var iconEl = document.getElementById('om-confirm-icon');
+    iconEl.innerHTML = statusIconSvg(iconKey);
+    iconEl.style.color = color;
+    document.getElementById('om-confirm-title').textContent = opts.title;
+    document.getElementById('om-confirm-message').textContent = opts.message;
+
+    var okBtn = document.getElementById('om-confirm-ok');
+    // Fresh clone strips whatever click listener a previous confirmDialog()
+    // call bound — the OK button element itself is reused across every
+    // confirmation, not recreated.
+    var newOk = okBtn.cloneNode(true);
+    okBtn.parentNode.replaceChild(newOk, okBtn);
+    newOk.textContent = opts.confirmLabel || 'Continue';
+    newOk.className = opts.severity === 'high' ? 'om-danger' : '';
+    newOk.addEventListener('click', function () {
+      closeModal('om-confirm-modal');
+      opts.onConfirm();
+    });
+
+    openModal('om-confirm-modal');
   }
 
   /* ── Carrier scan (Cellular page) ──────────────────────────────────
@@ -1801,6 +1918,114 @@
     if (nettypeEl) nettypeEl.textContent = networkTypeText(state);
   }
 
+  /* ── Status/Health card (Dashboard) ──────────────────────────────────
+     Quick-glance "why don't I have a connection" answer — walks a
+     fixed priority list of if/then checks and surfaces the single
+     worst one, rather than listing every issue at once (a beginner
+     wants one clear answer, not a checklist to interpret). Order
+     matters and is deliberate: a SIM problem makes registration/signal
+     readings meaningless, so it's checked first; a registration
+     problem in turn makes "weak signal" moot (you can have full bars
+     and still be Denied); signal strength only matters once you know
+     you're actually registered; WAN/roaming are last since they're the
+     mildest of the surfaced conditions. Reuses the same
+     RSRP_ZONES/sigZoneIndex/currentRsrp/networkRoamingActive logic the
+     Signal card and Network card already use — this card doesn't
+     introduce a second source of truth for any of those, only a
+     combined read of them. */
+  function computeHealthStatus(state) {
+    if (state.sim_status === null || state.sim_status === undefined) {
+      return {
+        level: 'critical',
+        title: 'No SIM Detected',
+        detail: 'No response from a SIM card. Check that one is inserted in the active slot.'
+      };
+    }
+    if (state.sim_status !== 'READY') {
+      return {
+        level: 'critical',
+        title: 'SIM Issue',
+        detail: 'SIM status: ' + state.sim_status + '. Check the SIM page for details.'
+      };
+    }
+
+    var lteReg = state.reg_lte, nrReg = state.reg_nr;
+    var registered = lteReg === 1 || lteReg === 5 || nrReg === 1 || nrReg === 5;
+    var denied = lteReg === 3 || nrReg === 3;
+
+    if (denied) {
+      return {
+        level: 'critical',
+        title: 'Registration Denied',
+        detail: 'The network rejected registration — usually an account or SIM problem with your carrier, not a signal problem.'
+      };
+    }
+    if (!registered) {
+      return {
+        level: 'critical',
+        title: 'Not Registered',
+        detail: 'Not registered on LTE or 5G yet. This can take a minute after boot, or may mean weak coverage here.'
+      };
+    }
+
+    var rsrp = currentRsrp(state);
+    if (typeof rsrp === 'number') {
+      var zoneIdx = sigZoneIndex(rsrp, RSRP_ZONES);
+      if (zoneIdx === RSRP_ZONES.length - 1) {
+        return {
+          level: 'critical',
+          title: 'Critical Signal',
+          detail: 'Signal strength is critically weak (' + rsrp + ' dBm). Reposition the modem/antenna for better reception.'
+        };
+      }
+      if (zoneIdx === RSRP_ZONES.length - 2) {
+        return {
+          level: 'warning',
+          title: 'Weak Signal',
+          detail: 'Signal strength is poor (' + rsrp + ' dBm). The connection may be slow or drop intermittently.'
+        };
+      }
+    }
+
+    if (state.wan_active === false) {
+      return {
+        level: 'warning',
+        title: 'No Data Connection',
+        detail: 'Registered on the network, but the data connection (WAN) isn\'t active. Check the APN on the WAN page.'
+      };
+    }
+
+    if (networkRoamingActive(state)) {
+      return {
+        level: 'warning',
+        title: 'Roaming',
+        detail: 'Connected, but currently roaming off your home network — this may carry extra cost depending on your plan.'
+      };
+    }
+
+    return {
+      level: 'good',
+      title: 'All Good',
+      detail: 'Registered, signal is healthy, and the data connection is active.'
+    };
+  }
+
+  function renderStatusHealth(state) {
+    var iconEl = document.getElementById('om-status-icon');
+    var titleEl = document.getElementById('om-status-title');
+    var detailEl = document.getElementById('om-status-detail');
+    if (!iconEl) return; // not on this page
+
+    var health = computeHealthStatus(state);
+    var color = STATUS_COLORS[health.level];
+
+    iconEl.innerHTML = statusIconSvg(health.level);
+    iconEl.style.color = color;
+    titleEl.textContent = health.title;
+    titleEl.style.color = color;
+    detailEl.textContent = health.detail;
+  }
+
   /* ── Topbar signal indicator (every page) ────────────────────────────
      Bars + carrier + network type, always visible regardless of which
      page you're on — same reasoning as moving connection status into
@@ -1887,49 +2112,60 @@
     var disruptive = [];
     if (bandDirty) disruptive.push('the band lock');
     if (modeDirty || roamDirty) disruptive.push('network mode/roaming');
-    if (!window.confirm('Apply changes to ' + disruptive.join(' and ') + '? The connection may briefly reconnect. Continue?')) return;
 
-    btn.disabled = true;
-    statusEl.textContent = 'Applying…';
+    confirmDialog({
+      // Band lock elevated to high: unlike a mode/roaming toggle, locking
+      // to the wrong bands can silently drop all signal with no obvious
+      // error to point at — a bigger blast radius than "briefly reconnect".
+      severity: bandDirty ? 'high' : 'medium',
+      title: 'Apply Cellular Changes',
+      message: 'Apply changes to ' + disruptive.join(' and ') + '? The connection may briefly reconnect.' +
+        (bandDirty ? ' Locking to the wrong bands can disconnect you from your carrier entirely — use "All" in Band Lock to reset if that happens.' : ''),
+      confirmLabel: 'Apply Changes',
+      onConfirm: function () {
+        btn.disabled = true;
+        statusEl.textContent = 'Applying…';
 
-    var steps = [];
-    if (bandDirty) {
-      var qs = [];
-      if (lte.length) qs.push('lte_bands=' + encodeURIComponent(lte.join(',')));
-      if (nr.length) qs.push('nr_bands=' + encodeURIComponent(nr.join(',')));
-      steps.push({ label: 'Band lock', url: '/cgi-bin/band_lock.sh?action=set&' + qs.join('&') });
-    }
-    if (modeDirty) {
-      steps.push({ label: 'Network mode', url: '/cgi-bin/network_action.sh?action=set_mode&mode=' + encodeURIComponent(net.mode) });
-    }
-    if (roamDirty) {
-      steps.push({ label: 'Data roaming', url: '/cgi-bin/network_action.sh?action=set_roaming&value=' + net.roaming });
-    }
+        var steps = [];
+        if (bandDirty) {
+          var qs = [];
+          if (lte.length) qs.push('lte_bands=' + encodeURIComponent(lte.join(',')));
+          if (nr.length) qs.push('nr_bands=' + encodeURIComponent(nr.join(',')));
+          steps.push({ label: 'Band lock', url: '/cgi-bin/band_lock.sh?action=set&' + qs.join('&') });
+        }
+        if (modeDirty) {
+          steps.push({ label: 'Network mode', url: '/cgi-bin/network_action.sh?action=set_mode&mode=' + encodeURIComponent(net.mode) });
+        }
+        if (roamDirty) {
+          steps.push({ label: 'Data roaming', url: '/cgi-bin/network_action.sh?action=set_roaming&value=' + net.roaming });
+        }
 
-    // Sequential, not parallel — same reasoning as LAN's lanApply(): the
-    // AT broker only serializes one in-flight request at a time anyway,
-    // and a mode/band change can briefly interrupt the next request.
-    var results = [];
-    var chain = Promise.resolve();
-    steps.forEach(function (step) {
-      chain = chain.then(function () {
-        return fetch(step.url)
-          .then(function (r) { return r.json(); })
-          .then(function (data) {
-            results.push(step.label + ': ' + (data.success ? 'OK' : 'Failed — ' + data.error));
-          })
-          .catch(function (err) {
-            results.push(step.label + ': Failed — ' + err);
+        // Sequential, not parallel — same reasoning as LAN's lanApply(): the
+        // AT broker only serializes one in-flight request at a time anyway,
+        // and a mode/band change can briefly interrupt the next request.
+        var results = [];
+        var chain = Promise.resolve();
+        steps.forEach(function (step) {
+          chain = chain.then(function () {
+            return fetch(step.url)
+              .then(function (r) { return r.json(); })
+              .then(function (data) {
+                results.push(step.label + ': ' + (data.success ? 'OK' : 'Failed — ' + data.error));
+              })
+              .catch(function (err) {
+                results.push(step.label + ': Failed — ' + err);
+              });
           });
-      });
-    });
+        });
 
-    chain.then(function () {
-      statusEl.textContent = results.join('  ');
-      btn.disabled = false;
-      if (bandDirty) bandLockBaseline = bandLockSnapshot();
-      if (net) netPrefsBaseline = net;
-      checkCellularDirty();
+        chain.then(function () {
+          statusEl.textContent = results.join('  ');
+          btn.disabled = false;
+          if (bandDirty) bandLockBaseline = bandLockSnapshot();
+          if (net) netPrefsBaseline = net;
+          checkCellularDirty();
+        });
+      }
     });
   }
 
@@ -2328,53 +2564,69 @@
     var disruptive = [];
     if (modeDirty) disruptive.push('the network mode');
     if (ipDirty) disruptive.push('the LAN IP/DHCP range');
-    if (disruptive.length) {
-      var msg = 'Apply changes to ' + disruptive.join(' and ') + '? This may briefly disconnect the current session';
-      if (ipDirty) msg += ' — reconnect at ' + current.routerIp + ' if the router IP changed';
-      if (!window.confirm(msg + '. Continue?')) return;
-    }
 
-    btn.disabled = true;
-    statusEl.textContent = 'Applying…';
+    function doLanApply() {
+      btn.disabled = true;
+      statusEl.textContent = 'Applying…';
 
-    var steps = [];
-    if (modeDirty) {
-      var qs = 'action=set_mode&mode=' + current.mode;
-      if (current.mode === 'passthrough') qs += '&mac=' + encodeURIComponent(current.mac || 'FF:FF:FF:FF:FF:FF');
-      steps.push({ label: 'Mode', url: '/cgi-bin/lan_action.sh?' + qs });
-    }
-    if (dnsDirty) {
-      steps.push({ label: 'DNS', url: '/cgi-bin/lan_action.sh?action=set_dns&dns_mode=' + current.dns });
-    }
-    if (ipDirty) {
-      steps.push({
-        label: 'IP', url: '/cgi-bin/lan_action.sh?action=set_lanip&router_ip=' + encodeURIComponent(current.routerIp) +
-          '&dhcp_start=' + encodeURIComponent(current.dhcpStart) + '&dhcp_end=' + encodeURIComponent(current.dhcpEnd)
+      var steps = [];
+      if (modeDirty) {
+        var qs = 'action=set_mode&mode=' + current.mode;
+        if (current.mode === 'passthrough') qs += '&mac=' + encodeURIComponent(current.mac || 'FF:FF:FF:FF:FF:FF');
+        steps.push({ label: 'Mode', url: '/cgi-bin/lan_action.sh?' + qs });
+      }
+      if (dnsDirty) {
+        steps.push({ label: 'DNS', url: '/cgi-bin/lan_action.sh?action=set_dns&dns_mode=' + current.dns });
+      }
+      if (ipDirty) {
+        steps.push({
+          label: 'IP', url: '/cgi-bin/lan_action.sh?action=set_lanip&router_ip=' + encodeURIComponent(current.routerIp) +
+            '&dhcp_start=' + encodeURIComponent(current.dhcpStart) + '&dhcp_end=' + encodeURIComponent(current.dhcpEnd)
+        });
+      }
+
+      // Sequential, not parallel — set_mode can drop/reset the WAN
+      // connection, and the AT broker only serializes one in-flight
+      // request at a time anyway.
+      var results = [];
+      var chain = Promise.resolve();
+      steps.forEach(function (step) {
+        chain = chain.then(function () {
+          return fetch(step.url)
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+              results.push(step.label + ': ' + (data.success ? 'OK' : 'Failed — ' + data.error));
+            })
+            .catch(function (err) {
+              results.push(step.label + ': Failed — ' + err);
+            });
+        });
+      });
+
+      chain.then(function () {
+        statusEl.textContent = results.join('  ');
+        btn.disabled = false;
+        loadLanConfig();
       });
     }
 
-    // Sequential, not parallel — set_mode can drop/reset the WAN
-    // connection, and the AT broker only serializes one in-flight
-    // request at a time anyway.
-    var results = [];
-    var chain = Promise.resolve();
-    steps.forEach(function (step) {
-      chain = chain.then(function () {
-        return fetch(step.url)
-          .then(function (r) { return r.json(); })
-          .then(function (data) {
-            results.push(step.label + ': ' + (data.success ? 'OK' : 'Failed — ' + data.error));
-          })
-          .catch(function (err) {
-            results.push(step.label + ': Failed — ' + err);
-          });
-      });
-    });
+    if (!disruptive.length) {
+      doLanApply();
+      return;
+    }
 
-    chain.then(function () {
-      statusEl.textContent = results.join('  ');
-      btn.disabled = false;
-      loadLanConfig();
+    var msg = 'Apply changes to ' + disruptive.join(' and ') + '? This may briefly disconnect the current session';
+    if (ipDirty) msg += ' — reconnect at ' + current.routerIp + ' if the router IP changed';
+
+    confirmDialog({
+      // A wrong router IP/DHCP range can genuinely lock you out of the
+      // LAN (not just "briefly reconnect"), so that case is high; a
+      // plain mode change is medium.
+      severity: ipDirty ? 'high' : 'medium',
+      title: 'Apply LAN Changes',
+      message: msg + '.',
+      confirmLabel: 'Apply Changes',
+      onConfirm: doLanApply
     });
   }
 
@@ -2456,17 +2708,24 @@
     var resetBtn = document.getElementById('om-wan-reset-counter');
     if (resetBtn) {
       resetBtn.addEventListener('click', function () {
-        if (!window.confirm('Reset the WAN data usage counter to zero?')) return;
-        var statusEl = document.getElementById('om-wan-reset-status');
-        resetBtn.disabled = true;
-        statusEl.textContent = 'Resetting…';
-        fetch('/cgi-bin/wan_action.sh?action=reset_counter')
-          .then(function (r) { return r.json(); })
-          .then(function (data) {
-            statusEl.textContent = data.success ? data.message : ('Failed: ' + data.error);
-          })
-          .catch(function (err) { statusEl.textContent = 'Failed: ' + err; })
-          .finally(function () { resetBtn.disabled = false; });
+        confirmDialog({
+          severity: 'low',
+          title: 'Reset Data Counter',
+          message: 'Reset the WAN data usage counter to zero? This only affects the number shown here, not your actual data connection.',
+          confirmLabel: 'Reset Counter',
+          onConfirm: function () {
+            var statusEl = document.getElementById('om-wan-reset-status');
+            resetBtn.disabled = true;
+            statusEl.textContent = 'Resetting…';
+            fetch('/cgi-bin/wan_action.sh?action=reset_counter')
+              .then(function (r) { return r.json(); })
+              .then(function (data) {
+                statusEl.textContent = data.success ? data.message : ('Failed: ' + data.error);
+              })
+              .catch(function (err) { statusEl.textContent = 'Failed: ' + err; })
+              .finally(function () { resetBtn.disabled = false; });
+          }
+        });
       });
     }
   }
@@ -2560,17 +2819,23 @@
 
   function applySimSlot(slot, buttons) {
     var statusEl = document.getElementById('om-sim-slot-status');
-    if (!window.confirm('Switch to SIM' + slot + '? This briefly disconnects the modem (including this web UI) while it reinitializes.')) return;
-
-    setSimSlotButtonsDisabled(buttons, true);
-    statusEl.textContent = 'Switching…';
-    fetch('/cgi-bin/sim_action.sh?action=set_slot&slot=' + slot)
-      .then(function (r) { return r.json(); })
-      .then(function (data) {
-        statusEl.textContent = data.success ? data.message : ('Failed: ' + data.error);
-      })
-      .catch(function (err) { statusEl.textContent = 'Failed: ' + err; })
-      .finally(function () { setSimSlotButtonsDisabled(buttons, false); });
+    confirmDialog({
+      severity: 'high',
+      title: 'Switch SIM Slot',
+      message: 'Switch to SIM' + slot + '? This briefly disconnects the modem (including this web UI) while it reinitializes.',
+      confirmLabel: 'Switch to SIM' + slot,
+      onConfirm: function () {
+        setSimSlotButtonsDisabled(buttons, true);
+        statusEl.textContent = 'Switching…';
+        fetch('/cgi-bin/sim_action.sh?action=set_slot&slot=' + slot)
+          .then(function (r) { return r.json(); })
+          .then(function (data) {
+            statusEl.textContent = data.success ? data.message : ('Failed: ' + data.error);
+          })
+          .catch(function (err) { statusEl.textContent = 'Failed: ' + err; })
+          .finally(function () { setSimSlotButtonsDisabled(buttons, false); });
+      }
+    });
   }
 
   function initSimSlotToggle() {
