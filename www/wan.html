@@ -52,6 +52,19 @@
         <p id="om-wan-reset-status" class="om-note"></p>
       </div>
 
+      <div class="om-card">
+        <h2 class="om-hint" title="Makes traffic from other devices behind this modem look like it's coming from the modem itself — can prevent your carrier from detecting and throttling tethering/hotspot use.">TTL Spoofing</h2>
+        <div class="om-ttl-carriers">
+          <span class="om-ttl-carrier"><span class="om-ttl-swatch" style="background:#00A8E0"></span>AT&amp;T (Blue) — 65</span>
+          <span class="om-ttl-carrier"><span class="om-ttl-swatch" style="background:#E20074"></span>T-Mobile (Magenta) — 65</span>
+          <span class="om-ttl-carrier"><span class="om-ttl-swatch" style="background:#EE0000"></span>Verizon (Red) — 88</span>
+        </div>
+        <div class="om-form-row">
+          <label for="om-wan-ttl">TTL / Hop Limit (0 = disabled, 1–255)</label>
+          <input type="number" id="om-wan-ttl" min="0" max="255" placeholder="0">
+        </div>
+      </div>
+
       <div class="om-card om-card-wide">
         <h2>Bandwidth (5 min)</h2>
 
@@ -69,19 +82,6 @@
           <span class="om-chart-axis om-chart-axis-min">0</span>
           <svg class="om-chart-svg" id="om-wan-tx-chart"></svg>
           <div class="om-chart-tooltip" id="om-wan-tx-chart-tooltip"></div>
-        </div>
-      </div>
-
-      <div class="om-card">
-        <h2 class="om-hint" title="Makes traffic from other devices behind this modem look like it's coming from the modem itself — can prevent your carrier from detecting and throttling tethering/hotspot use.">TTL Spoofing</h2>
-        <div class="om-ttl-carriers">
-          <span class="om-ttl-carrier"><span class="om-ttl-swatch" style="background:#00A8E0"></span>AT&amp;T (Blue) — 65</span>
-          <span class="om-ttl-carrier"><span class="om-ttl-swatch" style="background:#E20074"></span>T-Mobile (Magenta) — 65</span>
-          <span class="om-ttl-carrier"><span class="om-ttl-swatch" style="background:#EE0000"></span>Verizon (Red) — 88</span>
-        </div>
-        <div class="om-form-row">
-          <label for="om-wan-ttl">TTL / Hop Limit (0 = disabled, 1–255)</label>
-          <input type="number" id="om-wan-ttl" min="0" max="255" placeholder="0">
         </div>
       </div>
     </div>

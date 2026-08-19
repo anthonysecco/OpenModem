@@ -25,6 +25,8 @@ LOG_FILE="$RUN_DIR/poller.log"
 STATE_FILE="$RUN_DIR/state_merged.json"
 HISTORY_FILE="$RUN_DIR/history_signal.json"
 HISTORY_SCRATCH="$RUN_DIR/history_signal_scratch"
+HISTORY_FILE_WAN="$RUN_DIR/history_wan.json"
+HISTORY_SCRATCH_WAN="$RUN_DIR/history_wan_scratch"
 LOG_MAX_BYTES=262144
 LOG_SLOTS=2
 
@@ -152,6 +154,65 @@ append_signal_history() {
 
     _arr=$(awk 'NR>1{printf ","} {printf "%s", $0} END{print ""}' "$HISTORY_SCRATCH")
     printf '[%s]\n' "$_arr" > "${HISTORY_FILE}.tmp" && mv "${HISTORY_FILE}.tmp" "$HISTORY_FILE"
+}
+
+# -- WAN rx/tx rate + its own 5-minute history ring buffer -----------------
+# AT+QGDCNT only ever reports a running cumulative byte counter
+# (collect_wan's F_WAN_DATA_TX/RX) — never an instantaneous rate — so the
+# rate itself has to be derived here, once per poll cycle, from the delta
+# against the previous cycle's counters (_WAN_PREV_RX/TX/T, plain globals
+# that persist across loop iterations since this whole script is one
+# long-running process, same assumption STATE_FILE's write-once-per-loop
+# design already makes). This used to be computed client-side in app.js
+# (delta between two consecutive state.sh fetches, divided by
+# _poll_interval_s) — moved server-side so the front end has a single
+# source of truth (matches renderConnectivityCard's latency/jitter, which
+# made the same move) AND so a rate exists to persist into a history file:
+# a client-only computation has nothing to seed a freshly-opened tab's
+# graph with, unlike RSRP/dl_est_mbps's HISTORY_FILE above.
+#
+# Divides by actual elapsed wall-clock time between cycles (_t - prev t),
+# not POLL_INTERVAL, since this runs server-side and has the real cycle
+# timestamps on hand — no need for app.js's "trust the configured
+# interval" shortcut. A negative delta (Reset Counter button, or a
+# reboot) yields a null rate for that one sample, same as app.js's old
+# "counter went backwards" guard; the prev-counter globals still advance
+# every cycle regardless, so the next cycle resumes computing normally
+# from the new (lower) baseline.
+_WAN_PREV_RX=""; _WAN_PREV_TX=""; _WAN_PREV_T=""
+compute_wan_rate() {
+    _t="$1"
+    F_WAN_RX_MBPS="null"; F_WAN_TX_MBPS="null"
+
+    if [ -n "$_WAN_PREV_T" ]; then
+        _rate=$(awk -v rx="$F_WAN_DATA_RX" -v tx="$F_WAN_DATA_TX" \
+                    -v prx="$_WAN_PREV_RX" -v ptx="$_WAN_PREV_TX" \
+                    -v pt="$_WAN_PREV_T" -v t="$_t" '
+            BEGIN {
+                if (rx == "null" || tx == "null") { print "null null"; exit }
+                dt = t - pt
+                if (dt <= 0 || rx < prx || tx < ptx) { print "null null"; exit }
+                printf "%.3f %.3f", (rx - prx) * 8 / dt / 1000000, (tx - ptx) * 8 / dt / 1000000
+            }')
+        F_WAN_RX_MBPS=$(printf '%s' "$_rate" | cut -d' ' -f1)
+        F_WAN_TX_MBPS=$(printf '%s' "$_rate" | cut -d' ' -f2)
+    fi
+
+    if [ "$F_WAN_DATA_RX" != "null" ]; then
+        _WAN_PREV_RX="$F_WAN_DATA_RX"
+        _WAN_PREV_TX="$F_WAN_DATA_TX"
+        _WAN_PREV_T="$_t"
+    fi
+}
+
+append_wan_history() {
+    _t="$1"
+    _line="{\"t\":${_t},\"rx_mbps\":${F_WAN_RX_MBPS},\"tx_mbps\":${F_WAN_TX_MBPS}}"
+    { [ -f "$HISTORY_SCRATCH_WAN" ] && cat "$HISTORY_SCRATCH_WAN"; printf '%s\n' "$_line"; } \
+        | tail -n "$HISTORY_WINDOW_SAMPLES" > "${HISTORY_SCRATCH_WAN}.tmp" && mv "${HISTORY_SCRATCH_WAN}.tmp" "$HISTORY_SCRATCH_WAN"
+
+    _arr=$(awk 'NR>1{printf ","} {printf "%s", $0} END{print ""}' "$HISTORY_SCRATCH_WAN")
+    printf '[%s]\n' "$_arr" > "${HISTORY_FILE_WAN}.tmp" && mv "${HISTORY_FILE_WAN}.tmp" "$HISTORY_FILE_WAN"
 }
 
 # AT+CGPADDR reports IPv6 as 16 dot-separated decimal octets (confirmed
@@ -1062,6 +1123,8 @@ write_state() {
   "wan_active": ${F_WAN_ACTIVE},
   "wan_data_tx": ${F_WAN_DATA_TX},
   "wan_data_rx": ${F_WAN_DATA_RX},
+  "wan_tx_mbps": ${F_WAN_TX_MBPS},
+  "wan_rx_mbps": ${F_WAN_RX_MBPS},
   "lan_router_ip": ${F_LAN_ROUTER_IP},
   "lan_dhcp_start": ${F_LAN_DHCP_START},
   "lan_dhcp_end": ${F_LAN_DHCP_END},
@@ -1149,11 +1212,13 @@ while true; do
     collect_band_pref "$_blob"
     collect_network_prefs "$_blob"
     collect_wan "$_blob"
+    compute_wan_rate "$_start"
     collect_lan "$_blob"
 
     _end=$(date +%s)
     write_state "$_start" "$(( _end - _start ))"
     append_signal_history "$_start"
+    append_wan_history "$_start"
     log_dbg "Cycle ${_cycle} done in $(( _end - _start ))s"
 
     _elapsed=$(( _end - _start ))

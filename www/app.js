@@ -331,60 +331,42 @@
   }
   function fmtSimSlot(v) { return v === 1 ? 'SIM1' : v === 2 ? 'SIM2' : null; }
 
-  /* WAN throughput (Data Usage card's Receive/Send Rate rows) — the
-     modem only reports a running cumulative byte counter
-     (wan_data_rx/tx, from AT+QGDCNT?), never an instantaneous rate, so
-     this is derived client-side from the delta between two
-     consecutive state.sh samples. Divided by the poll interval itself
-     (state._poll_interval_s) rather than actual elapsed wall-clock
-     time between samples — same "trust POLL_INTERVAL as the cadence"
-     assumption the self-rescheduling fetch loop already makes, kept
-     simple rather than accounting for a delayed/skipped poll. */
-  function fmtThroughput(bitsPerSec) {
-    if (bitsPerSec >= 1e6) return (bitsPerSec / 1e6).toFixed(1) + ' Mbps';
-    var kbps = bitsPerSec / 1e3;
+  /* WAN throughput (Data Usage card's Receive/Send Rate rows, and the
+     Bandwidth graphs below them) — the modem only reports a running
+     cumulative byte counter (wan_data_rx/tx, from AT+QGDCNT?), never an
+     instantaneous rate. The rate itself (wan_rx_mbps/wan_tx_mbps) is
+     computed server-side now, once per poll cycle, by at_poller.sh's
+     compute_wan_rate() — mirrors the Connectivity card's latency/jitter
+     move to "one source of truth" (see renderConnectivityCard's
+     comment): the front end just formats/displays it rather than
+     re-deriving it from two consecutive state.sh samples itself. Doing
+     the computation server-side is also what makes history_wan.sh (a
+     persisted 5-min ring buffer, same shape as history_signal.sh)
+     possible at all — a client-only computation would have nothing to
+     seed a freshly-opened tab's graph with. */
+  function fmtThroughput(mbps) {
+    if (typeof mbps !== 'number') return '—';
+    if (mbps >= 1) return mbps.toFixed(1) + ' Mbps';
+    var kbps = mbps * 1000;
     return (kbps < 10 ? kbps.toFixed(1) : Math.round(kbps)) + ' Kbps';
   }
-
-  var wanThroughputPrev = null;
 
   function renderWanThroughput(state) {
     var rxEl = document.getElementById('om-wan-rx-rate');
     var txEl = document.getElementById('om-wan-tx-rate');
     if (!rxEl && !txEl) return; // not on this page
 
-    var rx = state.wan_data_rx, tx = state.wan_data_tx, windowS = state._poll_interval_s;
-    var prev = wanThroughputPrev;
-    wanThroughputPrev = { rx: rx, tx: tx };
-
-    // No prior sample, missing data, or the counter went backwards
-    // (Reset Counter button, or a reboot) — no rate for this tick.
-    var valid = typeof rx === 'number' && typeof tx === 'number' && windowS && prev &&
-      typeof prev.rx === 'number' && typeof prev.tx === 'number' &&
-      rx >= prev.rx && tx >= prev.tx;
-
-    var rxBps = valid ? (rx - prev.rx) * 8 / windowS : null;
-    var txBps = valid ? (tx - prev.tx) * 8 / windowS : null;
-
-    if (rxEl) rxEl.textContent = (rxBps === null) ? '—' : fmtThroughput(rxBps);
-    if (txEl) txEl.textContent = (txBps === null) ? '—' : fmtThroughput(txBps);
-
-    // Bandwidth graphs (WAN page) — same per-tick rate, kept as its own
-    // 5-min ring buffer since there's no server-side history for it
-    // (wan_data_rx/tx are cumulative counters; the poller never persists
-    // a derived rate). Mirrors historySignalSamples/historyNetSamples's
-    // pattern but seeded from nothing (no history_wan.sh endpoint to
-    // seed from) — the graph just fills in over the first 5 minutes a
-    // tab is open.
-    pushCapped(historyWanRateSamples, {
-      t: state._polled_at,
-      rx_mbps: rxBps === null ? null : rxBps / 1e6,
-      tx_mbps: txBps === null ? null : txBps / 1e6
-    });
-    renderWanBandwidthCharts();
+    if (rxEl) rxEl.textContent = fmtThroughput(state.wan_rx_mbps);
+    if (txEl) txEl.textContent = fmtThroughput(state.wan_tx_mbps);
   }
 
   var historyWanRateSamples = [];
+
+  function pushWanHistorySample(state) {
+    if (!document.getElementById('om-wan-rx-chart')) return; // not on this page
+    pushCapped(historyWanRateSamples, { t: state._polled_at, rx_mbps: state.wan_rx_mbps, tx_mbps: state.wan_tx_mbps });
+    renderWanBandwidthCharts();
+  }
 
   // Flat single-color "zone" tables (always matches, since rate >= 0)
   // rather than the severity-gradient RSRP/SPEED/LATENCY_ZONES use —
@@ -395,10 +377,6 @@
   var WAN_RX_ZONE = [{ thresh: 0, bar: '#2f6fed', label: 'Receive' }];
   var WAN_TX_ZONE = [{ thresh: 0, bar: '#8b5cf6', label: 'Send' }];
   var WAN_RATE_MIN_RANGE = 0.1; // Mbps floor so an idle link doesn't collapse the axis to a zero-width range
-
-  function fmtAxisMbps(v) {
-    return v >= 10 ? String(Math.round(v)) : v.toFixed(1);
-  }
 
   // Each graph's y-axis max is the actual peak in its own visible 5-min
   // window (not a fixed ceiling like SPEED_ZONES' 250) — WAN throughput
@@ -415,9 +393,9 @@
     });
 
     var rxAxisEl = document.getElementById('om-wan-rx-chart-axis-max');
-    if (rxAxisEl) rxAxisEl.textContent = fmtAxisMbps(rxMax);
+    if (rxAxisEl) rxAxisEl.textContent = fmtChartValue(rxMax);
     var txAxisEl = document.getElementById('om-wan-tx-chart-axis-max');
-    if (txAxisEl) txAxisEl.textContent = fmtAxisMbps(txMax);
+    if (txAxisEl) txAxisEl.textContent = fmtChartValue(txMax);
 
     renderLineChart('om-wan-rx-chart', historyWanRateSamples, function (r) { return r.rx_mbps; }, WAN_RX_ZONE, 0, rxMax, false);
     renderLineChart('om-wan-tx-chart', historyWanRateSamples, function (r) { return r.tx_mbps; }, WAN_TX_ZONE, 0, txMax, false);
@@ -787,6 +765,18 @@
   var chartPoints = {};  // containerId -> last-rendered [{x,y,v,t}, ...], for hover lookups
   var chartHover = {};   // containerId -> {idx} currently-shown point
 
+  // Adaptive precision for chart hover tooltips/axis labels: below 10 in
+  // magnitude a bare rounded integer loses too much (WAN Mbps idling
+  // under 1, sub-10ms latency/jitter on a good connection), so those get
+  // one decimal place; at or above 10 (every RSRP/RSRQ/SINR reading, and
+  // most Speed/Latency/Jitter samples), a rounded integer is precise
+  // enough and matches the existing on-screen convention. Math.abs, not
+  // a bare >= 10, so this doesn't add a spurious ".0" to RSRP's negative
+  // dBm values (always well past -10 in magnitude).
+  function fmtChartValue(v) {
+    return Math.abs(v) >= 10 ? String(Math.round(v)) : v.toFixed(1);
+  }
+
   function chartX(i, n) {
     if (n <= 1) return CHART_PAD;
     return CHART_PAD + (i / (n - 1)) * (CHART_VIEW_W - CHART_PAD * 2);
@@ -958,7 +948,7 @@
 
     var tip = document.getElementById(containerId + '-tooltip');
     if (!tip) return;
-    tip.textContent = Math.round(p.v) + ' ' + unit;
+    tip.textContent = fmtChartValue(p.v) + ' ' + unit;
     tip.style.display = 'block';
     var wrapRect = wrapEl.getBoundingClientRect();
     var svgRect = svgEl.getBoundingClientRect();
@@ -1029,6 +1019,24 @@
           historyNetSamples = data.slice(-HISTORY_WINDOW_SAMPLES);
         }
         renderHistoryCharts();
+      })
+      .catch(function () {});
+  }
+
+  // Same seed-on-load as seedHistoryOnce above, for the WAN page's
+  // Bandwidth graphs — kept as its own function (rather than folded into
+  // seedHistoryOnce) since that one is gated on the Dashboard's
+  // om-hist-rsrp-chart existing, which is never true on the WAN page.
+  function seedWanHistoryOnce() {
+    if (!document.getElementById('om-wan-rx-chart')) return; // not on this page
+
+    fetch('/cgi-bin/history_wan.sh')
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        if (Array.isArray(data)) {
+          historyWanRateSamples = data.slice(-HISTORY_WINDOW_SAMPLES);
+        }
+        renderWanBandwidthCharts();
       })
       .catch(function () {});
   }
@@ -1183,6 +1191,7 @@
           safeRender(renderStatusDots, state);
           safeRender(renderWanThroughput, state);
           safeRender(pushSignalHistorySample, state);
+          safeRender(pushWanHistorySample, state);
           markRefreshedNow();
         }
         scheduleRefresh(FAST_POLL_MS);
@@ -3003,6 +3012,7 @@
     refreshState();
     refreshNetState();
     seedHistoryOnce();
+    seedWanHistoryOnce();
     initChartHover('om-hist-rsrp-chart', 'dBm', RSRP_ZONES, false);
     initChartHover('om-hist-speed-chart', 'Mbps', SPEED_ZONES, false);
     initChartHover('om-hist-latency-chart', 'ms', LATENCY_ZONES, true);
