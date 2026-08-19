@@ -287,7 +287,6 @@
   function fmtDbm(v) { return (v === null || v === undefined) ? null : v + ' dBm'; }
   function fmtReg(v) { return REG_LABELS[v] !== undefined ? REG_LABELS[v] : null; }
   function fmtBool(v) { return v === true ? 'Active' : v === false ? 'Inactive' : null; }
-  function fmtYesNo(v) { return v === true ? 'Yes' : v === false ? 'No' : null; }
   function fmtBands(v) { return (typeof v === 'string' && v.length) ? v.split(':').join(', ') : v; }
   function fmtMhz(v) { return (typeof v === 'number') ? v + ' MHz' : null; }
   function fmtTempC(v) {
@@ -417,7 +416,6 @@
     signal_nr_rsrp: fmtDbm, signal_nr_rsrq: fmtDbm, signal_nr_sinr: fmtDbm,
     cell_lte_band: fmtLteBandNum, cell_nr_band: fmtNrBandNum, cell_nr_type: fmtNrType,
     wan_active: fmtBool,
-    net_data_roaming: fmtYesNo,
     ca_total_bw_mhz: fmtMhz,
     ca_dl_estimated_mbps: fmtMbps, ca_dl_maximum_mbps: fmtMbps,
     band_pref_lte: fmtBands, band_pref_nr5g: fmtBands,
@@ -1061,6 +1059,7 @@
           renderCarrierAggregation(state);
           renderNetPrefs(state);
           renderNetworkType(state);
+          renderNetworkRoaming(state);
           renderSignalCard(state);
           renderTopbarSignal(state);
           renderCellTooltips(state);
@@ -1700,6 +1699,27 @@
     var el = document.getElementById('om-network-type');
     if (!el) return; // not on this page
     el.textContent = networkTypeText(state);
+  }
+
+  /* Live "currently roaming" status (Dashboard Network card) — derived
+     from registration state (REG_LABELS' 5 = "Roaming"), NOT
+     net_data_roaming (AT+QNWCFG="data_roaming"): that field is the
+     roaming-*permission* setting (whether the modem is allowed to
+     roam), which stays true/false regardless of whether the device is
+     actually on its home network right now. Confirmed live
+     2026-08-19: net_data_roaming read true while reg_lte read 1
+     (Registered/home) on a connection the user confirmed was on home
+     service — using net_data_roaming here was wrong. Checks all three
+     registration domains since roaming can show on whichever RAT/CS
+     leg is actually active. */
+  function networkRoamingActive(state) {
+    return state.reg_lte === 5 || state.reg_nr === 5 || state.reg_creg === 5;
+  }
+
+  function renderNetworkRoaming(state) {
+    var el = document.getElementById('om-net-roaming');
+    if (!el) return; // not on this page
+    el.textContent = networkRoamingActive(state) ? 'Yes' : 'No';
   }
 
   /* ── Signal Strength (Dashboard) ─────────────────────────────────────
