@@ -18,7 +18,14 @@ if [ -z "$at_cmd" ]; then
     exit 1
 fi
 
-req_id="$$_$(date +%s)"
+# PID + wall-clock second alone can collide: this device's PID space is
+# small enough that two concurrent callers (e.g. a browser tab and
+# ha_state.sh polling at the same moment) can land on the same PID+second
+# combo, letting one caller read the other's response or delete it out
+# from under it via the cleanup below. mktemp's random suffix (confirmed
+# live on this hardware's BusyBox build — no %N/nanosecond date support
+# to fall back on instead) closes that gap. Fixed 2026-08-19.
+req_id="$$_$(date +%s)_$(mktemp -u XXXXXX)"
 
 # Request format: req_id|timeout|command
 echo "${req_id}|${timeout}|${at_cmd}" > "$REQUEST_PIPE"
