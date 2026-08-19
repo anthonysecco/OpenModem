@@ -1129,7 +1129,16 @@
      comes back up (or the poll simply starts failing while services
      restart, which is expected and not treated as a hard error). */
   var UPDATE_POLL_MS = 5000;
+  // installer.sh has its own server-side crash resilience (see git
+  // history — "Make installer.sh and update.sh resilient to
+  // failed/crashed updates"), but this poll loop only had a running
+  // branch and a finished branch: if the running-marker were ever left
+  // set with nothing left actually running, the user was stuck on
+  // "Updating…" forever with no cancel or give-up message. Client-side
+  // safety net, not a replacement for the server-side fix. 2026-08-19.
+  var UPDATE_POLL_MAX_MS = 8 * 60 * 1000;
   var updatePollTimer = null;
+  var updatePollStartedAt = null;
 
   function setUpdateStatus(text) {
     var el = document.getElementById('om-update-status');
@@ -1141,6 +1150,12 @@
       .then(function (r) { return r.json(); })
       .then(function (data) {
         if (data.running) {
+          if (Date.now() - updatePollStartedAt > UPDATE_POLL_MAX_MS) {
+            clearInterval(updatePollTimer);
+            updatePollTimer = null;
+            setUpdateStatus('Update is taking much longer than expected — it may have hung. Check the modem directly, or reload this page once it responds again.');
+            return;
+          }
           setUpdateStatus('Updating… this can take a few minutes.');
         } else {
           clearInterval(updatePollTimer);
@@ -1173,6 +1188,7 @@
           return;
         }
         setUpdateStatus('Update started…');
+        updatePollStartedAt = Date.now();
         updatePollTimer = setInterval(pollUpdateStatus, UPDATE_POLL_MS);
       })
       .catch(function (err) {
