@@ -289,6 +289,7 @@
   function fmtBool(v) { return v === true ? 'Active' : v === false ? 'Inactive' : null; }
   function fmtBands(v) { return (typeof v === 'string' && v.length) ? v.split(':').join(', ') : v; }
   function fmtMhz(v) { return (typeof v === 'number') ? v + ' MHz' : null; }
+  function fmtTempC(v) { return (typeof v === 'number') ? v + '°C' : null; }
   function fmtMbps(v) { return (typeof v === 'number') ? v + ' Mbps' : null; }
   function fmtDnsMode(v) {
     return v === 'local' ? 'Local (Modem DNS)' : v === 'carrier' ? 'Carrier (PDP Context)' : null;
@@ -380,7 +381,8 @@
     lan_dns_mode: fmtDnsMode,
     wan_data_rx: fmtBytes, wan_data_tx: fmtBytes,
     sim_active_slot: fmtSimSlot,
-    device_uptime_s: fmtUptime
+    device_uptime_s: fmtUptime,
+    device_temp_c: fmtTempC
   };
 
   function renderState(state) {

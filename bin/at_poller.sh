@@ -207,7 +207,7 @@ qeng_bw_mhz() {
 # Missing/unparseable fields are left as "null" rather than guessed.
 
 collect_device() {
-    F_MODEL="null"; F_IMEI="null"; F_FIRMWARE="null"
+    F_MODEL="null"; F_IMEI="null"; F_FIRMWARE="null"; F_TEMP_C="null"
     _blob="$1"
 
     # GSN/QGMR/ATI("I") each answer with bare, unprefixed text, so it's
@@ -223,26 +223,18 @@ collect_device() {
     _ati=$(nth_block "$_blob" 3)
     F_MODEL=$(json_str "$(printf '%s' "$_ati" | grep -E '^RM[0-9A-Z-]+$' | head -1 | tr -d '\r')")
 
-    # +QTEMP:"sensor","value" per line -> [{"sensor":"...","c":N}, ...]
+    # AT+QTEMP reports ~17 sensors on this hardware (PA paths that read
+    # 0 when idle, a mmWave sensor that reads -273 since this module has
+    # none, several internal subsystem cores). Rather than surface all
+    # of them, take just "mdmss-0-usr" (the modem baseband subsystem
+    # core) — the sensor both QuecControl's and SimpleAdmin's own
+    # temperature logic converge on for this hardware: QuecControl's
+    # naive first-line pick happens to land elsewhere (a PA sensor,
+    # positional accident), but SimpleAdmin's deliberate fallback chain
+    # (XO_THERM -> MDM-CORE-USR -> MDMSS*) resolves to this same MDMSS
+    # sensor since the first two don't exist on this module.
     _qtemp=$(nth_block "$_blob" 4)
-    F_TEMPS="[]"
-    _lines=$(printf '%s' "$_qtemp" | grep '^+QTEMP:')
-    if [ -n "$_lines" ]; then
-        _json="["
-        _first=1
-        _oldifs="$IFS"
-        IFS='
-'
-        for _line in $_lines; do
-            _sensor=$(printf '%s' "$_line" | sed 's/^+QTEMP:"//; s/".*//')
-            _val=$(printf '%s' "$_line" | sed 's/^[^,]*,"//; s/"$//' | tr -d '\r')
-            [ "$_first" -eq 1 ] || _json="${_json},"
-            _json="${_json}{\"sensor\":$(json_str "$_sensor"),\"c\":$(json_num "$_val")}"
-            _first=0
-        done
-        IFS="$_oldifs"
-        F_TEMPS="${_json}]"
-    fi
+    F_TEMP_C=$(json_num "$(printf '%s' "$_qtemp" | grep '^+QTEMP:"mdmss-0-usr"' | head -1 | sed 's/^[^,]*,"//; s/"$//' | tr -d '\r')")
 }
 
 # Application Processor OS uptime — not an AT command at all, this is
@@ -1007,7 +999,7 @@ write_state() {
   "device_model": ${F_MODEL},
   "device_imei": ${F_IMEI},
   "device_firmware": ${F_FIRMWARE},
-  "device_temps": ${F_TEMPS},
+  "device_temp_c": ${F_TEMP_C},
   "device_uptime_s": ${F_UPTIME_S},
   "sim_status": ${F_SIM_STATUS},
   "sim_imsi": ${F_SIM_IMSI},
@@ -1095,7 +1087,7 @@ log_op "Starting — interval=${POLL_INTERVAL}s log_level=${LOG_LEVEL}"
 # round trip; nth_block() below then splits the merged response back
 # into each field's own block by fixed position. Block numbers, in
 # order:
-#  1 GSN(imei) 2 QGMR(fw) 3 I/ATI(model) 4 QTEMP(temps)
+#  1 GSN(imei) 2 QGMR(fw) 3 I/ATI(model) 4 QTEMP(temp)
 #  5 CPIN 6 CIMI 7 QCCID 8 QUIMSLOT
 #  9 CEREG 10 C5GREG 11 CREG
 #  12 QRSRP 13 QRSRQ 14 QSINR
