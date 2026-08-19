@@ -308,6 +308,45 @@
   }
   function fmtSimSlot(v) { return v === 1 ? 'SIM1' : v === 2 ? 'SIM2' : null; }
 
+  /* WAN throughput (Data Usage card's Receive/Send Rate rows) — the
+     modem only reports a running cumulative byte counter
+     (wan_data_rx/tx, from AT+QGDCNT?), never an instantaneous rate, so
+     this is derived client-side from the delta between two
+     consecutive state.sh samples. Divided by the poll interval itself
+     (state._poll_interval_s) rather than actual elapsed wall-clock
+     time between samples — same "trust POLL_INTERVAL as the cadence"
+     assumption the self-rescheduling fetch loop already makes, kept
+     simple rather than accounting for a delayed/skipped poll. */
+  function fmtThroughput(bitsPerSec) {
+    if (bitsPerSec >= 1e6) return (bitsPerSec / 1e6).toFixed(1) + 'Mbps';
+    return Math.round(bitsPerSec / 1e3) + 'Kbps';
+  }
+
+  var wanThroughputPrev = null;
+
+  function renderWanThroughput(state) {
+    var rxEl = document.getElementById('om-wan-rx-rate');
+    var txEl = document.getElementById('om-wan-tx-rate');
+    if (!rxEl && !txEl) return; // not on this page
+
+    var rx = state.wan_data_rx, tx = state.wan_data_tx, windowS = state._poll_interval_s;
+    var prev = wanThroughputPrev;
+    wanThroughputPrev = { rx: rx, tx: tx };
+
+    // No prior sample, missing data, or the counter went backwards
+    // (Reset Counter button, or a reboot) — no rate for this tick.
+    if (typeof rx !== 'number' || typeof tx !== 'number' || !windowS || !prev ||
+        typeof prev.rx !== 'number' || typeof prev.tx !== 'number' ||
+        rx < prev.rx || tx < prev.tx) {
+      if (rxEl) rxEl.textContent = '—';
+      if (txEl) txEl.textContent = '—';
+      return;
+    }
+
+    if (rxEl) rxEl.textContent = fmtThroughput((rx - prev.rx) * 8 / windowS);
+    if (txEl) txEl.textContent = fmtThroughput((tx - prev.tx) * 8 / windowS);
+  }
+
   /* System (Application Processor) uptime — the poller supplies raw
      seconds from /proc/uptime (collect_uptime() in at_poller.sh, not
      an AT command at all); the years/months/weeks/days/hours/minutes
@@ -1026,6 +1065,7 @@
           renderTopbarSignal(state);
           renderCellTooltips(state);
           renderStatusDots(state);
+          renderWanThroughput(state);
           pushSignalHistorySample(state);
           markRefreshedNow();
         }
