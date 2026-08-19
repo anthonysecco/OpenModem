@@ -287,6 +287,7 @@
   function fmtDbm(v) { return (v === null || v === undefined) ? null : v + ' dBm'; }
   function fmtReg(v) { return REG_LABELS[v] !== undefined ? REG_LABELS[v] : null; }
   function fmtBool(v) { return v === true ? 'Active' : v === false ? 'Inactive' : null; }
+  function fmtYesNo(v) { return v === true ? 'Yes' : v === false ? 'No' : null; }
   function fmtBands(v) { return (typeof v === 'string' && v.length) ? v.split(':').join(', ') : v; }
   function fmtMhz(v) { return (typeof v === 'number') ? v + ' MHz' : null; }
   function fmtTempC(v) {
@@ -416,6 +417,7 @@
     signal_nr_rsrp: fmtDbm, signal_nr_rsrq: fmtDbm, signal_nr_sinr: fmtDbm,
     cell_lte_band: fmtLteBandNum, cell_nr_band: fmtNrBandNum, cell_nr_type: fmtNrType,
     wan_active: fmtBool,
+    net_data_roaming: fmtYesNo,
     ca_total_bw_mhz: fmtMhz,
     ca_dl_estimated_mbps: fmtMbps, ca_dl_maximum_mbps: fmtMbps,
     band_pref_lte: fmtBands, band_pref_nr5g: fmtBands,
