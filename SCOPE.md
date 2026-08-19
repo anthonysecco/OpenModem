@@ -101,7 +101,38 @@ goal).
 - **Scout (ping/latency tests)** — QuecControl's `ping.sh`/`force_poll.sh`.
   Actively tests internet connectivity; dropped because OpenModem is
   narrowing away from features that assume a working internet connection.
-- **GPS location** — QuecControl's `api_gps.sh`. Dropped.
+- **GPS location** — QuecControl's `api_gps.sh`. Dropped. Revisited
+  2026-08-19 (a GPS tab with an enable/disable dropdown, position/
+  movement cards) but parked before implementation — kept here as a
+  future-enhancement candidate, not a closed decision. What's already
+  confirmed live against this hardware, so a later attempt doesn't have
+  to re-derive it:
+  - This module only speaks the `AT+QGPS*` family (`AT+CGNSSINFO`,
+    used on some other Quectel SKUs, returns plain `ERROR` here).
+    `AT+QGPS=1`/`AT+QGPS?`/`AT+QGPSEND` (lifecycle), `AT+QGPSLOC=2`
+    (position — format 2 returns decimal degrees directly, unlike
+    QuecControl's `=0` which returns raw NMEA `ddmm.mmmm` strings
+    needing manual conversion), and `AT+QGPSGNMEA="GGA"/"RMC"/"GSV"/
+    "GSA"/"VTG"/"GNS"` (`nmeasrc` was already `1`) all confirmed
+    working.
+  - No fix was ever obtained across two multi-minute live sessions —
+    one saw a single weak satellite (PRN 31, SNR 26), the other saw
+    zero — pointing at the GNSS antenna (connection or sky visibility),
+    not the command set. Worth checking the physical antenna before
+    building UI around live fix data.
+  - Design direction if picked back up: cards inspired by QuecControl's
+    `gps.html` (GPS Control/Position/Movement, optional Satellites
+    breakdown) but deliberately dropping its Location (Nominatim
+    reverse geocode) and Live Map (Leaflet/OSM tiles) cards — same
+    internet-dependency exclusion this section already applies
+    elsewhere, unless explicitly carved out like the WAN Internet card
+    below. `AT+QGPSLOC`/`AT+QGPSGNMEA="GSV"` would extend the main
+    poller's chained `ALL_CMD` only while GPS is enabled (tracked via a
+    cheap local flag file, not a live `AT+QGPS?` poll), ordered last —
+    GSV before QGPSLOC specifically, since QGPSLOC is the one that
+    legitimately errors on no-fix and GSV reliably returns `OK` even
+    with zero satellites — same chain-abort-ordering fix already
+    applied to CNUM/nr5g_mimo_info.
 - **Explicit exception: WAN's "Internet" card** (ISP, ASN, hostname,
   IPv4, IPv6, Location via `ipinfo.io`) — internet-dependent by
   definition, which is exactly the category this section otherwise
