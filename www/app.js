@@ -350,20 +350,17 @@
 
   /* System (Application Processor) uptime — the poller supplies raw
      seconds from /proc/uptime (collect_uptime() in at_poller.sh, not
-     an AT command at all); the years/months/weeks/days/hours/minutes
-     breakdown happens here, same split as fmtBytes above. Leading
-     zero units are skipped entirely (a freshly-booted device reads
-     "12 minutes", not "0 years, 0 months, ..., 12 minutes"); units
-     are the calendar-approximate kind uptime displays conventionally
-     use (year=365d, month=30d), not calendar-exact, since an uptime
-     counter has no real calendar anchor to be exact against anyway. */
+     an AT command at all); the days/hours/minutes breakdown happens
+     here, same split as fmtBytes above. Leading zero units are
+     skipped entirely (a freshly-booted device reads "12m", not
+     "0d 0h 12m"). Compact abbreviated form (e.g. "22d 20h 46m")
+     rather than spelled-out units or a week/month/year rollup — this
+     is a status-row value, not prose, and days-not-weeks is the
+     conventional uptime-display unit (`uptime`, router admin UIs). */
   var UPTIME_UNITS = [
-    { label: 'year', secs: 365 * 24 * 3600 },
-    { label: 'month', secs: 30 * 24 * 3600 },
-    { label: 'week', secs: 7 * 24 * 3600 },
-    { label: 'day', secs: 24 * 3600 },
-    { label: 'hour', secs: 3600 },
-    { label: 'minute', secs: 60 }
+    { label: 'd', secs: 24 * 3600 },
+    { label: 'h', secs: 3600 },
+    { label: 'm', secs: 60 }
   ];
   function fmtUptime(v) {
     if (typeof v !== 'number' || v < 0) return null;
@@ -372,9 +369,9 @@
     UPTIME_UNITS.forEach(function (u) {
       var n = Math.floor(remaining / u.secs);
       remaining -= n * u.secs;
-      if (n > 0) parts.push(n + ' ' + u.label + (n === 1 ? '' : 's'));
+      if (n > 0) parts.push(n + u.label);
     });
-    return parts.length ? parts.join(', ') : 'Less than a minute';
+    return parts.length ? parts.join(' ') : '<1m';
   }
   /* Standard industry nominal band frequency (e.g. "B13" = "700 MHz
      band"), NOT the precise DL-low-edge math LTE_BAND_TABLE/nrArfcnToMhz
