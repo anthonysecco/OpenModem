@@ -44,6 +44,20 @@ fi
 run_at() { "$AT_CMD" "$1" "${2:-8}" 2>/dev/null | tr -d '\r'; }
 at_ok()  { echo "$1" | grep -q '^OK'; }
 
+# Digits and commas only — the one format this endpoint's docstring
+# promises ("lte_bands=2,4,12"). Unlike every other action script here
+# (sim_action.sh/network_action.sh/lan_action.sh's is_ipv4/is_mac,
+# at_cmd.sh's metacharacter block), this script used to pass
+# LTE_BANDS/NR_BANDS straight into an AT command string after only a
+# comma/colon punctuation swap — no character allowlist at all, so
+# ?lte_bands=2;+QPOWD reached the modem as a second chained AT command
+# (this device chain-executes ;-separated commands, same mechanism
+# at_poller.sh's own ALL_CMD relies on). Confirmed exploitable, fixed
+# 2026-08-19.
+is_band_list() {
+    echo "$1" | grep -qE '^[0-9]+(,[0-9]+)*$'
+}
+
 # Colon-separated band list from a +QNWPREFCFG response, empty if the
 # modem returned a hex bitmask instead (means "all bands").
 parse_band_list() {
@@ -68,6 +82,15 @@ fi
 if [ "$ACTION" = "set" ]; then
     if [ -z "$LTE_BANDS" ] && [ -z "$NR_BANDS" ]; then
         echo '{"success":false,"error":"No bands specified"}'
+        exit 1
+    fi
+
+    if [ -n "$LTE_BANDS" ] && ! is_band_list "$LTE_BANDS"; then
+        echo '{"success":false,"error":"Invalid lte_bands"}'
+        exit 1
+    fi
+    if [ -n "$NR_BANDS" ] && ! is_band_list "$NR_BANDS"; then
+        echo '{"success":false,"error":"Invalid nr_bands"}'
         exit 1
     fi
 
