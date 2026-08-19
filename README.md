@@ -33,6 +33,10 @@ what's in/out and why.
 - **`installer.sh`** — deploys the project onto the modem's filesystem
   (typically under `/usrdata/`) and installs systemd (or init.d) services
   for the broker, poller, and httpd.
+- **`uninstall.sh`** — reverses `installer.sh`: stops/removes the
+  services, the firewall/TTL rules it applied, and everything under
+  `/usrdata/openmodem`, leaving the device as it was before OpenModem
+  was installed.
 
 ## Development
 
