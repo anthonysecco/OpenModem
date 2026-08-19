@@ -1012,6 +1012,15 @@
   var netRefreshTimer = null;
   var lastSeenNetPolledAt = null;
 
+  // Latest successful net_state.sh payload, cached (not just diffed)
+  // so renderStatusHealth() below can read ping/connectivity-check
+  // status regardless of which poll loop (this one, or refreshState's
+  // own state.sh loop) most recently changed. Updated on every
+  // successful fetch, not gated on _polled_at like the render calls
+  // below — a stale-but-present netState is still useful input for the
+  // health card even on a poll cycle with no new data to render.
+  var lastNetState = null;
+
   function scheduleNetRefresh(delayMs) {
     if (netRefreshTimer) clearTimeout(netRefreshTimer);
     netRefreshTimer = setTimeout(refreshNetState, delayMs);
@@ -1029,11 +1038,17 @@
     fetch('/cgi-bin/net_state.sh')
       .then(function (r) { return r.json(); })
       .then(function (netState) {
+        if (!netState._error) lastNetState = netState;
         if (!netState._error && netState._polled_at !== lastSeenNetPolledAt) {
           lastSeenNetPolledAt = netState._polled_at;
           renderConnectivityCard(netState);
           pushNetHistorySample(netState);
           renderTopbarConnectivity(netState);
+          // Ping/connectivity-check status factor into the Status card
+          // too, so it reacts to this poll loop as well as state.sh's —
+          // re-render with whatever AT state is currently cached rather
+          // than waiting for the next state.sh cycle.
+          safeRender(renderStatusHealth, lastAtState);
         }
         scheduleNetRefresh(NET_FAST_POLL_MS);
       })
@@ -1063,6 +1078,12 @@
   var FAST_POLL_MS = 1000;
   var refreshTimer = null;
   var lastSeenPolledAt = null;
+
+  // Latest successful state.sh payload, cached so refreshNetState()'s
+  // loop can re-render the Status card (which needs both AT state and
+  // net state) when connectivity data changes, without waiting for
+  // this loop's own next cycle — same reasoning as lastNetState above.
+  var lastAtState = null;
 
   function scheduleRefresh(delayMs) {
     if (refreshTimer) clearTimeout(refreshTimer);
@@ -1094,6 +1115,7 @@
           statusEl.textContent = state._error ? state._message : 'Connected';
           statusEl.classList.toggle('bad', !!state._error);
         }
+        if (!state._error) lastAtState = state;
         if (!state._error && state._polled_at !== lastSeenPolledAt) {
           lastSeenPolledAt = state._polled_at;
           safeRender(renderState, state);
@@ -1922,18 +1944,40 @@
      Quick-glance "why don't I have a connection" answer — walks a
      fixed priority list of if/then checks and surfaces the single
      worst one, rather than listing every issue at once (a beginner
-     wants one clear answer, not a checklist to interpret). Order
-     matters and is deliberate: a SIM problem makes registration/signal
-     readings meaningless, so it's checked first; a registration
-     problem in turn makes "weak signal" moot (you can have full bars
-     and still be Denied); signal strength only matters once you know
-     you're actually registered; WAN/roaming are last since they're the
-     mildest of the surfaced conditions. Reuses the same
-     RSRP_ZONES/sigZoneIndex/currentRsrp/networkRoamingActive logic the
-     Signal card and Network card already use — this card doesn't
-     introduce a second source of truth for any of those, only a
-     combined read of them. */
-  function computeHealthStatus(state) {
+     wants one clear answer, not a checklist to interpret). Exhaustive
+     by design: every field that could plausibly explain "why don't I
+     have a connection" gets its own check — SIM, registration
+     (denied/not registered), signal strength, a full ping+204 outage,
+     each connectivity check individually, WAN active, latency, jitter,
+     estimated bandwidth, and roaming — not just the handful checked in
+     the first pass.
+
+     Order is deliberate, worst/most-fundamental first: a SIM problem
+     makes every reading below it meaningless, so it's checked first;
+     denied/not-registered next for the same reason; a full ping+204
+     outage while registered points straight at a broken data path
+     (APN/carrier-side), which is more actionable than "signal is
+     weak" so it's checked before signal. Latency/jitter/estimated
+     bandwidth are quality-degradation checks, not outright failures,
+     so they sit below the binary connectivity checks; Roaming is
+     last since it's informational (cost heads-up), not a problem.
+
+     Severity: reserved 'critical' for states that mean the modem
+     fundamentally cannot reach the network at all (no/bad SIM, denied,
+     not registered, total ping+204 outage). Everything else — signal,
+     a single connectivity check failing, WAN inactive, latency/
+     jitter/bandwidth in their zone table's worst (red) tier, roaming —
+     is 'warning': the same red-bucket zones used elsewhere on the site
+     (RSRP_ZONES/LATENCY_ZONES/JITTER_ZONES/SPEED_ZONES) are the
+     trigger, but landing in one doesn't necessarily mean "broken", so
+     it's flagged rather than escalated to critical. Reuses those same
+     zone tables and currentRsrp/networkRoamingActive — this card
+     doesn't introduce a second source of truth for any of them. Reads
+     netState (net_state.sh's ping/204 fields) alongside state
+     (state.sh's AT-derived fields) since a full picture needs both. */
+  function computeHealthStatus(state, netState) {
+    netState = netState || {};
+
     if (state.sim_status === null || state.sim_status === undefined) {
       return {
         level: 'critical',
@@ -1968,17 +2012,27 @@
       };
     }
 
+    var icmpStatus = netState.icmp_status;
+    var check204Status = netState.check204_status;
+    if (icmpStatus === 'offline' && check204Status === 'offline') {
+      return {
+        level: 'critical',
+        title: 'No Internet',
+        detail: 'Registered on the network, but both connectivity checks are failing — the data connection isn\'t reaching the internet.'
+      };
+    }
+
     var rsrp = currentRsrp(state);
     if (typeof rsrp === 'number') {
-      var zoneIdx = sigZoneIndex(rsrp, RSRP_ZONES);
-      if (zoneIdx === RSRP_ZONES.length - 1) {
+      var rsrpLabel = sigZoneLabel(rsrp, RSRP_ZONES);
+      if (rsrpLabel === 'Critical') {
         return {
-          level: 'critical',
+          level: 'warning',
           title: 'Critical Signal',
           detail: 'Signal strength is critically weak (' + rsrp + ' dBm). Reposition the modem/antenna for better reception.'
         };
       }
-      if (zoneIdx === RSRP_ZONES.length - 2) {
+      if (rsrpLabel === 'Poor') {
         return {
           level: 'warning',
           title: 'Weak Signal',
@@ -1987,11 +2041,53 @@
       }
     }
 
+    if (icmpStatus === 'offline') {
+      return {
+        level: 'warning',
+        title: 'Ping Offline',
+        detail: 'The ping connectivity check is failing, even though the data connection is active.'
+      };
+    }
+    if (check204Status === 'offline') {
+      return {
+        level: 'warning',
+        title: 'Connectivity Check Failed',
+        detail: 'The HTTP connectivity check is failing, even though the data connection is active.'
+      };
+    }
+
     if (state.wan_active === false) {
       return {
         level: 'warning',
         title: 'No Data Connection',
         detail: 'Registered on the network, but the data connection (WAN) isn\'t active. Check the APN on the WAN page.'
+      };
+    }
+
+    var latency = netState.icmp_avg_rtt_ms;
+    if (typeof latency === 'number' && ascZoneLabel(latency, LATENCY_ZONES) === 'Critical') {
+      return {
+        level: 'warning',
+        title: 'High Latency',
+        detail: 'Latency is critically high (' + latency + ' ms). Calls, video, and gaming will likely suffer.'
+      };
+    }
+
+    var jitter = netState.icmp_jitter_ms;
+    if (typeof jitter === 'number' && ascZoneLabel(jitter, JITTER_ZONES) === 'Critical') {
+      return {
+        level: 'warning',
+        title: 'High Jitter',
+        detail: 'Jitter is critically high (' + jitter + ' ms). Calls and video may stutter even if speed looks fine.'
+      };
+    }
+
+    var estSpeed = state.ca_dl_estimated_mbps;
+    if (typeof estSpeed === 'number' && sigZoneLabel(estSpeed, SPEED_ZONES) === 'Critical') {
+      return {
+        level: 'warning',
+        title: 'Low Estimated Bandwidth',
+        detail: 'Estimated downlink speed is critically low (' + estSpeed + ' Mbps) based on current carrier bandwidth.'
       };
     }
 
@@ -2003,20 +2099,19 @@
       };
     }
 
-    return {
-      level: 'good',
-      title: 'All Good',
-      detail: 'Registered, signal is healthy, and the data connection is active.'
-    };
+    // No detail text here by design — "All Good" is the one state a
+    // beginner doesn't need an explanation for, and every other branch
+    // above already supplies one.
+    return { level: 'good', title: 'All Good', detail: '' };
   }
 
   function renderStatusHealth(state) {
     var iconEl = document.getElementById('om-status-icon');
     var titleEl = document.getElementById('om-status-title');
     var detailEl = document.getElementById('om-status-detail');
-    if (!iconEl) return; // not on this page
+    if (!iconEl || !state) return; // not on this page, or no AT state cached yet
 
-    var health = computeHealthStatus(state);
+    var health = computeHealthStatus(state, lastNetState);
     var color = STATUS_COLORS[health.level];
 
     iconEl.innerHTML = statusIconSvg(health.level);
@@ -2024,6 +2119,7 @@
     titleEl.textContent = health.title;
     titleEl.style.color = color;
     detailEl.textContent = health.detail;
+    detailEl.style.display = health.detail ? '' : 'none';
   }
 
   /* ── Topbar signal indicator (every page) ────────────────────────────
