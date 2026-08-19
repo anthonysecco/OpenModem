@@ -33,19 +33,19 @@
       <div class="om-card">
         <h2>Network Mode</h2>
         <div class="om-toggle-group" id="om-lan-mode-toggle">
-          <button type="button" data-mode="nat">NAT</button>
-          <button type="button" data-mode="passthrough">IP Passthrough</button>
+          <button type="button" data-mode="nat" title="Standard routing — devices behind this modem share one IP address, like a typical home router.">NAT</button>
+          <button type="button" data-mode="passthrough" title="Gives one downstream device the modem's own public IP directly, instead of sharing it — used when that device needs to do its own NAT/firewall.">IP Passthrough</button>
         </div>
         <p class="om-note">Changing this may briefly disconnect the current WAN connection.</p>
         <div class="om-form-row" id="om-lan-mac-row" style="display:none;">
-          <label for="om-lan-mac">Passthrough Target MAC</label>
+          <label for="om-lan-mac" class="om-hint" title="The MAC address of the one downstream device that should receive the public IP. Leave the default broadcast address unless you have a specific device's MAC to target.">Passthrough Target MAC</label>
           <input type="text" id="om-lan-mac" placeholder="FF:FF:FF:FF:FF:FF" value="FF:FF:FF:FF:FF:FF" autocomplete="off">
         </div>
 
         <h2>DNS Settings</h2>
         <div class="om-toggle-group" id="om-lan-dns-toggle">
-          <button type="button" data-dns="local">Local</button>
-          <button type="button" data-dns="carrier">Carrier</button>
+          <button type="button" data-dns="local" title="Use the modem's own DNS resolver.">Local</button>
+          <button type="button" data-dns="carrier" title="Use your carrier's DNS servers directly.">Carrier</button>
         </div>
         <p class="om-note">Takes effect after reboot.</p>
       </div>
