@@ -22,6 +22,7 @@ to `—`/"Unable to fetch…" rather than breaking the page.
 | Cloudflare | `https://1.1.1.1/cdn-cgi/trace` | `bin/net_poller.sh` (`geo_loop`) | Every 300s (5 min) | Dashboard "Cloudflare PoP" field |
 | ipinfo.io | `https://ipinfo.io/json` | `bin/net_poller.sh` (`geo_loop`) | Every 300s (5 min) | Dashboard "IP Geo" field |
 | ipinfo.io | `https://ipinfo.io/json` | `www/cgi-bin/internet_info.sh` | On-demand — once per WAN page load, not on a timer | WAN page's Internet card (ISP/ASN/hostname/IP/location) |
+| Cloudflare | ICMP ping (DF bit, sizes 1200–MTU) to `1.1.1.1` (same `NET_ICMP_TARGET`) | `www/cgi-bin/mtu_test.sh` | On-demand only — WAN page's "Test MTU" button | WAN page's Path MTU section (configured vs. verified MTU) |
 | GitHub (raw.githubusercontent.com) | `https://raw.githubusercontent.com/anthonysecco/OpenModem/<ref>/…` | `installer.sh` (fetched by hand or via `www/cgi-bin/update.sh`) | On-demand only — manual `curl \| sh`, or the System page's Update button | Install/update: downloads `installer.sh` + every file under `bin/`, `config/`, `www/` |
 
 ## Detail
@@ -86,6 +87,19 @@ refreshes it. Backs the WAN page's Internet card (ISP, ASN, hostname,
 public IPv4/IPv6, city/region/country). Uses an 8-second `curl` timeout
 (`-m 8`); on failure the card shows "Unable to fetch public IP info"
 rather than stale data.
+
+### Cloudflare — path MTU probe (WAN page)
+
+`www/cgi-bin/mtu_test.sh` reuses `NET_ICMP_TARGET` (`1.1.1.1` by default,
+same host `net_poller.sh`'s `icmp_loop` already pings) but is a
+**separate**, on-demand set of pings, not part of that background loop —
+fired only when the WAN page's "Test MTU" button is clicked. Sends
+`ping -M do -s <size>` (DF bit set) at a handful of sizes between 1200
+bytes and the WAN interface's own configured MTU, binary-searching for
+the largest one that gets a real reply, to distinguish "what the modem's
+interface is configured for" from "what actually round-trips over the
+carrier network." A handful of 2-second-timeout pings, a few hundred ms
+to a couple seconds total — not on any recurring interval.
 
 This is intentionally not deduplicated with `geo_loop`'s own ipinfo.io
 call above — they serve two different cards on two different pages with

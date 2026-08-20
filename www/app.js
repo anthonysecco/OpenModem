@@ -3076,6 +3076,42 @@
     }
   }
 
+  /* ── Path MTU (WAN page, TTL Spoofing card) ──────────────────────────
+     Button-triggered, like Reset Counter — a handful of pings (a few
+     hundred ms to a couple seconds), not disruptive enough to need a
+     confirm dialog. cgi-bin/mtu_test.sh reports both the WAN interface's
+     configured MTU and a binary-searched "verified" MTU (largest DF-bit
+     ping that actually got a reply) — see that script's header for why
+     both numbers matter. */
+  function initWanMtuTest() {
+    var btn = document.getElementById('om-wan-mtu-test');
+    if (!btn) return; // not on this page
+
+    var configuredEl = document.getElementById('om-wan-mtu-configured');
+    var effectiveEl = document.getElementById('om-wan-mtu-effective');
+    var statusEl = document.getElementById('om-wan-mtu-status');
+
+    btn.addEventListener('click', function () {
+      btn.disabled = true;
+      statusEl.textContent = 'Testing…';
+      fetch('/cgi-bin/mtu_test.sh')
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+          if (!data.success) {
+            statusEl.textContent = 'Failed: ' + data.error;
+            return;
+          }
+          configuredEl.textContent = data.configured_mtu + ' bytes';
+          effectiveEl.textContent = (data.effective_path_mtu != null)
+            ? (data.effective_path_mtu + ' bytes')
+            : 'Inconclusive';
+          statusEl.textContent = data.note || '';
+        })
+        .catch(function (err) { statusEl.textContent = 'Failed: ' + err; })
+        .finally(function () { btn.disabled = false; });
+    });
+  }
+
   /* ── Internet card (WAN page) ────────────────────────────────────────
      ipinfo.io is queried by the modem itself (www/cgi-bin/
      internet_info.sh, curl over the modem's own WAN connection) and
@@ -3219,6 +3255,7 @@
     initCellularApplyBar();
     initLanConfig();
     initWanConfig();
+    initWanMtuTest();
     initWanInternet();
     initSimSlotToggle();
   });

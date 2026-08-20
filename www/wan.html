@@ -63,6 +63,12 @@
           <label for="om-wan-ttl">TTL / Hop Limit (0 = disabled, 1–255)</label>
           <input type="number" id="om-wan-ttl" min="0" max="255" placeholder="0">
         </div>
+
+        <h2 class="om-hint" title="Sends increasing-size pings with the Don't Fragment bit set to check what actually reaches the internet, not just what the modem's interface is configured for.">Path MTU</h2>
+        <div class="om-row"><span class="om-row-label">Configured MTU</span><span id="om-wan-mtu-configured">—</span></div>
+        <div class="om-row"><span class="om-row-label">Verified Path MTU</span><span id="om-wan-mtu-effective">—</span></div>
+        <button id="om-wan-mtu-test" type="button">Test MTU</button>
+        <p id="om-wan-mtu-status" class="om-note"></p>
       </div>
 
       <div class="om-card om-card-wide">
