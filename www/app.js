@@ -2478,14 +2478,17 @@
     return bwMhz ? bwMhz + ' MHz' : '—';
   }
 
-  /* mimo_layers is at_poller.sh's real per-carrier reading from
-     AT+QNWCFG="lte_mimo_info"/"nr5g_mimo_info" (null when polling that
-     carrier failed — see compute_ca_throughput's header comment), shown
-     as "NxN" since the field reports active DL spatial layers and this
-     hardware's live behavior (confirmed by chaining a real download
-     during testing) is symmetric — 0/1/2/4 layers observed, rendered as
-     0x0/1x1/2x2/4x4. Its own column now, previously folded into BW's
-     cell text. */
+  /* mimo_layers is at_poller.sh's highest-ever-observed layer count for
+     this exact carrier (PCI+EARFCN), not the instantaneous
+     AT+QNWCFG="lte_mimo_info"/"nr5g_mimo_info" reading — that live
+     reading bounces with every idle/loaded transition (confirmed by
+     chaining a real download during testing: 0/1/2/4 layers observed
+     rising and falling with load), so the server tracks a max-observed
+     cache per carrier instead (see update_mimo_max_cache's header
+     comment) and this field is null until that cache has at least one
+     observation for the carrier. Shown as "NxN" since the field reports
+     active DL spatial layers and this hardware's behavior is symmetric.
+     Its own column now, previously folded into BW's cell text. */
   function fmtMimoCell(mimoLayers) {
     return (typeof mimoLayers === 'number' && mimoLayers >= 0) ? mimoLayers + 'x' + mimoLayers : '—';
   }
