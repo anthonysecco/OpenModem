@@ -399,6 +399,43 @@ Confirmed on an actual RM520N-GL (2026-08-14), not assumed:
   wasn't asked for here and is hard to make safely reversible) — revisit
   if actually needed.
 
+## Future enhancement candidates (2026-08-20)
+
+Not started, not scoped in detail — parked here as candidates rather than
+closed decisions, same status as GPS above.
+
+- **Connectivity watchdog / auto-recovery.** `bin/net_poller.sh` already
+  tracks consecutive `check204` failures for the dashboard pill but never
+  acts on them. Idea: an escalation ladder — after N consecutive failures,
+  radio-cycle (`AT+CFUN=0` then `AT+CFUN=1`); after M, a full reboot
+  (`AT+CFUN=1,1`). Reuses data already being collected; the main design
+  question is where the thresholds/backoff live (`openmodem.conf`, most
+  likely) and how to avoid a reboot loop if the failure is upstream of the
+  modem entirely (e.g. a dead SIM/plan) rather than something a
+  radio-cycle can fix.
+- **Webhook notifications on state transitions.** `www/cgi-bin/
+  internet_info.sh` already proves the pattern of the modem itself
+  `curl`-ing out to a third party (documented in `DEPENDENCIES.md`). Idea:
+  a `NOTIFY_WEBHOOK_URL` in `openmodem.conf` that POSTs on WAN down/up,
+  signal-poor, high-temp, or TTL-rule-reapplied events. Would need a new
+  `DEPENDENCIES.md` row once built, same as the ipinfo.io/gstatic entries.
+- **Config backup/restore.** Export `openmodem.conf` + band lock + LAN
+  config as a single JSON blob from the System page, importable back in.
+  Useful before/after `update.sh` runs, or to replicate settings to a
+  second unit. No AT-side risk — this is read/write of local config state
+  only.
+- **Auth in front of the CGI action endpoints.** Currently nothing in
+  `www/cgi-bin/` requires authentication — checked, there's no
+  auth/password/htpasswd handling anywhere in the CGI layer. Probably
+  fine on a trusted LAN, but worth an explicit decision rather than an
+  oversight, especially since `bin/apply_iptables.sh` already gates port
+  8080 to specific interfaces (`bridge0`/`eth0`/`tailscale0`) — a basic
+  HTTP auth prompt in front of the action endpoints (band lock, radio
+  power, reboot, TTL, LAN mode) would sit behind a boundary that already
+  exists rather than needing new plumbing. Read-only endpoints
+  (`state.sh`, `net_state.sh`, `history_*.sh`) probably don't need the
+  same gate.
+
 ## Frontend wiring
 
 `www/app.js` has a generic `data-field="key"` binding system: any
