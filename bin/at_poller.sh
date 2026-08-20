@@ -627,7 +627,8 @@ update_mimo_max_cache() {
             if (now - last_seen > ttl) continue
             print key "," layers "," last_seen >> tmp_file
             split(key, kf, "_")
-            out = out (out == "" ? "" : "|") kf[1] "," kf[2] "," layers
+            sep = (out == "" ? "" : "|")
+            out = out sep kf[1] "," kf[2] "," layers
         }
         print out
     }
