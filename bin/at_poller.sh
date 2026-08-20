@@ -17,6 +17,7 @@ CONF_FILE="/usrdata/openmodem/config/openmodem.conf"
 LOG_LEVEL=1
 POLL_INTERVAL=10
 HISTORY_WINDOW_SAMPLES=60
+MIMO_MAX_TTL_S=3600
 [ -f "$CONF_FILE" ] && . "$CONF_FILE"
 
 AT_CMD_BIN="/usrdata/openmodem/bin/at_command.sh"
@@ -27,6 +28,7 @@ HISTORY_FILE="$RUN_DIR/history_signal.json"
 HISTORY_SCRATCH="$RUN_DIR/history_signal_scratch"
 HISTORY_FILE_WAN="$RUN_DIR/history_wan.json"
 HISTORY_SCRATCH_WAN="$RUN_DIR/history_wan_scratch"
+MIMO_CACHE="$RUN_DIR/mimo_max_cache"
 LOG_MAX_BYTES=262144
 LOG_SLOTS=2
 
@@ -559,6 +561,77 @@ build_mimo_lookup() {
     printf '%s' "$_out"
 }
 
+# Turns build_mimo_lookup()'s live "pci,freq,layers|..." reading into a
+# "pci,freq,max_layers|..." reading of the highest layer count ever
+# observed on each exact carrier (keyed by pci_freq, same key
+# compute_ca_throughput's mimo_known lookup already uses), persisted
+# across poll cycles in MIMO_CACHE so the throughput math isn't at the
+# mercy of a single bouncy live sample (see that function's header
+# comment). Persisted to a file, not a plain shell global like
+# _WAN_PREV_RX/TX/T, so the learned max survives a poller restart, not
+# just the current process lifetime.
+#
+# A key is only re-stamped with the current time when it's actually
+# present in this cycle's live reading — an idle-but-still-connected
+# carrier (SCC reporting layers=0, or simply absent from this cycle's
+# QNWCFG output) does NOT refresh its last-seen time, so a carrier that's
+# gone idle still ages toward eviction rather than being kept alive
+# forever by cycles that never touch it. MIMO_MAX_TTL_S (default 3600s /
+# 60min, config/openmodem.conf) is how long a carrier can go unobserved
+# before it's dropped, on the assumption the device has moved to a
+# different cell/site rather than merely gone quiet.
+#
+# Input:  $1 = live lookup, build_mimo_lookup()'s output
+#         $2 = current cycle's epoch seconds (main loop's $_start)
+# Output: "pci,freq,max_layers|..." on stdout, one entry per still-live
+#         cache key (same shape as $1, for compute_ca_throughput's layers
+#         math — NOT the same as $1's per-cycle live values)
+update_mimo_max_cache() {
+    [ -f "$MIMO_CACHE" ] || : > "$MIMO_CACHE"
+    awk -v live="$1" -v now="$2" -v ttl="$MIMO_MAX_TTL_S" -v tmp_file="${MIMO_CACHE}.tmp" '
+    BEGIN {
+        printf "" > tmp_file
+        close(tmp_file)
+        n = split(live, entries, "|")
+        for (i = 1; i <= n; i++) {
+            if (entries[i] == "") continue
+            m = split(entries[i], f, ",")
+            if (m < 3 || f[1] == "" || f[2] == "" || f[3] !~ /^[0-9]+$/) continue
+            key = f[1] "_" f[2]
+            v = f[3] + 0
+            if (!(key in live_max) || v > live_max[key]) live_max[key] = v
+        }
+    }
+    NF > 0 {
+        m = split($0, c, ",")
+        if (m < 3) next
+        key = c[1]
+        cache_layers[key] = c[2] + 0
+        cache_seen[key] = c[3] + 0
+        have_cache[key] = 1
+    }
+    END {
+        for (key in have_cache) all[key] = 1
+        for (key in live_max) all[key] = 1
+        out = ""
+        for (key in all) {
+            layers = (key in cache_layers) ? cache_layers[key] : 0
+            last_seen = (key in cache_seen) ? cache_seen[key] : 0
+            if (key in live_max) {
+                if (live_max[key] > layers) layers = live_max[key]
+                last_seen = now
+            }
+            if (now - last_seen > ttl) continue
+            print key "," layers "," last_seen >> tmp_file
+            split(key, kf, "_")
+            out = out (out == "" ? "" : "|") kf[1] "," kf[2] "," layers
+        }
+        print out
+    }
+    ' "$MIMO_CACHE"
+    mv "${MIMO_CACHE}.tmp" "$MIMO_CACHE"
+}
+
 collect_carrier_aggregation() {
     F_CA_COUNT="0"
     F_CA_BANDS="[]"
@@ -566,6 +639,7 @@ collect_carrier_aggregation() {
     F_CA_DL_EST_MBPS="null"
     F_CA_DL_MAX_MBPS="null"
 
+    _now="$2"
     _ca=$(nth_block "$1" 18)
     _lines=$(printf '%s' "$_ca" | grep '^+QCAINFO:')
     [ -z "$_lines" ] && return
@@ -628,8 +702,9 @@ collect_carrier_aggregation() {
     F_CA_BANDS="$_raw"
 
     _mimo_lookup=$(build_mimo_lookup "$1")
+    _mimo_max_lookup=$(update_mimo_max_cache "$_mimo_lookup" "$_now")
 
-    _result=$(compute_ca_throughput "$_raw" "$_mimo_lookup")
+    _result=$(compute_ca_throughput "$_raw" "$_mimo_lookup" "$_mimo_max_lookup")
     [ -z "$_result" ] && return
     F_CA_BANDS=$(printf '%s\n' "$_result" | sed -n '1p')
     F_CA_DL_EST_MBPS=$(printf '%s\n' "$_result" | sed -n '2p')
@@ -687,6 +762,18 @@ collect_carrier_aggregation() {
 #      individually rounded to 46+6+10=62 — confirmed live and fixed.)
 #   3. aggregate maximum downlink, Mbps — same fix, sum of dl_maximum_mbps
 #   4. aggregate bandwidth, MHz
+#
+# $3 (mimo_max_lookup, from update_mimo_max_cache()) is what actually
+# drives the "layers" term in the throughput formula below now — the
+# highest layer count ever observed on this exact carrier within the
+# cache's TTL window, still clamped to lte_max_layers()/nr_max_layers()'s
+# static per-band ceiling as a physical sanity cap (a glitched live
+# reading can't inflate the cached max past what the band/modem could
+# ever actually do). A carrier with no cache entry yet (never observed,
+# or evicted) falls back to that static ceiling alone, same as before
+# this cache existed. mimo_lookup ($2) is unchanged: still only the
+# instantaneous live reading, still only feeding the "mimo_layers" JSON
+# display field (the CA table's live "(NxN)" badge), not the math.
 compute_ca_throughput() {
     printf '%s' "$1" | awk \
         -v fb_lte_sinr="${F_LTE_SINR:-null}" \
@@ -694,6 +781,7 @@ compute_ca_throughput() {
         -v fb_lte_rsrq="${F_LTE_RSRQ:-null}" \
         -v fb_nr_rsrq="${F_NR_RSRQ:-null}" \
         -v mimo_lookup="${2:-}" \
+        -v mimo_max_lookup="${3:-}" \
         -v pcc_ul_bw_mhz="${F_CELL_LTE_UL_BW_MHZ:-null}" \
     '
     function lte_bw_mhz(rb,    n) {
@@ -790,14 +878,17 @@ compute_ca_throughput() {
     # ceiling, not a live per-site reading — it does not know whether
     # the specific tower a device is camped on actually deploys 4
     # antennas (many real macro sites run 2x2 even on a 4x4-capable
-    # band). Replaces the live AT+QNWCFG="lte_mimo_info"/"nr5g_mimo_info"
-    # reading as the throughput math layer-count input by request,
-    # trading that live (but genuinely bouncy — confirmed live: layers
-    # rising and falling with real load during testing) signal for a
-    # stable, capability-based number. mimo_layers in the JSON output
-    # below still reports the live reading unchanged (for the CA table
-    # per-carrier "(NxN)" badge) — only the throughput formulas below
-    # stop using it.
+    # band).
+    #
+    # No longer the throughput math layer-count input directly (that
+    # was tried — see the update_mimo_max_cache header comment for why
+    # the live AT+QNWCFG="lte_mimo_info"/"nr5g_mimo_info" reading alone
+    # was too bouncy to use as-is, and this static ceiling too
+    # optimistic on sites that do not actually deploy the band max
+    # antenna count). Now only a sanity cap on the cached
+    # highest-observed live reading (see the ml_key/mimo_max block
+    # below) — a glitched live sample cannot inflate a carrier assumed
+    # layers past what the band/modem could ever physically support.
     function lte_max_layers(b) {
         if (b==1||b==2||b==3||b==4||b==7||b==25||b==30||b==38||b==40||
             b==41||b==42||b==43||b==48||b==66) return 4
@@ -841,6 +932,14 @@ compute_ca_throughput() {
             n_mf = split(ml_entries[mi], mf, ",")
             if (n_mf >= 3 && mf[1] != "" && mf[2] != "") {
                 mimo_layers[mf[1] "_" mf[2]] = mf[3]
+            }
+        }
+
+        n_mm = split(mimo_max_lookup, mm_entries, "|")
+        for (mi = 1; mi <= n_mm; mi++) {
+            n_mf = split(mm_entries[mi], mf, ",")
+            if (n_mf >= 3 && mf[1] != "" && mf[2] != "" && mf[3] ~ /^[0-9]+$/) {
+                mimo_max[mf[1] "_" mf[2]] = mf[3] + 0
             }
         }
     }
@@ -893,12 +992,11 @@ compute_ca_throughput() {
                 rsrq = numish(fb) ? fb + 0 : -9
             }
 
-            # ml_key/mimo_known still identify the live AT+QNWCFG reading
-            # for this carrier, but only for the "mimo_layers" JSON field
-            # (the CA table live "(NxN)" badge) below — the throughput
-            # math now uses lte_max_layers()/nr_max_layers() static
-            # per-band ceiling instead (see that function header comment
-            # for why).
+            # ml_key/mimo_known identify the live AT+QNWCFG reading for
+            # this carrier, used only for the "mimo_layers" JSON field
+            # (the CA table live "(NxN)" badge) below — that field
+            # always shows the instantaneous live reading, bounce and
+            # all, on purpose.
             ml_key = pci "_" earfcn
             mimo_known = (ml_key in mimo_layers) && (mimo_layers[ml_key] ~ /^[0-9]+$/)
 
@@ -907,7 +1005,21 @@ compute_ca_throughput() {
                 band_num = substr(s, RSTART, RLENGTH) + 0
                 s = substr(s, RSTART + RLENGTH)
             }
-            layers = is_nr ? nr_max_layers(band_num) : lte_max_layers(band_num)
+            # Throughput math layer count: the static per-band ceiling
+            # (lte_max_layers()/nr_max_layers(), see their header
+            # comment) is now only a sanity cap, not the value
+            # itself — prefer the cached highest-ever-observed live
+            # reading for this exact carrier (mimo_max, from
+            # update_mimo_max_cache()) when one exists, since that tracks
+            # what the site actually deploys rather than what the
+            # band/modem could theoretically support.
+            static_layers = is_nr ? nr_max_layers(band_num) : lte_max_layers(band_num)
+            if ((ml_key in mimo_max) && mimo_max[ml_key] > 0) {
+                layers = mimo_max[ml_key]
+                if (layers > static_layers) layers = static_layers
+            } else {
+                layers = static_layers
+            }
 
             se_est = is_nr ? nr_se(sinr) : lte_se(sinr)
             se_max = is_nr ? nr_se(35)   : lte_se(30)
@@ -1208,7 +1320,7 @@ while true; do
     collect_signal "$_blob"
     collect_serving_cell "$_blob"
     collect_carrier "$_blob"
-    collect_carrier_aggregation "$_blob"
+    collect_carrier_aggregation "$_blob" "$_start"
     collect_band_pref "$_blob"
     collect_network_prefs "$_blob"
     collect_wan "$_blob"
