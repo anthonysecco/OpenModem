@@ -362,10 +362,19 @@
 
   var historyWanRateSamples = [];
 
+  // True on the WAN page (Receive/Send Rate charts) and the Dashboard
+  // (combined Throughput chart) — both consume the same wan_rx_mbps/
+  // tx_mbps series, just rendered differently, so history collection
+  // runs whenever either is present rather than being tied to one page.
+  function wanChartsPresent() {
+    return !!(document.getElementById('om-wan-rx-chart') || document.getElementById('om-hist-throughput-chart'));
+  }
+
   function pushWanHistorySample(state) {
-    if (!document.getElementById('om-wan-rx-chart')) return; // not on this page
+    if (!wanChartsPresent()) return; // not on this page
     pushCapped(historyWanRateSamples, { t: state._polled_at, rx_mbps: state.wan_rx_mbps, tx_mbps: state.wan_tx_mbps });
     renderWanBandwidthCharts();
+    renderThroughputChart();
   }
 
   // Flat single-color "zone" tables (always matches, since rate >= 0)
@@ -399,6 +408,31 @@
 
     renderLineChart('om-wan-rx-chart', historyWanRateSamples, function (r) { return r.rx_mbps; }, WAN_RX_ZONE, 0, rxMax, false);
     renderLineChart('om-wan-tx-chart', historyWanRateSamples, function (r) { return r.tx_mbps; }, WAN_TX_ZONE, 0, txMax, false);
+  }
+
+  var THROUGHPUT_SERIES = [
+    { getValue: function (r) { return r.rx_mbps; }, color: WAN_RX_ZONE[0].bar, label: 'Download', latestId: 'om-hist-throughput-rx-latest' },
+    { getValue: function (r) { return r.tx_mbps; }, color: WAN_TX_ZONE[0].bar, label: 'Upload', latestId: 'om-hist-throughput-tx-latest' }
+  ];
+
+  // Dashboard's combined counterpart to renderWanBandwidthCharts above —
+  // same wan_rx_mbps/tx_mbps samples, but Download and Upload drawn as
+  // two lines on one chart sharing a single y-axis (the max of both
+  // series' peaks in the visible 5-min window), per request, rather than
+  // the WAN page's two independently-scaled charts.
+  function renderThroughputChart() {
+    if (!document.getElementById('om-hist-throughput-chart')) return; // not on this page
+
+    var max = WAN_RATE_MIN_RANGE;
+    historyWanRateSamples.forEach(function (r) {
+      if (typeof r.rx_mbps === 'number' && r.rx_mbps > max) max = r.rx_mbps;
+      if (typeof r.tx_mbps === 'number' && r.tx_mbps > max) max = r.tx_mbps;
+    });
+
+    var axisEl = document.getElementById('om-hist-throughput-chart-axis-max');
+    if (axisEl) axisEl.textContent = fmtChartValue(max);
+
+    renderDualLineChart('om-hist-throughput-chart', historyWanRateSamples, THROUGHPUT_SERIES, 0, max);
   }
 
   /* System (Application Processor) uptime — the poller supplies raw
@@ -898,6 +932,59 @@
     });
   }
 
+  function chartPointsFor(samples, getValue, min, max) {
+    var pts = [];
+    samples.forEach(function (rec, i) {
+      var v = getValue(rec);
+      if (typeof v !== 'number') return;
+      pts.push({ x: chartX(i, samples.length), y: chartY(v, min, max), v: v, t: rec.t });
+    });
+    return pts;
+  }
+
+  /* Multi-series counterpart to renderLineChart above, for the Dashboard
+     Throughput chart (Download + Upload sharing one y-axis instead of
+     RSRP/Speed/Latency/Jitter's single line each). No zone-based per-
+     segment coloring and no area fill here — WAN throughput has no
+     good/bad severity tiers the way signal or latency do (renderLineChart's
+     own WAN_RX_ZONE/WAN_TX_ZONE are already flat single-color tables, see
+     their definition above), and two overlapping fills would just muddy
+     the two lines this chart exists to keep visually distinct. series is
+     [{getValue, color, label, latestId}, ...]; chartPoints[containerId]
+     stores one points array per series (in series order) rather than a
+     single flat array, which is what nearestDualChartIndex/showDualChartHover
+     below expect. */
+  function renderDualLineChart(containerId, samples, series, min, max) {
+    var svg = document.getElementById(containerId);
+    if (!svg) return;
+    var svgns = 'http://www.w3.org/2000/svg';
+    svg.innerHTML = '';
+    svg.setAttribute('viewBox', '0 0 ' + CHART_VIEW_W + ' ' + CHART_VIEW_H);
+    svg.setAttribute('preserveAspectRatio', 'none');
+
+    var seriesPts = series.map(function (s) { return chartPointsFor(samples, s.getValue, min, max); });
+    chartPoints[containerId] = seriesPts;
+
+    series.forEach(function (s, si) {
+      var pts = seriesPts[si];
+      var latestEl = s.latestId ? document.getElementById(s.latestId) : null;
+      if (latestEl) latestEl.textContent = pts.length ? fmtThroughput(pts[pts.length - 1].v) : '—';
+      if (pts.length < 2) return;
+
+      var coords = pts.map(function (p) { return [p.x, p.y]; });
+      var segs = catmullRomSegments(coords);
+      segs.forEach(function (seg) {
+        var path = document.createElementNS(svgns, 'path');
+        path.setAttribute('d', segPathD(seg));
+        path.setAttribute('fill', 'none');
+        path.setAttribute('stroke', s.color);
+        path.setAttribute('stroke-width', '2');
+        path.setAttribute('stroke-linecap', 'round');
+        svg.appendChild(path);
+      });
+    });
+  }
+
   /* Hover/touch: shows the nearest point's value immediately (not
      delayed) — pointerdown+pointermove (not separate mouse/touch
      handlers) covers both desktop hover and mobile touch with one code
@@ -978,6 +1065,102 @@
     svg.addEventListener('pointerup', function () { clearChartHover(containerId); });
   }
 
+  /* Dual-series counterpart to the hover functions above, for
+     renderDualLineChart charts (chartPoints[containerId] is an array of
+     per-series points arrays there, not one flat array) — nearest index
+     is found off whichever series has points (both share the same x per
+     sample index, since chartX only depends on i/n), then every series
+     gets its own marker dot and the tooltip lists all of them together
+     rather than one value. */
+  function clearDualChartHover(containerId) {
+    chartHover[containerId] = null;
+    var svg = document.getElementById(containerId);
+    if (svg) {
+      var markers = svg.querySelectorAll('.om-chart-hover-marker');
+      for (var i = 0; i < markers.length; i++) markers[i].parentNode.removeChild(markers[i]);
+    }
+    var tip = document.getElementById(containerId + '-tooltip');
+    if (tip) tip.style.display = 'none';
+  }
+
+  function nearestDualChartIndex(containerId, clientX, svgEl) {
+    var seriesPts = chartPoints[containerId];
+    if (!seriesPts) return -1;
+    var pts = null;
+    for (var s = 0; s < seriesPts.length; s++) {
+      if (seriesPts[s] && seriesPts[s].length) { pts = seriesPts[s]; break; }
+    }
+    if (!pts) return -1;
+    var rect = svgEl.getBoundingClientRect();
+    if (!rect.width) return -1;
+    var relX = ((clientX - rect.left) / rect.width) * CHART_VIEW_W;
+    var best = 0, bestDist = Infinity;
+    pts.forEach(function (p, i) {
+      var d = Math.abs(p.x - relX);
+      if (d < bestDist) { bestDist = d; best = i; }
+    });
+    return best;
+  }
+
+  function showDualChartHover(containerId, series, idx, svgEl, wrapEl) {
+    var seriesPts = chartPoints[containerId];
+    if (!seriesPts) return;
+    var svgns = 'http://www.w3.org/2000/svg';
+    var existing = svgEl.querySelectorAll('.om-chart-hover-marker');
+    for (var i = 0; i < existing.length; i++) existing[i].parentNode.removeChild(existing[i]);
+
+    var parts = [];
+    var anyPoint = null;
+    series.forEach(function (s, si) {
+      var pts = seriesPts[si];
+      var p = pts && pts[idx];
+      if (!p) return;
+      anyPoint = p;
+      var circle = document.createElementNS(svgns, 'circle');
+      circle.setAttribute('class', 'om-chart-hover-marker');
+      circle.setAttribute('cx', p.x);
+      circle.setAttribute('cy', p.y);
+      circle.setAttribute('r', '3.5');
+      circle.setAttribute('fill', s.color);
+      circle.setAttribute('stroke', 'var(--surface)');
+      circle.setAttribute('stroke-width', '1.5');
+      svgEl.appendChild(circle);
+      parts.push(s.label + ' ' + fmtThroughput(p.v));
+    });
+    if (!anyPoint) return;
+
+    var tip = document.getElementById(containerId + '-tooltip');
+    if (!tip) return;
+    tip.textContent = parts.join(' · ');
+    tip.style.display = 'block';
+    var wrapRect = wrapEl.getBoundingClientRect();
+    var svgRect = svgEl.getBoundingClientRect();
+    var xPx = (anyPoint.x / CHART_VIEW_W) * svgRect.width + (svgRect.left - wrapRect.left);
+    var yPx = (anyPoint.y / CHART_VIEW_H) * svgRect.height + (svgRect.top - wrapRect.top);
+    tip.style.left = xPx + 'px';
+    tip.style.top = yPx + 'px';
+  }
+
+  function handleDualChartHoverMove(containerId, series, clientX, svgEl, wrapEl) {
+    var idx = nearestDualChartIndex(containerId, clientX, svgEl);
+    if (idx < 0) return;
+    var st = chartHover[containerId];
+    if (st && st.idx === idx) return; // already showing this point
+    chartHover[containerId] = { idx: idx };
+    showDualChartHover(containerId, series, idx, svgEl, wrapEl);
+  }
+
+  function initDualChartHover(containerId, series) {
+    var svg = document.getElementById(containerId);
+    if (!svg) return; // not on this page
+    var wrapEl = svg.closest('.om-chart-wrap');
+    if (!wrapEl) return;
+    svg.addEventListener('pointermove', function (e) { handleDualChartHoverMove(containerId, series, e.clientX, svg, wrapEl); });
+    svg.addEventListener('pointerdown', function (e) { handleDualChartHoverMove(containerId, series, e.clientX, svg, wrapEl); });
+    svg.addEventListener('pointerleave', function () { clearDualChartHover(containerId); });
+    svg.addEventListener('pointerup', function () { clearDualChartHover(containerId); });
+  }
+
   function renderHistoryCharts() {
     renderLineChart('om-hist-rsrp-chart', historySignalSamples, historyRsrp, RSRP_ZONES, RSRP_MIN, RSRP_MAX, false);
     renderLineChart('om-hist-speed-chart', historySignalSamples, function (r) { return r.dl_est_mbps; }, SPEED_ZONES, 0, 250, false);
@@ -1024,11 +1207,13 @@
   }
 
   // Same seed-on-load as seedHistoryOnce above, for the WAN page's
-  // Bandwidth graphs — kept as its own function (rather than folded into
-  // seedHistoryOnce) since that one is gated on the Dashboard's
-  // om-hist-rsrp-chart existing, which is never true on the WAN page.
+  // Bandwidth graphs and the Dashboard's Throughput graph (both consume
+  // historyWanRateSamples, see wanChartsPresent above) — kept as its own
+  // function rather than folded into seedHistoryOnce since that one is
+  // gated on the Dashboard's om-hist-rsrp-chart existing, which is never
+  // true on the WAN page.
   function seedWanHistoryOnce() {
-    if (!document.getElementById('om-wan-rx-chart')) return; // not on this page
+    if (!wanChartsPresent()) return; // not on this page
 
     fetch('/cgi-bin/history_wan.sh')
       .then(function (r) { return r.json(); })
@@ -1037,6 +1222,7 @@
           historyWanRateSamples = data.slice(-HISTORY_WINDOW_SAMPLES);
         }
         renderWanBandwidthCharts();
+        renderThroughputChart();
       })
       .catch(function () {});
   }
@@ -3022,6 +3208,7 @@
     initChartHover('om-hist-jitter-chart', 'ms', JITTER_ZONES, true);
     initChartHover('om-wan-rx-chart', 'Mbps', WAN_RX_ZONE, false);
     initChartHover('om-wan-tx-chart', 'Mbps', WAN_TX_ZONE, false);
+    initDualChartHover('om-hist-throughput-chart', THROUGHPUT_SERIES);
     setInterval(tickAge, 1000);
     initUpdateButton();
     initAtTerminal();

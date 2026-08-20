@@ -62,13 +62,25 @@
           <div class="om-chart-tooltip" id="om-hist-rsrp-chart-tooltip"></div>
         </div>
 
-        <div class="om-hero-label">Est. Speed (Mbps)</div>
+        <div class="om-hero-label">Expected Downlink (Mbps)</div>
         <div class="om-hero-value" id="om-hist-speed-chart-latest">—</div>
         <div class="om-chart-wrap">
           <span class="om-chart-axis om-chart-axis-max">250</span>
           <span class="om-chart-axis om-chart-axis-min">0</span>
           <svg class="om-chart-svg" id="om-hist-speed-chart"></svg>
           <div class="om-chart-tooltip" id="om-hist-speed-chart-tooltip"></div>
+        </div>
+
+        <div class="om-hero-label">Throughput (Mbps)</div>
+        <div class="om-chart-legend">
+          <span class="om-chart-legend-item"><span class="om-chart-legend-swatch" style="background:#2f6fed"></span>Download <span id="om-hist-throughput-rx-latest">—</span></span>
+          <span class="om-chart-legend-item"><span class="om-chart-legend-swatch" style="background:#8b5cf6"></span>Upload <span id="om-hist-throughput-tx-latest">—</span></span>
+        </div>
+        <div class="om-chart-wrap">
+          <span class="om-chart-axis om-chart-axis-max" id="om-hist-throughput-chart-axis-max">—</span>
+          <span class="om-chart-axis om-chart-axis-min">0</span>
+          <svg class="om-chart-svg" id="om-hist-throughput-chart"></svg>
+          <div class="om-chart-tooltip" id="om-hist-throughput-chart-tooltip"></div>
         </div>
 
         <div class="om-hero-label">Latency (ms)</div>

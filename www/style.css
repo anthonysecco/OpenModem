@@ -291,6 +291,34 @@ body {
   bottom: 0.2rem;
 }
 
+/* Dashboard Throughput chart's Download/Upload key — same swatch-plus-
+   label shape as .om-ttl-carrier (WAN page), just inline rather than
+   stacked since there are only two entries and this sits above a chart
+   rather than a card's full width. Each item's trailing number is the
+   same element renderDualLineChart writes the latest sample's value
+   into, colored via the swatch beside it rather than the text itself so
+   the two stay legible at this font size. */
+.om-chart-legend {
+  display: flex;
+  gap: 1rem;
+  font-size: 0.8rem;
+  color: var(--text-dim);
+  margin-bottom: 0.2rem;
+}
+
+.om-chart-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.om-chart-legend-swatch {
+  width: 0.6rem;
+  height: 0.6rem;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
 .om-chart-tooltip {
   position: absolute;
   transform: translate(-50%, -135%);
