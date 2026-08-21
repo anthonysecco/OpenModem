@@ -17,7 +17,7 @@ CONF_FILE="/usrdata/openmodem/config/openmodem.conf"
 LOG_LEVEL=1
 POLL_INTERVAL=10
 HISTORY_WINDOW_SAMPLES=60
-MIMO_MAX_TTL_S=3600
+MIMO_MAX_WINDOW_S=3600
 [ -f "$CONF_FILE" ] && . "$CONF_FILE"
 
 AT_CMD_BIN="/usrdata/openmodem/bin/at_command.sh"
@@ -536,8 +536,8 @@ collect_carrier() {
 # Builds "pci,freq,layers|pci,freq,layers|..." across both subcommands'
 # blocks (28 and 32 in ALL_CMD — not adjacent: mode_pref/data_roaming/
 # CNUM sit between them, see ALL_CMD's block-number comment) for
-# update_mimo_max_cache to fold into its highest-ever-observed-per-
-# carrier cache, keyed against each carrier's own pci/earfcn —
+# update_mimo_max_cache to fold into its rolling-window per-carrier max
+# cache, keyed against each carrier's own pci/earfcn —
 # RAT-agnostic since both LTE and NR5G entries in ca_bands already carry
 # pci/earfcn fields. Not consumed directly by compute_ca_throughput
 # anymore — see update_mimo_max_cache's header comment.
@@ -564,34 +564,52 @@ build_mimo_lookup() {
 }
 
 # Turns build_mimo_lookup()'s live "pci,freq,layers|..." reading into a
-# "pci,freq,max_layers|..." reading of the highest layer count ever
-# observed on each exact carrier (keyed by pci_freq, same key
-# compute_ca_throughput's mimo_max lookup uses), persisted across poll
-# cycles in MIMO_CACHE so neither the throughput math nor the CA table's
-# "(NxN)" display are at the mercy of a single bouncy live sample (see
-# compute_ca_throughput's header comment). Persisted to a file, not a
-# plain shell global like
+# "pci,freq,max_layers|..." reading of the highest layer count observed
+# on each exact carrier (keyed by pci_freq, same key compute_ca_
+# throughput's mimo_max lookup uses) within a trailing MIMO_MAX_WINDOW_S
+# rolling window, persisted across poll cycles in MIMO_CACHE so neither
+# the throughput math nor the CA table's "(NxN)" display are at the mercy
+# of a single bouncy live sample (see compute_ca_throughput's header
+# comment). Persisted to a file, not a plain shell global like
 # _WAN_PREV_RX/TX/T, so the learned max survives a poller restart, not
 # just the current process lifetime.
 #
-# A key is only re-stamped with the current time when it's actually
-# present in this cycle's live reading — an idle-but-still-connected
-# carrier (SCC reporting layers=0, or simply absent from this cycle's
-# QNWCFG output) does NOT refresh its last-seen time, so a carrier that's
-# gone idle still ages toward eviction rather than being kept alive
-# forever by cycles that never touch it. MIMO_MAX_TTL_S (default 3600s /
-# 60min, config/openmodem.conf) is how long a carrier can go unobserved
-# before it's dropped, on the assumption the device has moved to a
-# different cell/site rather than merely gone quiet.
+# True sliding-window max, not a running high-water mark that only resets
+# on total absence: each cache line holds a per-key history of
+# "epoch:layers" samples, one appended per cycle the key is seen in the
+# live reading. Every cycle, every key's history (seen this cycle or not)
+# is pruned of samples older than MIMO_MAX_WINDOW_S (3600s / 60min
+# default, config/openmodem.conf) and the reported max is taken over
+# whatever survives — so a peak fades out of the display this long after
+# it was observed even on a carrier that never drops, not just after an
+# absence timeout. A key with no samples left after pruning is dropped
+# entirely. This also gives a carrier that vanishes from the live reading
+# for a while (idle SCC, brief handover away and back to the same cell)
+# its last-observed max for free, for as long as that sample is still
+# inside the window — no separate "keep it cached across a gap" logic
+# needed, since the history simply isn't pruned away yet.
+#
+# Cache file format: one line per key, "pci_freq<TAB>epoch:layers;epoch:
+# layers;...". A stale line in the old "key,layers,last_seen" format
+# (no tab) parses as an empty history and is silently dropped on the
+# first cycle it's read — no explicit migration needed.
+#
+# String concatenation below always precomputes the separator into its
+# own variable (sep/hsep/nsep) before appending — writing e.g.
+# "h = h (h == "" ? "" : ";") ..." instead parses under BusyBox awk as a
+# call to an undefined function h(), aborting the program with no visible
+# error (confirmed on-device: mimo_max_cache stayed empty despite live
+# QNWCFG data). Works fine under GNU awk, so this only surfaces on real
+# hardware — don't reintroduce the identifier-space-paren form here.
 #
 # Input:  $1 = live lookup, build_mimo_lookup()'s output
 #         $2 = current cycle's epoch seconds (main loop's $_start)
-# Output: "pci,freq,max_layers|..." on stdout, one entry per still-live
+# Output: "pci,freq,max_layers|..." on stdout, one entry per surviving
 #         cache key (same shape as $1, for compute_ca_throughput's layers
 #         math — NOT the same as $1's per-cycle live values)
 update_mimo_max_cache() {
     [ -f "$MIMO_CACHE" ] || : > "$MIMO_CACHE"
-    awk -v live="$1" -v now="$2" -v ttl="$MIMO_MAX_TTL_S" -v tmp_file="${MIMO_CACHE}.tmp" '
+    awk -v live="$1" -v now="$2" -v window="$MIMO_MAX_WINDOW_S" -v tmp_file="${MIMO_CACHE}.tmp" -F'\t' '
     BEGIN {
         printf "" > tmp_file
         close(tmp_file)
@@ -602,33 +620,43 @@ update_mimo_max_cache() {
             if (m < 3 || f[1] == "" || f[2] == "" || f[3] !~ /^[0-9]+$/) continue
             key = f[1] "_" f[2]
             v = f[3] + 0
-            if (!(key in live_max) || v > live_max[key]) live_max[key] = v
+            if (!(key in live_val) || v > live_val[key]) live_val[key] = v
         }
     }
     NF > 0 {
-        m = split($0, c, ",")
-        if (m < 3) next
-        key = c[1]
-        cache_layers[key] = c[2] + 0
-        cache_seen[key] = c[3] + 0
+        key = $1
+        hist[key] = (NF >= 2) ? $2 : ""
         have_cache[key] = 1
     }
     END {
         for (key in have_cache) all[key] = 1
-        for (key in live_max) all[key] = 1
+        for (key in live_val) all[key] = 1
         out = ""
         for (key in all) {
-            layers = (key in cache_layers) ? cache_layers[key] : 0
-            last_seen = (key in cache_seen) ? cache_seen[key] : 0
-            if (key in live_max) {
-                if (live_max[key] > layers) layers = live_max[key]
-                last_seen = now
+            h = (key in hist) ? hist[key] : ""
+            if (key in live_val) {
+                hsep = (h == "" ? "" : ";")
+                h = h hsep now ":" live_val[key]
             }
-            if (now - last_seen > ttl) continue
-            print key "," layers "," last_seen >> tmp_file
+            nh = split(h, samples, ";")
+            newh = ""
+            maxv = -1
+            for (j = 1; j <= nh; j++) {
+                if (samples[j] == "") continue
+                sm = split(samples[j], sv, ":")
+                if (sm < 2) continue
+                ts = sv[1] + 0
+                v = sv[2] + 0
+                if (now - ts > window) continue
+                nsep = (newh == "" ? "" : ";")
+                newh = newh nsep ts ":" v
+                if (v > maxv) maxv = v
+            }
+            if (newh == "") continue
+            print key "\t" newh >> tmp_file
             split(key, kf, "_")
             sep = (out == "" ? "" : "|")
-            out = out sep kf[1] "," kf[2] "," layers
+            out = out sep kf[1] "," kf[2] "," maxv
         }
         print out
     }
@@ -770,12 +798,13 @@ collect_carrier_aggregation() {
 # $2 (mimo_max_lookup, from update_mimo_max_cache()) drives both the
 # "layers" term in the throughput formula below AND the "mimo_layers"
 # JSON field (the CA table's "(NxN)" badge) — the highest layer count
-# ever observed on this exact carrier within the cache's TTL window,
-# still clamped to lte_max_layers()/nr_max_layers()'s static per-band
-# ceiling as a physical sanity cap (a glitched live reading can't
-# inflate the cached max past what the band/modem could ever actually
-# do). The throughput math falls back to that static ceiling alone for
-# a carrier with no cache entry yet (never observed, or evicted); the
+# observed on this exact carrier within the cache's trailing rolling
+# window (MIMO_MAX_WINDOW_S, default 60min), still clamped to
+# lte_max_layers()/nr_max_layers()'s static per-band ceiling as a
+# physical sanity cap (a glitched live reading can't inflate the cached
+# max past what the band/modem could ever actually do). The throughput
+# math falls back to that static ceiling alone for a carrier with no
+# cache entry yet (never observed, or its last sample aged out); the
 # JSON field shows null/"—" instead for that same case rather than a
 # theoretical ceiling that was never actually observed. This used to be
 # build_mimo_lookup()'s raw instantaneous live reading (bounced with
@@ -995,9 +1024,9 @@ compute_ca_throughput() {
             # in the max-observed-layers cache (mimo_max, from
             # update_mimo_max_cache()) — drives both the throughput
             # math below AND the "mimo_layers" JSON field (the CA table
-            # "(NxN)" badge), which now shows the highest-ever-observed
-            # value for this exact carrier instead of the bouncy
-            # instantaneous live reading.
+            # "(NxN)" badge), which now shows the highest value observed
+            # for this exact carrier within the trailing rolling window
+            # instead of the bouncy instantaneous live reading.
             ml_key = pci "_" earfcn
             mimo_max_known = (ml_key in mimo_max) && mimo_max[ml_key] > 0
 
@@ -1009,8 +1038,8 @@ compute_ca_throughput() {
             # Throughput math layer count: the static per-band ceiling
             # (lte_max_layers()/nr_max_layers(), see their header
             # comment) is now only a sanity cap, not the value
-            # itself — prefer the cached highest-ever-observed live
-            # reading for this exact carrier when one exists, since
+            # itself — prefer the cached rolling-window max live reading
+            # for this exact carrier when one exists, since
             # that tracks what the site actually deploys rather than
             # what the band/modem could theoretically support. A
             # carrier with no cache entry yet falls back to the static
