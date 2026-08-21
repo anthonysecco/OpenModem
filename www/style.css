@@ -437,12 +437,20 @@ body {
    doesn't fit; min-width/overflow-wrap keep it from overflowing the
    card once there, even mid-word (an IPv6 address has no spaces or
    hyphens to break on otherwise). Targets every value span, not just
-   :last-child, since a couple of rows (e.g. MCC/MNC) hold two. */
+   :last-child, since a couple of rows (e.g. MCC/MNC) hold two.
+   margin-left:auto pushes the value to the row's right edge when it's
+   alone on its wrapped line (space-between has nothing left to space a
+   lone item against, so it sits at flex-start without this); text-align
+   right does the same for the value's own internal line breaks once
+   overflow-wrap kicks in. Redundant with space-between when the value
+   still fits beside its label, but harmless there. */
 .om-row > span:not(.om-row-label) {
   min-width: 0;
   overflow-wrap: anywhere;
   color: var(--text);
   align-self: center;
+  margin-left: auto;
+  text-align: right;
 }
 
 /* A value carrying extra detail in its title attribute (e.g. LTE/5G
