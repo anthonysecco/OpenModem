@@ -706,27 +706,39 @@ collect_carrier_aggregation() {
             _rsrp=$(printf '%s' "$_r" | cut -d',' -f7)
             _rsrq=$(printf '%s' "$_r" | cut -d',' -f8)
             _sinr=$(printf '%s' "$_r" | cut -d',' -f10)
-            # Overrides collect_signal()'s AT+QRSRP-sourced F_LTE_RSRP with
-            # this PCC's QCAINFO rsrp for the Serving Cell card, so it
-            # agrees with the CA table's own PCC row instead of showing a
-            # second, different number for the same physical cell.
-            # QRSRP and QCAINFO/QENG are separate measurement paths in the
-            # Quectel firmware — confirmed live (2026-08-21) over 5 back-
-            # to-back samples that QCAINFO's PCC rsrp and QENG=
-            # "servingcell"'s trailing rsrp field track each other exactly
-            # every cycle while QRSRP sits a consistent ~5-7dB lower with
-            # its own uncorrelated wobble, and Teltonika's own gsmctl docs
-            # (same Quectel module family) show their serving-cell RSRP
-            # sourced from QENG="servingcell" output, not a QRSRP
-            # equivalent — see the RSRP-discrepancy investigation for the
-            # full comparison. Only done for LTE: NR5G's QCAINFO field
-            # layout is unconfirmed on this hardware (see this branch's
-            # NR5G sibling above), so F_NR_RSRP is deliberately left on
-            # QRSRP rather than an unverified override. If QCAINFO never
-            # reports a PCC line this cycle (e.g. briefly out of service),
-            # this override just doesn't run and F_LTE_RSRP quietly stays
-            # the QRSRP-sourced value collect_signal() already set.
-            [ "$_type" = "PCC" ] && F_LTE_RSRP=$(json_num "$_rsrp")
+            # Overrides collect_signal()'s AT+QRSRP/QRSRQ/QSINR-sourced
+            # F_LTE_RSRP/RSRQ/SINR with this PCC's QCAINFO fields for the
+            # Serving Cell card, so LTE's three headline signal numbers all
+            # come from one command (matching the CA table's own PCC row,
+            # which already used QCAINFO) instead of three separate ones.
+            # RSRP's override (added first) has real evidence behind it —
+            # confirmed live (2026-08-21) over 5 back-to-back samples that
+            # QCAINFO's PCC rsrp and QENG="servingcell"'s trailing rsrp
+            # field track each other exactly every cycle while QRSRP sits a
+            # consistent ~5-7dB lower with its own uncorrelated wobble, and
+            # Teltonika's own gsmctl docs (same Quectel module family) show
+            # their serving-cell RSRP sourced from QENG="servingcell", not
+            # a QRSRP equivalent. RSRQ/SINR's override (added after) is a
+            # consistency call, not a same-strength finding: a parallel
+            # live comparison of QRSRQ/QSINR against QCAINFO's PCC rsrq/
+            # sinr showed only small, direction-varying differences (±1-3),
+            # not RSRP's one-directional ~6dB bias — i.e. neither source
+            # looked clearly wrong, so this switch is about giving LTE one
+            # signal-data source instead of three, not correcting a bug.
+            # Only done for LTE: NR5G's QCAINFO field layout is unconfirmed
+            # on this hardware (see this branch's NR5G sibling above, and
+            # this device has never carried an active NR component carrier
+            # to test against), and QCAINFO's NR5G line never reports SINR
+            # at all — so F_NR_RSRP/RSRQ/SINR stay on QRSRP/QRSRQ/QSINR,
+            # which must stay in ALL_CMD for NR's sake regardless. If
+            # QCAINFO never reports a PCC line this cycle (e.g. briefly out
+            # of service), these overrides just don't run and the LTE
+            # fields quietly stay whatever collect_signal() already set.
+            if [ "$_type" = "PCC" ]; then
+                F_LTE_RSRP=$(json_num "$_rsrp")
+                F_LTE_RSRQ=$(json_num "$_rsrq")
+                F_LTE_SINR=$(json_num "$_sinr")
+            fi
             # <UL_configured>,<UL_bandwidth>,<UL_EARFCN> — SCC-only per
             # Quectel's manual (PCC's QCAINFO line never carries them;
             # its real UL bandwidth comes from QENG="servingcell"
