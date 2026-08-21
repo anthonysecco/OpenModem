@@ -990,8 +990,22 @@ compute_ca_throughput() {
         return val
     }
     BEGIN {
-        SCHED_EFF = 0.75
-        PROTO_EFF = 0.70
+        # Was SCHED_EFF(0.75) * PROTO_EFF(0.70) = 0.525 combined, ported
+        # from QuecControl with no independent ground truth (see
+        # SCOPE.md). Replaced with a single factor after real-world
+        # validation (2026-08-21): a client behind the modem measured a
+        # consistent 133-136Mbps real downlink (proper multi-connection
+        # speed test, not curl run directly on the modem AP CPU — that
+        # earlier attempt undershot badly, almost certainly CPU/software-
+        # bound on the embedded AP itself rather than radio-limited) against
+        # this same 3-CC session (SINR ~5-11dB) reading a rock-steady
+        # 94-95Mbps estimated across 6 consecutive poll cycles — the two
+        # multiplied-together constants were double-derating the same
+        # overhead. 134.5/94.2 ~= 1.428, and 0.525*1.428 ~= 0.75, so one
+        # combined 0.75 factor replaces both. Still only validated at one
+        # location/time/SINR regime — revisit if a future real-world check
+        # drifts from this.
+        THROUGHPUT_EFF = 0.75
         TDD_DL    = 0.70
         total_est = 0; total_max = 0; total_bw = 0
         out = "["
@@ -1091,8 +1105,8 @@ compute_ca_throughput() {
             est = 0; max = 0
             if (bw > 0) {
                 total_bw += bw
-                est = se_est * bw * layers * SCHED_EFF * PROTO_EFF
-                max = se_max * bw * layers * SCHED_EFF * PROTO_EFF
+                est = se_est * bw * layers * THROUGHPUT_EFF
+                max = se_max * bw * layers * THROUGHPUT_EFF
                 is_tdd = is_nr ? nr_is_tdd(band_num) : lte_is_tdd(band_num)
                 if (is_tdd) { est = est * TDD_DL; max = max * TDD_DL }
                 est = est * rsrq_penalty(rsrq)
