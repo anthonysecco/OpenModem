@@ -398,6 +398,19 @@ Confirmed on an actual RM520N-GL (2026-08-14), not assumed:
 - Factory reset was deliberately left out of Power (QuecControl has it;
   wasn't asked for here and is hard to make safely reversible) — revisit
   if actually needed.
+- NR5G RSRP/RSRQ/SINR still come from `AT+QRSRP`/`QRSRQ`/`QSINR`, unlike
+  LTE's equivalents which were switched to `AT+QCAINFO`'s PCC row (see
+  `bin/at_poller.sh`'s `collect_carrier_aggregation`) after live testing
+  showed `QRSRP` diverging from `QCAINFO`/`QENG` by a consistent ~5-7dB
+  on this device's LTE serving cell. Left alone for NR5G because this
+  device has never carried an active NR component carrier, so there's no
+  live output to test `QCAINFO`'s NR5G field layout against (already
+  flagged unconfirmed elsewhere in that function), and `QCAINFO`'s NR5G
+  line doesn't report SINR at all regardless. Revisit once a unit with an
+  active 5G NR connection is available to test against: confirm/fix the
+  NR5G `QCAINFO` field layout, decide whether NR RSRP/RSRQ should switch
+  the same way LTE's did, and figure out a SINR source for NR (QSINR
+  stays in `ALL_CMD` either way, since nothing else reports it for NR).
 
 ## Future enhancement candidates (2026-08-20)
 
