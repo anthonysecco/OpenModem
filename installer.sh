@@ -135,7 +135,7 @@ for page in style.css app.js index.html cellular.html sim.html wan.html lan.html
 done
 
 echo "  Downloading CGI scripts..."
-for cgi in state.sh update.sh at_cmd.sh band_lock.sh carrier_scan.sh lan_action.sh wan_action.sh internet_info.sh mtu_test.sh sim_action.sh network_action.sh net_state.sh history_signal.sh history_net.sh history_wan.sh ha_state.sh; do
+for cgi in state.sh update.sh at_cmd.sh band_lock.sh carrier_scan.sh lan_action.sh wan_action.sh internet_info.sh mtu_test.sh sim_action.sh network_action.sh net_state.sh history_signal.sh history_net.sh history_wan.sh ha_state.sh version.sh; do
     download "$REPO/www/cgi-bin/$cgi" "$STAGING_DIR/www/cgi-bin/$cgi" || FAIL=1
 done
 
@@ -162,6 +162,41 @@ if [ "$FAIL" = "1" ]; then
     echo "Nothing on the device has been changed — the existing install is still running."
     rm -rf "$STAGING_DIR"
     exit 1
+fi
+
+echo "  Resolving deployed commit info..."
+# raw.githubusercontent.com serves plain file bytes with no commit
+# metadata attached, so REPO alone (either "main" or a pinned SHA — see
+# this script's header comment) can't say which exact commit's files
+# these are; only GitHub's REST API can resolve that. GITHUB_REF is
+# REPO's tail path segment (a branch name for a normal install, a
+# literal SHA for a pinned OPENMODEM_INSTALL_REF one) and OWNER_REPO is
+# everything between the host and that segment — both derived from REPO
+# itself rather than hardcoded, so this keeps working if the repo is
+# ever renamed/forked. /repos/<owner>/<repo>/commits/<ref> resolves
+# either form to a concrete SHA + commit date, which lands in VERSION
+# and is served by version.sh for the System page's Device Info card.
+# Parsed with sed rather than a JSON library (none available in
+# BusyBox ash) the same way net_poller.sh's geo_loop() already parses
+# ipinfo.io's response — same reasoning: a flat, stable field shape in
+# GitHub's own pretty-printed JSON, and the capture patterns themselves
+# (hex-only for the sha, quote-excluding for the date) keep whatever
+# lands in VERSION safe to embed in version.sh's JSON output later
+# without extra escaping. This is display-only metadata — an
+# unreachable/failed/rate-limited lookup doesn't fail the install,
+# VERSION just ends up showing "unknown" until the next successful one.
+_repo_tail="${REPO#https://raw.githubusercontent.com/}"
+OWNER_REPO="${_repo_tail%/*}"
+GITHUB_REF="${_repo_tail##*/}"
+_api_json=$(curl -4 -fsS --max-time 15 "https://api.github.com/repos/${OWNER_REPO}/commits/${GITHUB_REF}" 2>/dev/null)
+_commit_sha=$(printf '%s' "$_api_json" | sed -n 's/.*"sha": *"\([0-9a-f]\{40\}\)".*/\1/p' | head -1)
+_commit_date=$(printf '%s' "$_api_json" | sed -n 's/.*"date": *"\([^"]*\)".*/\1/p' | head -1)
+{
+    echo "COMMIT_SHA=${_commit_sha:-unknown}"
+    echo "COMMIT_DATE=${_commit_date:-unknown}"
+} > "$STAGING_DIR/VERSION"
+if [ -z "$_commit_sha" ]; then
+    echo "  WARNING: Could not resolve deployed commit from GitHub's API — Device Info will show \"unknown\" until the next successful update."
 fi
 
 echo "  Setting permissions..."

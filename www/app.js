@@ -518,7 +518,12 @@
     for (var i = 0; i < nodes.length; i++) {
       var node = nodes[i];
       var key = node.getAttribute('data-field');
-      if (key === '_polled_at') continue; // handled by the live ticker
+      // _polled_at: handled by the live ticker. commit_sha/commit_date:
+      // installer-recorded metadata, not part of state.sh's poller
+      // JSON — handled by loadVersionInfo()'s own one-shot fetch
+      // instead, so this loop must not stomp them back to "—" every
+      // poll cycle just because state[key] is undefined here.
+      if (key === '_polled_at' || key === 'commit_sha' || key === 'commit_date') continue;
       var raw = state[key];
       var fmt = FORMATTERS[key];
       var out = fmt ? fmt(raw) : raw;
@@ -1202,6 +1207,38 @@
           historyNetSamples = data.slice(-HISTORY_WINDOW_SAMPLES);
         }
         renderHistoryCharts();
+      })
+      .catch(function () {});
+  }
+
+  function fmtCommitDate(v) {
+    if (typeof v !== 'string' || !v || v === 'unknown') return '—';
+    var d = new Date(v);
+    return isNaN(d.getTime()) ? '—' : d.toLocaleString();
+  }
+
+  /* Same one-shot-on-load pattern as seedHistoryOnce above: installer.sh
+     writes VERSION fresh on every install/update (see its "Resolving
+     deployed commit info" step) and version.sh serves it as-is, so this
+     only ever needs to be fetched once per page load, not on
+     refreshState()'s poll cycle — see renderState()'s commit_sha/
+     commit_date skip for why mixing it into that loop would be wrong. */
+  function loadVersionInfo() {
+    var shaEl = document.querySelector('[data-field="commit_sha"]');
+    var dateEl = document.querySelector('[data-field="commit_date"]');
+    if (!shaEl && !dateEl) return; // not on this page
+
+    fetch('/cgi-bin/version.sh')
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        if (shaEl) {
+          var sha = data.commit_sha;
+          if (typeof sha === 'string' && sha !== 'unknown' && sha.length >= 7) {
+            shaEl.textContent = sha.slice(0, 7);
+            shaEl.title = sha;
+          }
+        }
+        if (dateEl) dateEl.textContent = fmtCommitDate(data.commit_date);
       })
       .catch(function () {});
   }
@@ -3240,6 +3277,7 @@
     refreshNetState();
     seedHistoryOnce();
     seedWanHistoryOnce();
+    loadVersionInfo();
     initChartHover('om-hist-rsrp-chart', 'dBm', RSRP_ZONES, false);
     initChartHover('om-hist-speed-chart', 'Mbps', SPEED_ZONES, false);
     initChartHover('om-hist-latency-chart', 'ms', LATENCY_ZONES, true);
