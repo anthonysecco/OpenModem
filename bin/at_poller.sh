@@ -627,7 +627,8 @@ update_mimo_max_cache() {
         for (key in all) {
             h = (key in hist) ? hist[key] : ""
             if (key in live_val) {
-                h = h (h == "" ? "" : ";") now ":" live_val[key]
+                hsep = (h == "" ? "" : ";")
+                h = h hsep now ":" live_val[key]
             }
             nh = split(h, samples, ";")
             newh = ""
@@ -639,7 +640,8 @@ update_mimo_max_cache() {
                 ts = sv[1] + 0
                 v = sv[2] + 0
                 if (now - ts > window) continue
-                newh = newh (newh == "" ? "" : ";") ts ":" v
+                nsep = (newh == "" ? "" : ";")
+                newh = newh nsep ts ":" v
                 if (v > maxv) maxv = v
             }
             if (newh == "") continue
