@@ -2664,17 +2664,19 @@
     return bwMhz ? bwMhz + ' MHz' : '—';
   }
 
-  /* mimo_layers is at_poller.sh's highest-ever-observed layer count for
-     this exact carrier (PCI+EARFCN), not the instantaneous
+  /* mimo_layers is at_poller.sh's highest layer count observed for this
+     exact carrier (PCI+EARFCN) within a trailing rolling window
+     (MIMO_MAX_WINDOW_S, default 5min), not the instantaneous
      AT+QNWCFG="lte_mimo_info"/"nr5g_mimo_info" reading — that live
      reading bounces with every idle/loaded transition (confirmed by
      chaining a real download during testing: 0/1/2/4 layers observed
-     rising and falling with load), so the server tracks a max-observed
+     rising and falling with load), so the server tracks a windowed-max
      cache per carrier instead (see update_mimo_max_cache's header
      comment) and this field is null until that cache has at least one
-     observation for the carrier. Shown as "NxN" since the field reports
-     active DL spatial layers and this hardware's behavior is symmetric.
-     Its own column now, previously folded into BW's cell text. */
+     unexpired observation for the carrier. Shown as "NxN" since the
+     field reports active DL spatial layers and this hardware's behavior
+     is symmetric. Its own column now, previously folded into BW's cell
+     text. */
   function fmtMimoCell(mimoLayers) {
     return (typeof mimoLayers === 'number' && mimoLayers >= 0) ? mimoLayers + 'x' + mimoLayers : '—';
   }
