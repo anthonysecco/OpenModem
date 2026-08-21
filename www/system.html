@@ -23,8 +23,6 @@
         <div class="om-row"><span class="om-row-label">Firmware</span><span data-field="device_firmware">—</span></div>
         <div class="om-row"><span class="om-row-label">Temperature</span><span data-field="device_temp_c">—</span></div>
         <div class="om-row"><span class="om-row-label">Uptime</span><span data-field="device_uptime_s">—</span></div>
-        <div class="om-row"><span class="om-row-label om-hint" title="The exact GitHub commit installer.sh deployed to this device — hover for the full SHA.">Version</span><span data-field="commit_sha">—</span></div>
-        <div class="om-row"><span class="om-row-label">Deployed</span><span data-field="commit_date">—</span></div>
       </div>
       <div class="om-card">
         <h2>Power</h2>
@@ -36,6 +34,8 @@
       </div>
       <div class="om-card">
         <h2>Update</h2>
+        <div class="om-row"><span class="om-row-label om-hint" title="The exact GitHub commit installer.sh deployed to this device — hover for the full SHA.">Version</span><span data-field="commit_sha">—</span></div>
+        <div class="om-row"><span class="om-row-label">Deployed</span><span data-field="commit_date">—</span></div>
         <p id="om-update-status">Reinstalls the latest OpenModem from GitHub.</p>
         <button id="om-update-btn" type="button">Check for Update / Install Latest</button>
       </div>
