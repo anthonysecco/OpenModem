@@ -367,6 +367,36 @@ Confirmed on an actual RM520N-GL (2026-08-14), not assumed:
   210` for that session — plausible given the reported SINR/RSRQ, but
   the estimate itself has no independent ground truth (no throughput
   test was run against it).
+- `compute_ca_throughput`'s efficiency constant got two real-world
+  ground-truth points on 2026-08-21, and they pulled in opposite
+  directions: an earlier 3-CC session (SINR ~5-11dB) measured 133-
+  136Mbps real against a 94-95Mbps estimate (real exceeded estimate,
+  prompting `THROUGHPUT_EFF=0.75` to replace the old double-derated
+  0.525 combined factor), while a later 3-CC session same day (PCC LTE
+  BAND 2 @ 20MHz SINR 9, 2x SCC LTE BAND 66 SINR 11, solid signal on all
+  three carriers, `ca_dl_estimated_mbps` 189-211) measured only
+  ~124-140Mbps real across single- and multi-connection (up to 8
+  parallel streams, sustained ~13s) speed tests run from a LAN client
+  behind the modem — real came in well *under* the estimate this time,
+  and did not scale up with more parallel connections, meaning the
+  ceiling was not TCP-window- or CA-scaling-limited. Research into how
+  others calculate this (industry LTE/5G throughput write-ups) explains
+  the split: ~25% PHY-layer overhead (reference signals, PDCCH, sync
+  signals) is roughly constant and is what `THROUGHPUT_EFF=0.75` already
+  models correctly, but real deployments lose a separate, much larger,
+  and highly variable amount to scheduler/cell-load sharing (cited
+  figures: a single user gets roughly half of max throughput at 50%
+  cell utilization and roughly a quarter at 75%) — and that loss is not
+  observable from this modem's RSRP/RSRQ/SINR at all, since those
+  describe link quality, not how many other devices the tower is
+  serving. Rather than re-tuning `THROUGHPUT_EFF` to split the
+  difference between two data points that reflect different (unknowable)
+  cell-load conditions, added a separate `SCHED_EFF=0.55` applied only
+  to `dl_estimated_mbps` (not `dl_maximum_mbps`, which stays a best-case
+  ceiling) as an explicit, deliberately conservative assumption about
+  typical cell sharing — not a value future signal data could ever
+  refine, since no AT command on this modem reports actual PRB
+  utilization/cell load.
 - Cellular's Network card (Network Mode / Data Roaming selectors, added
   when Signal/Registration/Serving Cell were split into per-RAT LTE and
   5G NR cards) needed two AT commands whose exact names weren't

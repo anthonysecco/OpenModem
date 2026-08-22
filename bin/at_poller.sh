@@ -1007,6 +1007,38 @@ compute_ca_throughput() {
         # drifts from this.
         THROUGHPUT_EFF = 0.75
         TDD_DL    = 0.70
+        # THROUGHPUT_EFF above models PHY-layer overhead only (reference
+        # signals, PDCCH control region, sync signals) — the ~25% loss
+        # that is roughly constant regardless of network conditions and
+        # well documented industry-wide for an idealized single-user
+        # link. It does NOT model scheduler/cell-load sharing: how much
+        # of a carrier capacity the network actually grants this device
+        # versus other devices on the same cell. That is a separate,
+        # much larger, and highly variable loss (deployment measurements
+        # cited in industry literature put a single user at roughly half
+        # of max throughput at 50% cell utilization and roughly a
+        # quarter at 75% utilization) — and it is NOT observable from
+        # RSRP/RSRQ/SINR at all, since those describe link quality, not
+        # how many other devices the tower is currently serving.
+        # Confirmed indirectly (2026-08-21): a real 3-CC session with
+        # solid signal on all three carriers and a 189-211Mbps est
+        # plateaued at ~124-140Mbps real-world regardless of how many
+        # parallel connections a speed test used — consistent with
+        # scheduler sharing, not a radio-quality problem this formula
+        # could otherwise detect.
+        #
+        # SCHED_EFF is therefore a separate, explicit assumption (not a
+        # measurement) about typical cell loading, applied only to the
+        # "estimated" (everyday/realistic) figure — "maximum" is left
+        # alone since it is documented elsewhere as a best-case ceiling,
+        # not a real-world prediction, so scheduler sharing does not
+        # apply to what it claims to represent. 0.55 assumes a
+        # moderately shared cell (between the ~1.0 empty-cell and
+        # ~0.25-0.5 loaded-cell figures above) — deliberately
+        # conservative since no AT command on this modem reports actual
+        # PRB utilization/cell load, so this can only ever be a chosen
+        # assumption, not something future signal data could refine.
+        SCHED_EFF = 0.55
         total_est = 0; total_max = 0; total_bw = 0
         out = "["
 
@@ -1110,6 +1142,7 @@ compute_ca_throughput() {
                 is_tdd = is_nr ? nr_is_tdd(band_num) : lte_is_tdd(band_num)
                 if (is_tdd) { est = est * TDD_DL; max = max * TDD_DL }
                 est = est * rsrq_penalty(rsrq)
+                est = est * SCHED_EFF
             }
             c_est = int(est + 0.5)
             c_max = int(max + 0.5)
