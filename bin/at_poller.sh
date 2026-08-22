@@ -17,7 +17,7 @@ CONF_FILE="/usrdata/openmodem/config/openmodem.conf"
 LOG_LEVEL=1
 POLL_INTERVAL=10
 HISTORY_WINDOW_SAMPLES=60
-MIMO_MAX_WINDOW_S=3600
+MIMO_MAX_WINDOW_S=300
 [ -f "$CONF_FILE" ] && . "$CONF_FILE"
 
 AT_CMD_BIN="/usrdata/openmodem/bin/at_command.sh"
@@ -578,7 +578,7 @@ build_mimo_lookup() {
 # on total absence: each cache line holds a per-key history of
 # "epoch:layers" samples, one appended per cycle the key is seen in the
 # live reading. Every cycle, every key's history (seen this cycle or not)
-# is pruned of samples older than MIMO_MAX_WINDOW_S (3600s / 60min
+# is pruned of samples older than MIMO_MAX_WINDOW_S (300s / 5min
 # default, config/openmodem.conf) and the reported max is taken over
 # whatever survives — so a peak fades out of the display this long after
 # it was observed even on a carrier that never drops, not just after an
@@ -832,7 +832,7 @@ collect_carrier_aggregation() {
 # "layers" term in the throughput formula below AND the "mimo_layers"
 # JSON field (the CA table's "(NxN)" badge) — the highest layer count
 # observed on this exact carrier within the cache's trailing rolling
-# window (MIMO_MAX_WINDOW_S, default 60min), still clamped to
+# window (MIMO_MAX_WINDOW_S, default 5min), still clamped to
 # lte_max_layers()/nr_max_layers()'s static per-band ceiling as a
 # physical sanity cap (a glitched live reading can't inflate the cached
 # max past what the band/modem could ever actually do). The throughput
