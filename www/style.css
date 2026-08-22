@@ -480,6 +480,19 @@ body {
   text-align: center;
 }
 
+/* GitHub repo link + commit SHA, on the footer's second line — kept
+   the same dim color as the surrounding status text (not the brighter
+   .om-link-gold treatment, which is for actionable in-page links) so
+   this reads as passive chrome, underlining only on hover to show it's
+   still a link. */
+.om-footer a {
+  color: inherit;
+  text-decoration: none;
+}
+.om-footer a:hover {
+  text-decoration: underline;
+}
+
 .om-card-wide {
   grid-column: 1 / -1;
 }

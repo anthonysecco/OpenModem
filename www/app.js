@@ -2,6 +2,8 @@
 (function () {
   'use strict';
 
+  var REPO_URL = 'https://github.com/anthonysecco/OpenModem';
+
   var NAV = [
     { label: 'Dashboard', href: '/',            key: 'dashboard' },
     { label: 'Cellular',  href: '/cellular.html', key: 'cellular'  },
@@ -85,14 +87,19 @@
     }).join('');
   }
 
-  /* Footer markup (connection status + "Updated Xs ago") is identical
-     on every page, so it's injected here alongside the nav links rather
-     than hand-duplicated across 6 HTML files — same reasoning as
-     buildNavLinks() itself. Each page just carries an empty
-     <footer id="om-footer"> for this to fill. refreshState()/tickAge()
-     then drive #om-conn-status/[data-field="_polled_at"] exactly as
-     before, just relocated from the topbar + a page-local
-     <p class="om-updated"> into this one shared spot. */
+  /* Footer markup (connection status + "Updated Xs ago", plus a GitHub
+     repo link and the deployed commit SHA on a second line) is
+     identical on every page, so it's injected here alongside the nav
+     links rather than hand-duplicated across 6 HTML files — same
+     reasoning as buildNavLinks() itself. Each page just carries an
+     empty <footer id="om-footer"> for this to fill. refreshState()/
+     tickAge() then drive #om-conn-status/[data-field="_polled_at"]
+     exactly as before, just relocated from the topbar + a page-local
+     <p class="om-updated"> into this one shared spot. The commit SHA
+     link is a second, separate [data-field="commit_sha"] element from
+     System page's Update card — loadVersionInfo() below updates every
+     match on the page, not just the first, since this footer now
+     duplicates that field site-wide. */
   function initShell(activeKey) {
     var links = buildNavLinks(activeKey);
 
@@ -105,7 +112,10 @@
     var footer = document.getElementById('om-footer');
     if (footer) {
       footer.innerHTML = '<span id="om-conn-status">Loading…</span> | Updated ' +
-        '<span data-field="_polled_at">—</span>';
+        '<span data-field="_polled_at">—</span>' +
+        '<br>' +
+        '<a href="' + REPO_URL + '" target="_blank" rel="noopener">OpenModem on GitHub</a>' +
+        ' · <a data-field="commit_sha" href="' + REPO_URL + '" target="_blank" rel="noopener">—</a>';
     }
 
     // Static skeleton, built once — renderTopbarSignal (driven by
@@ -1222,23 +1232,34 @@
      deployed commit info" step) and version.sh serves it as-is, so this
      only ever needs to be fetched once per page load, not on
      refreshState()'s poll cycle — see renderState()'s commit_sha/
-     commit_date skip for why mixing it into that loop would be wrong. */
+     commit_date skip for why mixing it into that loop would be wrong.
+     querySelectorAll, not querySelector: [data-field="commit_sha"] now
+     matches twice on the System page (the shared footer's link, plus
+     the Update card's own span) and once (footer only) everywhere
+     else — a single querySelector would silently leave whichever one
+     it didn't pick showing "—" forever. The footer's copy is an <a>;
+     give it an href to the exact commit on GitHub, which a plain
+     <span> (System page's card) doesn't have and shouldn't get. */
   function loadVersionInfo() {
-    var shaEl = document.querySelector('[data-field="commit_sha"]');
-    var dateEl = document.querySelector('[data-field="commit_date"]');
-    if (!shaEl && !dateEl) return; // not on this page
+    var shaEls = document.querySelectorAll('[data-field="commit_sha"]');
+    var dateEls = document.querySelectorAll('[data-field="commit_date"]');
+    if (!shaEls.length && !dateEls.length) return; // not on this page
 
     fetch('/cgi-bin/version.sh')
       .then(function (r) { return r.json(); })
       .then(function (data) {
-        if (shaEl) {
-          var sha = data.commit_sha;
-          if (typeof sha === 'string' && sha !== 'unknown' && sha.length >= 7) {
-            shaEl.textContent = sha.slice(0, 7);
-            shaEl.title = sha;
+        var sha = data.commit_sha;
+        if (typeof sha === 'string' && sha !== 'unknown' && sha.length >= 7) {
+          for (var i = 0; i < shaEls.length; i++) {
+            var el = shaEls[i];
+            el.textContent = sha.slice(0, 7);
+            el.title = sha;
+            if (el.tagName === 'A') el.href = REPO_URL + '/commit/' + sha;
           }
         }
-        if (dateEl) dateEl.textContent = fmtCommitDate(data.commit_date);
+        for (var j = 0; j < dateEls.length; j++) {
+          dateEls[j].textContent = fmtCommitDate(data.commit_date);
+        }
       })
       .catch(function () {});
   }
