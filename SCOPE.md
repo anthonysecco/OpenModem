@@ -201,6 +201,42 @@ goal).
   `update.sh?action=status` until the reinstalled httpd comes back.
   `openmodem.conf` is preserved across updates (installer skips
   re-downloading it if one already exists).
+- **Skip-if-unchanged, verify-before-install, and automatic rollback**
+  (2026-08-22): `installer.sh` now resolves the target commit via
+  GitHub's API *before* downloading anything (moved up from a
+  display-only lookup after the download) and exits immediately if it
+  already matches the installed `VERSION` — `OPENMODEM_FORCE_INSTALL=1`
+  bypasses this for repairing a corrupted install without a new commit.
+  An unresolved SHA (rate-limited/network hiccup) is never treated as a
+  match. Staged files are then verified (non-empty + `sh -n` on every
+  script) before step 5, the actual point of no return. Step 5 also now
+  backs up OpenModem's own previous install (code + systemd units, to
+  `/usrdata/openmodem.bak`/`.units.bak`) instead of deleting it outright
+  — deliberately scoped to OpenModem only, never QuecControl/SimpleAdmin/
+  SimpleFirewall, since removing those stays a one-way migration. The
+  post-start health check that already existed now gates cleanup (all
+  healthy → delete the backup) vs. automatic rollback (anything
+  unhealthy → stop new services, restore the backed-up code/units,
+  restart, and leave the broken attempt at `INSTALL_DIR.failed` for
+  inspection).
+  - All four paths confirmed live end-to-end: (1) skip — re-running the
+    installer against an already-installed commit exited at step 2
+    without touching anything; (2) `OPENMODEM_FORCE_INSTALL=1` correctly
+    bypassed the skip and reinstalled the same commit; (3) a genuine
+    update (previous commit → this one) ran the full flow successfully
+    and cleaned up its backup; (4) rollback — a throwaway git branch
+    (never merged to main) with `apply_iptables.sh` replaced by a bare
+    `exit 1` was installed via a SHA-pinned URL, deterministically
+    failed the Firewall/TTL health check (`Type=oneshot` has no
+    `Restart=`, so `is-active` reports failed reliably, unlike the
+    pgrep-based checks which are timing-dependent), and the installer
+    correctly rolled back: `VERSION` showed the prior good commit,
+    all 5 services were active, the real iptables rule was reapplied,
+    and the web UI responded correctly — verified from the host, not
+    from the device's own shell, since curling the device's own LAN IP
+    from *inside* the device doesn't traverse `bridge0`/`eth0`/
+    `tailscale0`, so apply_iptables.sh's own port-8080 allowlist rule
+    drops it — a firewall-scoping fact, not a rollback bug.
 
 ## Verified against real hardware
 
