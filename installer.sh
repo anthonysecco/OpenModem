@@ -331,10 +331,12 @@ Description=OpenModem AT Command Broker
 After=local-fs.target network.target
 
 [Service]
-Type=simple
+Type=notify
+NotifyAccess=all
 ExecStart=/bin/sh /usrdata/openmodem/bin/at_broker.sh
 Restart=always
 RestartSec=3
+WatchdogSec=20
 
 [Install]
 WantedBy=multi-user.target
@@ -347,7 +349,8 @@ After=openmodem-broker.service
 Requires=openmodem-broker.service
 
 [Service]
-Type=simple
+Type=notify
+NotifyAccess=all
 ExecStartPre=/bin/sh -c '\
     i=0; \
     while [ ! -p /tmp/at_request ] && [ "$i" -lt 20 ]; do \
@@ -357,6 +360,7 @@ ExecStartPre=/bin/sh -c '\
 ExecStart=/bin/sh /usrdata/openmodem/bin/at_poller.sh
 Restart=always
 RestartSec=5
+WatchdogSec=45
 
 [Install]
 WantedBy=multi-user.target

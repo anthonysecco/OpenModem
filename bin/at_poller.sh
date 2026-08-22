@@ -1371,6 +1371,11 @@ if [ ! -p /tmp/at_request ]; then
     exit 1
 fi
 
+# Tells systemd (Type=notify) this service is up — otherwise it just waits
+# out TimeoutStartSec before deciding startup succeeded anyway. No-op (harmless
+# nonzero exit, ignored) when run manually outside systemd, i.e. NOTIFY_SOCKET unset.
+systemd-notify --ready 2>/dev/null
+
 log_op "Starting — interval=${POLL_INTERVAL}s log_level=${LOG_LEVEL}"
 
 # Every AT round trip costs ~0.25-0.35s of fixed broker/polling overhead
@@ -1423,6 +1428,12 @@ while true; do
     [ $(( _cycle % 20 )) -eq 0 ] && rotate_log
 
     _blob=$(run_at "$ALL_CMD" 15)
+
+    # Fed once per cycle, right after the one call that can legitimately
+    # block for a while (run_at) — proves the cycle is actually making
+    # progress, not just that the loop started. WatchdogSec (set in the
+    # systemd unit) must stay comfortably above worst-case cycle time.
+    systemd-notify WATCHDOG=1 2>/dev/null
 
     collect_device "$_blob"
     collect_uptime

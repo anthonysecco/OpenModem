@@ -111,13 +111,42 @@ done
 rm -f "$POLL_FILE"
 log_op "Startup flush: ${_flushed} stale chunk(s) discarded"
 
+# Tells systemd (Type=notify) this service is up — otherwise it just waits
+# out TimeoutStartSec before deciding startup succeeded anyway. No-op (harmless
+# nonzero exit, ignored) when run manually outside systemd, i.e. NOTIFY_SOCKET unset.
+systemd-notify --ready 2>/dev/null
+
 _req_count=0
 
+# Response files that never got picked up (client already gave up waiting)
+# would otherwise sit in RESPONSE_DIR until the broker next restarts —
+# on tmpfs, forever between restarts. req_id's 2nd underscore-field is the
+# epoch second it was created (at_command.sh: "$$_$(date +%s)_XXXXXX"), so
+# this needs no stat/mtime support from BusyBox find — just string parsing.
+prune_stale_responses() {
+    _now=$(date +%s)
+    for _f in "$RESPONSE_DIR"/*; do
+        [ -e "$_f" ] || continue
+        _ts=$(basename "$_f" | cut -d'_' -f2)
+        echo "$_ts" | grep -qE '^[0-9]+$' || continue
+        if [ $(( _now - _ts )) -gt 180 ]; then
+            rm -f "$_f"
+            log_dbg "Pruned stale response file $(basename "$_f")"
+        fi
+    done
+}
+
 # -- Main request loop ---------------------------------------------------
+# read -t (confirmed working on this FIFO fd, unlike AT_DEVICE's raw
+# character device — see the header comment) lets idle periods heartbeat
+# the watchdog too, not just periods with active requests.
 while true; do
-    if read -r request <&4; then
+    if read -t 5 -r request <&4; then
         _req_count=$(( _req_count + 1 ))
-        [ $(( _req_count % 50 )) -eq 0 ] && rotate_log
+        if [ $(( _req_count % 10 )) -eq 0 ]; then
+            rotate_log
+            prune_stale_responses
+        fi
 
         req_id=$(echo "$request" | cut -d'|' -f1)
         timeout=$(echo "$request" | cut -d'|' -f2)
@@ -139,6 +168,12 @@ while true; do
         _max_polls=$(( timeout * 10 ))
 
         while [ "$_poll" -lt "$_max_polls" ]; do
+            # Every ~1s of a long wait (e.g. a 130s carrier scan), not just
+            # once the whole request finishes — so WatchdogSec can stay
+            # tight enough to catch a genuinely wedged cat/kill/wait
+            # sequence without also tripping on a slow-but-healthy scan.
+            [ $(( _poll % 10 )) -eq 0 ] && systemd-notify WATCHDOG=1 2>/dev/null
+
             cat <&3 > "$POLL_FILE" &
             CPID=$!
             usleep "$POLL_INTERVAL_US" 2>/dev/null || sleep 1
@@ -176,5 +211,10 @@ while true; do
         fi
 
         echo "$RESPONSE" > "$RESPONSE_DIR/${req_id}"
+        systemd-notify WATCHDOG=1 2>/dev/null
+    else
+        # read -t timeout: no request pending, but the loop is alive — feed
+        # the watchdog so a quiet FIFO doesn't look the same as a wedged one.
+        systemd-notify WATCHDOG=1 2>/dev/null
     fi
 done

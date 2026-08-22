@@ -419,6 +419,44 @@ Confirmed on an actual RM520N-GL (2026-08-14), not assumed:
   active NR component carrier (the normal case on this LTE-only test
   connection), and both fields came back silently `null` as a result.
   Fixed by reordering them before `nr5g_mimo_info` instead.
+- **Systemd watchdog on the broker and poller** (2026-08-22): both units
+  moved from `Type=simple` to `Type=notify`/`NotifyAccess=all` with a
+  `WatchdogSec`, so a wedged-but-not-crashed process (the failure mode
+  `Restart=always` alone can't catch, since there's no process exit to
+  restart on) gets killed and restarted automatically. `NotifyAccess=all`
+  is required, not the default `main` — `systemd-notify` runs as a forked
+  child of the script, a different PID than the unit's `MainPID`, so
+  `main` would silently reject its notifications. Mechanism confirmed
+  live end-to-end against this device (systemd 244, `/bin/systemd-notify`
+  present) via a disposable test unit before touching the real daemons:
+  3 heartbeats followed by a deliberate stall triggered
+  `Result: watchdog` and a clean auto-restart within `WatchdogSec`.
+  - `at_broker.sh`: `read -t 5` on the FIFO fd (confirmed live this works
+    fine on a FIFO, unlike `AT_DEVICE`'s raw character device, which is
+    the only place CLAUDE.md's "no `read -t`" caveat actually applies) so
+    idle periods heartbeat too, not just active ones. The per-request
+    polling loop also heartbeats roughly once per second so a legitimately
+    long wait (a 130s carrier scan) doesn't trip a watchdog tuned to catch
+    a *hung* single ~100ms `cat`/`kill`/`wait` cycle — `WatchdogSec=20`.
+  - `at_poller.sh`: one heartbeat per cycle, right after `run_at` (the
+    one call that can legitimately block) returns — `WatchdogSec=45`,
+    comfortably above the ~15s command-chain timeout plus processing.
+  - Not yet exercised against a real wedge on the actual broker/poller
+    (only the disposable test unit was pushed to failure); verify after
+    this ships that a genuine hang — e.g. induced by killing the AT
+    device mid-request — actually triggers a real-world restart, not just
+    the isolated mechanism.
+- **Stale AT-response-file cleanup** (2026-08-22): `at_command.sh` deletes
+  its response file after a successful read, but a client that gives up
+  waiting (its own `wait_limit` elapses first) leaves the broker's
+  eventual write in `/tmp/at_responses/` forever — `/tmp` is tmpfs, and
+  nothing previously reaped these except a full broker restart (its
+  startup/shutdown both `rm -rf "$RESPONSE_DIR"`). `at_broker.sh` now
+  prunes response files older than 180s every 10 requests, using the
+  epoch second already embedded in `req_id`'s 2nd underscore-field
+  (`at_command.sh`: `"$$_$(date +%s)_XXXXXX"`) rather than relying on
+  BusyBox `find`'s `-mmin`/`stat` support, which wasn't verified present
+  on this firmware.
 
 ## Open questions
 
