@@ -28,8 +28,23 @@ INSTALL_DIR="/usrdata/openmodem"
 CONFIG_DIR="$INSTALL_DIR/config"
 CONF_FILE="$CONFIG_DIR/openmodem.conf"
 
+# Bypasses the "installed commit already matches" skip below — for
+# repairing a corrupted on-device install without needing a new commit
+# to push first: curl ... | OPENMODEM_FORCE_INSTALL=1 sh
+FORCE_INSTALL="${OPENMODEM_FORCE_INSTALL:-0}"
+
+# Backs up the *previous* OpenModem install (code + systemd units) so a
+# new install that fails its post-start health check (see the end of
+# step 9) can be rolled back to instead of left broken. Deliberately
+# does NOT extend to QuecControl/SimpleAdmin/SimpleFirewall — removing
+# those is a one-way migration by design (see step 5), not something a
+# resiliency mechanism should undo.
+OM_BACKUP_DIR="/usrdata/openmodem.bak"
+OM_UNITS_BACKUP_DIR="/usrdata/openmodem.units.bak"
+
 # Everything is downloaded here first and only swapped into INSTALL_DIR
-# once every file has arrived successfully (step 4). Both dirs live on
+# once every file has arrived successfully and passed verification (step
+# 4). Both dirs live on
 # /usrdata (always-writable UBI volume, confirmed in CLAUDE.md's
 # "Development" section), so the swap is a same-filesystem `mv` — a
 # single rename(2), not a copy — same atomic write-then-rename pattern
@@ -58,7 +73,7 @@ echo ""
 # reboot); duplicated here in miniature only because it must run before
 # that script even exists on disk. Idempotent (checked with -C before
 # -A), safe on a reinstall/update.
-echo "[1/7] Securing web UI port..."
+echo "[1/9] Securing web UI port..."
 for _if in bridge0 eth0 tailscale0; do
     iptables -C INPUT -i "$_if" -p tcp --dport 8080 -j ACCEPT 2>/dev/null || \
         iptables -A INPUT -i "$_if" -p tcp --dport 8080 -j ACCEPT
@@ -67,11 +82,50 @@ iptables -C INPUT -p tcp --dport 8080 -j DROP 2>/dev/null || \
     iptables -A INPUT -p tcp --dport 8080 -j DROP
 echo "  Done."
 
+# --- Check whether an install is even needed ---
+# Resolved here, before downloading anything, rather than after (where
+# this lookup used to live, purely for display) — so a no-op update
+# (nothing changed upstream) costs one small API call instead of a full
+# asset download over what can be a slow/metered cellular link. See the
+# "Resolving deployed commit info" comment further down (still true here,
+# just moved) for why this needs GitHub's API at all: raw.githubusercontent.com
+# serves plain file bytes with no commit metadata attached.
+echo "[2/9] Checking for updates..."
+_repo_tail="${REPO#https://raw.githubusercontent.com/}"
+OWNER_REPO="${_repo_tail%/*}"
+GITHUB_REF="${_repo_tail##*/}"
+_api_json=$(curl -4 -fsS --max-time 15 "https://api.github.com/repos/${OWNER_REPO}/commits/${GITHUB_REF}" 2>/dev/null)
+_commit_sha=$(printf '%s' "$_api_json" | sed -n 's/.*"sha": *"\([0-9a-f]\{40\}\)".*/\1/p' | head -1)
+_commit_date=$(printf '%s' "$_api_json" | sed -n 's/.*"date": *"\([^"]*\)".*/\1/p' | head -1)
+
+_installed_sha=""
+if [ -f "$INSTALL_DIR/VERSION" ]; then
+    _installed_sha=$(grep '^COMMIT_SHA=' "$INSTALL_DIR/VERSION" | head -1 | cut -d= -f2-)
+fi
+
+if [ "$FORCE_INSTALL" != "1" ] && [ -n "$_commit_sha" ] && [ "$_commit_sha" = "$_installed_sha" ]; then
+    echo "  Already up to date (commit ${_commit_sha}) — nothing to do."
+    echo "  Set OPENMODEM_FORCE_INSTALL=1 to reinstall anyway."
+    exit 0
+fi
+
+if [ -z "$_commit_sha" ]; then
+    # Unresolved (rate-limited, network hiccup) is NOT the same as "matches" —
+    # never skip on an unknown SHA, or a flaky GitHub API call would silently
+    # block every future update. Proceed with a normal install; VERSION will
+    # show "unknown" until the next successful lookup, same as before.
+    echo "  WARNING: Could not resolve the latest commit from GitHub's API — proceeding with install anyway."
+elif [ -n "$_installed_sha" ]; then
+    echo "  Installed: ${_installed_sha}. Latest: ${_commit_sha}. Proceeding."
+else
+    echo "  No prior install detected. Proceeding."
+fi
+
 # --- Download everything into a staging directory first ---
 # Nothing about the existing install (old or otherwise) is touched in
 # this step — a failure here (network drop, GitHub hiccup, a carrier
 # connection blip) leaves the running install exactly as it was.
-echo "[2/7] Downloading files to staging area..."
+echo "[3/9] Downloading files to staging area..."
 
 rm -rf "$STAGING_DIR"
 mkdir -p "$STAGING_DIR/bin"
@@ -164,46 +218,65 @@ if [ "$FAIL" = "1" ]; then
     exit 1
 fi
 
-echo "  Resolving deployed commit info..."
-# raw.githubusercontent.com serves plain file bytes with no commit
-# metadata attached, so REPO alone (either "main" or a pinned SHA — see
-# this script's header comment) can't say which exact commit's files
-# these are; only GitHub's REST API can resolve that. GITHUB_REF is
-# REPO's tail path segment (a branch name for a normal install, a
-# literal SHA for a pinned OPENMODEM_INSTALL_REF one) and OWNER_REPO is
-# everything between the host and that segment — both derived from REPO
-# itself rather than hardcoded, so this keeps working if the repo is
-# ever renamed/forked. /repos/<owner>/<repo>/commits/<ref> resolves
-# either form to a concrete SHA + commit date, which lands in VERSION
-# and is served by version.sh for the System page's Device Info card.
-# Parsed with sed rather than a JSON library (none available in
-# BusyBox ash) the same way net_poller.sh's geo_loop() already parses
-# ipinfo.io's response — same reasoning: a flat, stable field shape in
-# GitHub's own pretty-printed JSON, and the capture patterns themselves
-# (hex-only for the sha, quote-excluding for the date) keep whatever
-# lands in VERSION safe to embed in version.sh's JSON output later
-# without extra escaping. This is display-only metadata — an
-# unreachable/failed/rate-limited lookup doesn't fail the install,
-# VERSION just ends up showing "unknown" until the next successful one.
-_repo_tail="${REPO#https://raw.githubusercontent.com/}"
-OWNER_REPO="${_repo_tail%/*}"
-GITHUB_REF="${_repo_tail##*/}"
-_api_json=$(curl -4 -fsS --max-time 15 "https://api.github.com/repos/${OWNER_REPO}/commits/${GITHUB_REF}" 2>/dev/null)
-_commit_sha=$(printf '%s' "$_api_json" | sed -n 's/.*"sha": *"\([0-9a-f]\{40\}\)".*/\1/p' | head -1)
-_commit_date=$(printf '%s' "$_api_json" | sed -n 's/.*"date": *"\([^"]*\)".*/\1/p' | head -1)
+echo "  Recording deployed commit info..."
+# _commit_sha/_commit_date were already resolved in step 2, before the
+# download — this just writes them into the now-existing staging dir.
+# Display-only metadata (version.sh / System page's Device Info card):
+# an unresolved SHA doesn't fail the install, VERSION just shows
+# "unknown" until the next successful lookup.
 {
     echo "COMMIT_SHA=${_commit_sha:-unknown}"
     echo "COMMIT_DATE=${_commit_date:-unknown}"
 } > "$STAGING_DIR/VERSION"
-if [ -z "$_commit_sha" ]; then
-    echo "  WARNING: Could not resolve deployed commit from GitHub's API — Device Info will show \"unknown\" until the next successful update."
-fi
 
 echo "  Setting permissions..."
 chmod +x "$STAGING_DIR/bin/"*.sh
 chmod +x "$STAGING_DIR/www/cgi-bin/"*.sh
 chmod +x "$STAGING_DIR/installer.sh"
 chmod 755 "$STAGING_DIR/www/cgi-bin"
+echo "  Done."
+
+# --- Verify staged files before touching anything live ---
+# Catches a truncated download or a genuinely broken commit (bad shell
+# syntax) before step 5, which is the point of no return — it backs up
+# and then removes the currently-running install. No checksum/manifest
+# infrastructure exists to verify against, so this checks what a bad
+# download or bad commit would actually break: every staged shell script
+# parses (sh -n, same manual check CLAUDE.md's Development section
+# already documents, just automated here), and nothing came back empty
+# (a GitHub outage serving a 200 with an HTML error body would otherwise
+# look like a successful download to curl -f).
+echo "[4/9] Verifying staged files..."
+_verify_fail=0
+for _f in "$STAGING_DIR"/bin/*.sh "$STAGING_DIR"/www/cgi-bin/*.sh "$STAGING_DIR/installer.sh"; do
+    [ -f "$_f" ] || continue
+    if [ ! -s "$_f" ]; then
+        echo "  ERROR: $_f is empty"
+        _verify_fail=1
+        continue
+    fi
+    if ! sh -n "$_f" 2>/tmp/openmodem_verify_err; then
+        echo "  ERROR: $_f failed syntax check:"
+        sed 's/^/    /' /tmp/openmodem_verify_err
+        _verify_fail=1
+    fi
+done
+rm -f /tmp/openmodem_verify_err
+for _f in "$STAGING_DIR/www/app.js" "$STAGING_DIR/www/style.css" "$STAGING_DIR"/www/*.html "$STAGING_CONF_FILE"; do
+    [ -f "$_f" ] || continue
+    if [ ! -s "$_f" ]; then
+        echo "  ERROR: $_f is empty"
+        _verify_fail=1
+    fi
+done
+
+if [ "$_verify_fail" = "1" ]; then
+    echo ""
+    echo "ERROR: Staged files failed verification."
+    echo "Nothing on the device has been changed — the existing install is still running."
+    rm -rf "$STAGING_DIR"
+    exit 1
+fi
 echo "  Done."
 
 # --- Remove other/prior installs ---
@@ -228,16 +301,32 @@ echo "  Done."
 # project's only bash dependency (SimpleFirewall's scripts are #!/bin/bash;
 # everything OpenModem owns is POSIX ash). Tailscale is still left alone —
 # unrelated, no overlap with anything here.
-echo "[3/7] Removing existing installs (QuecControl, SimpleAdmin, SimpleFirewall, OpenModem)..."
+echo "[5/9] Removing existing installs (QuecControl, SimpleAdmin, SimpleFirewall, OpenModem)..."
 
 # /lib/systemd/system lives on the root filesystem, which is read-only by
 # default (confirmed UBIFS on real hardware) — remount rw before touching
-# it. Stays rw through step 6's autostart install, then gets remounted ro
+# it. Stays rw through step 8's autostart install, then gets remounted ro
 # at the end of that step. Note: /etc/systemd/system and /usrdata are on a
 # separate, always-writable volume, so this doesn't affect the
 # /etc/systemd/system rm's below.
 echo "  Remounting / as read-write..."
 mount -o remount,rw /
+
+# Back up OpenModem's own current install (code + systemd units) before
+# anything below touches it, so step 9 can roll back to a known-good
+# install if the new one fails its health check. Deliberately scoped to
+# OpenModem only — QuecControl/SimpleAdmin/SimpleFirewall removal below
+# stays a one-way migration, not something this backup restores.
+rm -rf "$OM_BACKUP_DIR" "$OM_UNITS_BACKUP_DIR"
+_had_prior_install=0
+if [ -d "$INSTALL_DIR" ]; then
+    mv "$INSTALL_DIR" "$OM_BACKUP_DIR"
+    _had_prior_install=1
+fi
+mkdir -p "$OM_UNITS_BACKUP_DIR"
+for _u in openmodem-broker openmodem-poller openmodem-httpd openmodem-iptables openmodem-netpoller; do
+    [ -f "/lib/systemd/system/${_u}.service" ] && cp "/lib/systemd/system/${_u}.service" "$OM_UNITS_BACKUP_DIR/"
+done
 
 for svc in \
     queccontrol-poller queccontrol-init queccontrol-broker queccontrol-httpd \
@@ -306,7 +395,6 @@ rm -rf /tmp/queccontrol
 rm -rf /tmp/simpleadmin
 rm -rf /tmp/openmodem
 
-rm -rf "$INSTALL_DIR"
 rm -rf "/usrdata/quecmanager"
 rm -rf "/usrdata/simpleadmin"
 rm -rf "/usrdata/socat-at-bridge"
@@ -318,12 +406,12 @@ echo "  Done."
 # Staging directory already has everything — config preserved/migrated,
 # permissions set. This is the one step that actually changes what's on
 # disk for OpenModem itself, and it's a single same-filesystem rename.
-echo "[4/7] Installing downloaded files..."
+echo "[6/9] Installing downloaded files..."
 mv "$STAGING_DIR" "$INSTALL_DIR"
 echo "  Done."
 
 # --- Create systemd service files ---
-echo "[5/7] Creating systemd service files..."
+echo "[7/9] Creating systemd service files..."
 
 cat > /tmp/openmodem-broker.service << 'EOF'
 [Unit]
@@ -415,9 +503,9 @@ EOF
 echo "  Service files created."
 
 # --- Install systemd services ---
-echo "[6/7] Installing systemd autostart..."
+echo "[8/9] Installing systemd autostart..."
 
-# Still read-write from step 3's remount.
+# Still read-write from step 5's remount.
 echo "  Installing service files to /lib/systemd/system/..."
 cp /tmp/openmodem-broker.service    /lib/systemd/system/
 cp /tmp/openmodem-poller.service    /lib/systemd/system/
@@ -444,7 +532,7 @@ rm -f /tmp/openmodem-iptables.service
 rm -f /tmp/openmodem-netpoller.service
 
 # --- Start services ---
-echo "[7/7] Starting services..."
+echo "[9/9] Starting services..."
 
 systemctl start openmodem-iptables.service
 
@@ -481,7 +569,7 @@ fi
 systemctl start openmodem-httpd.service
 echo "  Done."
 
-# --- Verify ---
+# --- Post-start health check (gates cleanup vs. rollback below) ---
 echo ""
 echo "==============================="
 echo "  Installation Complete"
@@ -504,38 +592,91 @@ while [ "$i" -lt 5 ]; do
     i=$(( i + 1 ))
 done
 
+_all_healthy=1
+
 if [ "$_web_ok" = "1" ]; then
     echo "  OK Web UI:  RUNNING"
 else
     echo "  FAIL Web UI: FAILED"
+    _all_healthy=0
 fi
 
 if pgrep -f "at_broker.sh" > /dev/null; then
     echo "  OK Broker:  RUNNING"
 else
     echo "  FAIL Broker: FAILED"
+    _all_healthy=0
 fi
 
 if pgrep -f "at_poller.sh" > /dev/null; then
     echo "  OK Poller:  RUNNING"
 else
     echo "  FAIL Poller: FAILED"
+    _all_healthy=0
 fi
 
 if systemctl is-active --quiet openmodem-iptables.service; then
     echo "  OK Firewall/TTL rules: APPLIED"
 else
     echo "  FAIL Firewall/TTL rules: FAILED"
+    _all_healthy=0
 fi
 
 if pgrep -f "net_poller.sh" > /dev/null; then
     echo "  OK Connectivity poller: RUNNING"
 else
     echo "  FAIL Connectivity poller: FAILED"
+    _all_healthy=0
 fi
 
 echo ""
-echo "  Start:   systemctl start openmodem-broker.service openmodem-poller.service openmodem-httpd.service openmodem-iptables.service openmodem-netpoller.service"
-echo "  Stop:    systemctl stop openmodem-httpd.service openmodem-poller.service openmodem-broker.service openmodem-iptables.service openmodem-netpoller.service"
-echo "  Restart: systemctl restart openmodem-broker.service openmodem-poller.service openmodem-httpd.service openmodem-iptables.service openmodem-netpoller.service"
-echo "  Status:  systemctl status openmodem-broker.service openmodem-poller.service openmodem-httpd.service openmodem-iptables.service openmodem-netpoller.service"
+
+if [ "$_all_healthy" = "1" ]; then
+    # New install is healthy — the backup has done its job.
+    rm -rf "$OM_BACKUP_DIR" "$OM_UNITS_BACKUP_DIR"
+    echo "  Start:   systemctl start openmodem-broker.service openmodem-poller.service openmodem-httpd.service openmodem-iptables.service openmodem-netpoller.service"
+    echo "  Stop:    systemctl stop openmodem-httpd.service openmodem-poller.service openmodem-broker.service openmodem-iptables.service openmodem-netpoller.service"
+    echo "  Restart: systemctl restart openmodem-broker.service openmodem-poller.service openmodem-httpd.service openmodem-iptables.service openmodem-netpoller.service"
+    echo "  Status:  systemctl status openmodem-broker.service openmodem-poller.service openmodem-httpd.service openmodem-iptables.service openmodem-netpoller.service"
+    exit 0
+fi
+
+# --- Roll back ---
+# One or more health checks above failed — restore the previous
+# OpenModem install (code + units) rather than leave a broken one
+# running. Never restores QuecControl/SimpleAdmin/SimpleFirewall (see
+# this script's header comment) — only ever the prior OpenModem state.
+echo "==============================="
+echo "  Install unhealthy — rolling back"
+echo "==============================="
+systemctl stop openmodem-httpd.service openmodem-poller.service openmodem-broker.service openmodem-iptables.service openmodem-netpoller.service 2>/dev/null
+
+if [ "$_had_prior_install" = "1" ]; then
+    mount -o remount,rw /
+    rm -rf "${INSTALL_DIR}.failed"
+    mv "$INSTALL_DIR" "${INSTALL_DIR}.failed"
+    if [ -d "$OM_UNITS_BACKUP_DIR" ] && [ -n "$(ls -A "$OM_UNITS_BACKUP_DIR" 2>/dev/null)" ]; then
+        cp "$OM_UNITS_BACKUP_DIR"/*.service /lib/systemd/system/
+    fi
+    systemctl daemon-reload
+    mount -o remount,ro /
+
+    mv "$OM_BACKUP_DIR" "$INSTALL_DIR"
+    rm -rf "$OM_UNITS_BACKUP_DIR"
+
+    systemctl start openmodem-iptables.service
+    systemctl start openmodem-netpoller.service
+    systemctl start openmodem-broker.service
+    systemctl start openmodem-poller.service
+    systemctl start openmodem-httpd.service
+
+    _rolled_back_sha=""
+    [ -f "$INSTALL_DIR/VERSION" ] && _rolled_back_sha=$(grep '^COMMIT_SHA=' "$INSTALL_DIR/VERSION" | head -1 | cut -d= -f2-)
+    echo "  Rolled back to previous install (commit: ${_rolled_back_sha:-unknown})."
+    echo "  The broken new install was kept at ${INSTALL_DIR}.failed for inspection."
+else
+    echo "  No previous OpenModem install to roll back to (this was a fresh install)."
+    echo "  The broken install was left in place at $INSTALL_DIR for inspection."
+fi
+
+exit 1
