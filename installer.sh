@@ -330,7 +330,7 @@ done
 
 for svc in \
     queccontrol-poller queccontrol-init queccontrol-broker queccontrol-httpd \
-    quecmanager-broker quecmanager-httpd \
+    quecmanager-broker quecmanager-httpd quecmanager-startup \
     simpleadmin_httpd simpleadmin_generate_status \
     socat-smd11 socat-smd11-to-ttyIN socat-smd11-from-ttyIN \
     socat-smd7 socat-smd7-to-ttyIN2 socat-smd7-from-ttyIN2 socat-killsmd7bridge \
@@ -341,34 +341,44 @@ do
     systemctl disable "$svc" 2>/dev/null
 done
 
-rm -f /etc/systemd/system/queccontrol-*.service
-rm -f /etc/systemd/system/quecmanager-*.service
-rm -f /etc/systemd/system/simpleadmin*.service
-rm -f /etc/systemd/system/socat-*.service
-rm -f /etc/systemd/system/simplefirewall.service
-rm -f /etc/systemd/system/ttl-override.service
-rm -f /etc/systemd/system/openmodem-*.service
-rm -f /lib/systemd/system/queccontrol-*.service
-rm -f /lib/systemd/system/quecmanager-*.service
-rm -f /lib/systemd/system/simpleadmin*.service
-rm -f /lib/systemd/system/socat-*.service
-rm -f /lib/systemd/system/simplefirewall.service
-rm -f /lib/systemd/system/ttl-override.service
-rm -f /lib/systemd/system/openmodem-*.service
-rm -f /lib/systemd/system/multi-user.target.wants/queccontrol-*.service
-rm -f /lib/systemd/system/multi-user.target.wants/quecmanager-*.service
-rm -f /lib/systemd/system/multi-user.target.wants/simpleadmin*.service
-rm -f /lib/systemd/system/multi-user.target.wants/socat-*.service
-rm -f /lib/systemd/system/multi-user.target.wants/simplefirewall.service
-rm -f /lib/systemd/system/multi-user.target.wants/ttl-override.service
-rm -f /lib/systemd/system/multi-user.target.wants/openmodem-*.service
-rm -f /etc/systemd/system/multi-user.target.wants/queccontrol-*.service
-rm -f /etc/systemd/system/multi-user.target.wants/quecmanager-*.service
-rm -f /etc/systemd/system/multi-user.target.wants/simpleadmin*.service
-rm -f /etc/systemd/system/multi-user.target.wants/socat-*.service
-rm -f /etc/systemd/system/multi-user.target.wants/simplefirewall.service
-rm -f /etc/systemd/system/multi-user.target.wants/ttl-override.service
-rm -f /etc/systemd/system/multi-user.target.wants/openmodem-*.service
+# .timer units (e.g. quecmanager-startup.timer) are a separate unit type
+# from .service and never matched by the *.service globs below — a timer
+# left enabled keeps referencing its (by-then-removed) .service unit and
+# systemd reports it "not-found" forever. Stop/disable/remove both suffixes
+# for every prefix that might use one.
+for suf in service timer; do
+    rm -f /etc/systemd/system/queccontrol-*.$suf
+    rm -f /etc/systemd/system/quecmanager-*.$suf
+    rm -f /etc/systemd/system/simpleadmin*.$suf
+    rm -f /etc/systemd/system/socat-*.$suf
+    rm -f /etc/systemd/system/simplefirewall.$suf
+    rm -f /etc/systemd/system/ttl-override.$suf
+    rm -f /etc/systemd/system/openmodem-*.$suf
+    rm -f /lib/systemd/system/queccontrol-*.$suf
+    rm -f /lib/systemd/system/quecmanager-*.$suf
+    rm -f /lib/systemd/system/simpleadmin*.$suf
+    rm -f /lib/systemd/system/socat-*.$suf
+    rm -f /lib/systemd/system/simplefirewall.$suf
+    rm -f /lib/systemd/system/ttl-override.$suf
+    rm -f /lib/systemd/system/openmodem-*.$suf
+    rm -f /lib/systemd/system/multi-user.target.wants/queccontrol-*.$suf
+    rm -f /lib/systemd/system/multi-user.target.wants/quecmanager-*.$suf
+    rm -f /lib/systemd/system/multi-user.target.wants/simpleadmin*.$suf
+    rm -f /lib/systemd/system/multi-user.target.wants/socat-*.$suf
+    rm -f /lib/systemd/system/multi-user.target.wants/simplefirewall.$suf
+    rm -f /lib/systemd/system/multi-user.target.wants/ttl-override.$suf
+    rm -f /lib/systemd/system/multi-user.target.wants/openmodem-*.$suf
+    rm -f /etc/systemd/system/multi-user.target.wants/queccontrol-*.$suf
+    rm -f /etc/systemd/system/multi-user.target.wants/quecmanager-*.$suf
+    rm -f /etc/systemd/system/multi-user.target.wants/simpleadmin*.$suf
+    rm -f /etc/systemd/system/multi-user.target.wants/socat-*.$suf
+    rm -f /etc/systemd/system/multi-user.target.wants/simplefirewall.$suf
+    rm -f /etc/systemd/system/multi-user.target.wants/ttl-override.$suf
+    rm -f /etc/systemd/system/multi-user.target.wants/openmodem-*.$suf
+    rm -f /etc/systemd/system/timers.target.wants/queccontrol-*.$suf
+    rm -f /etc/systemd/system/timers.target.wants/quecmanager-*.$suf
+    rm -f /etc/systemd/system/timers.target.wants/simpleadmin*.$suf
+done
 
 if [ -f /etc/init.d/queccontrol ]; then
     /etc/init.d/queccontrol stop 2>/dev/null
@@ -395,6 +405,7 @@ rm -rf /tmp/queccontrol
 rm -rf /tmp/simpleadmin
 rm -rf /tmp/openmodem
 
+rm -rf "/usrdata/queccontrol"
 rm -rf "/usrdata/quecmanager"
 rm -rf "/usrdata/simpleadmin"
 rm -rf "/usrdata/socat-at-bridge"

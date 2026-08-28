@@ -237,6 +237,29 @@ goal).
     from *inside* the device doesn't traverse `bridge0`/`eth0`/
     `tailscale0`, so apply_iptables.sh's own port-8080 allowlist rule
     drops it — a firewall-scoping fact, not a rollback bug.
+- **Two prior-install cleanup gaps found via `adb shell` on the real
+  device** (2026-08-28), neither caught by the verification above because
+  that pass only exercised OpenModem-to-OpenModem transitions, not an
+  actual QuecControl/QuecManager device: (1) step 5's `/usrdata` removal
+  list (`quecmanager`, `simpleadmin`, `socat-at-bridge`, `simplefirewall`)
+  never included `/usrdata/queccontrol` itself — a real QuecControl
+  install (`bin/`, `www/`, `config/queccontrol.conf`) was found still on
+  disk despite the step's own banner claiming to remove QuecControl.
+  (2) the stop/disable loop and every `rm -f` glob in step 5 only ever
+  matched `*.service` — a `quecmanager-startup.timer` (systemd's separate
+  `.timer` unit type, `OnBootSec=30sec` triggering
+  `quecmanager-startup.service`) survived every reinstall since its
+  target service was a plain `.service` name but the timer file itself
+  never was. Left `enabled`, referencing a `not-found` service forever.
+  Neither was actively running anything (no `queccontrol-*` systemd
+  units, no init.d script, no cron entry — the queccontrol directory was
+  dead files, and the timer was `inactive`/`dead` with no journal
+  entries), but both are exactly the kind of leftover step 5 exists to
+  remove. Fixed: added the missing `/usrdata/queccontrol` line, and
+  parameterized the stop/disable loop and every glob over both `service`
+  and `timer` suffixes (plus `timers.target.wants` alongside
+  `multi-user.target.wants`) so any future `.timer`-based leftover from
+  any of the four prior tools gets caught too.
 
 ## Verified against real hardware
 
