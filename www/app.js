@@ -780,13 +780,16 @@
     while (arr.length > HISTORY_WINDOW_SAMPLES) arr.shift();
   }
 
-  // Whichever RAT's RSRP was actually reported for that sample — NR is
-  // only ever non-null when an NR leg was actually active at poll time
-  // (see at_poller.sh's collect_signal), so "NR present" is already a
-  // reliable proxy for "NR was the active RAT then", same rule
-  // currentRsrp() uses for the live topbar/Signal Strength card.
+  // The PCC's own RSRP, not "whichever RAT is more exciting to show".
+  // LTE is the PCC/anchor whenever it's present at all — LTE-only *and*
+  // NR5G-NSA both anchor on it, EN-DC by definition; only a pure NR5G-SA
+  // session (no LTE leg at all, so lte_rsrp is null that sample) has NR
+  // itself as the PCC. Same rule currentRsrp() uses for the live
+  // topbar/Signal Strength card — see its comment for why this isn't
+  // "prefer NR when active" (that conflates the PCC with whichever leg
+  // happens to be 5G, and NR is never the PCC in NSA).
   function historyRsrp(rec) {
-    return (typeof rec.nr_rsrp === 'number') ? rec.nr_rsrp : rec.lte_rsrp;
+    return (typeof rec.lte_rsrp === 'number') ? rec.lte_rsrp : rec.nr_rsrp;
   }
 
   /* ── Smoothed line chart (RSRP Trend) ────────────────────────────────
@@ -2204,13 +2207,27 @@
   /* ── Signal Strength (Dashboard) ─────────────────────────────────────
      Final pick after comparing five styles: phone-style bars + a
      colored tier word underneath, no dBm sub-caption. Driven by the
-     currently active RAT's RSRP (NR takes priority when active, same
-     logic as networkTypeText() above) through the site's own
-     RSRP_ZONES/sigZoneColor/sigZoneLabel/sigZoneIndex — unchanged
-     thresholds, this is presentation only. */
+     PCC's own RSRP through the site's own RSRP_ZONES/sigZoneColor/
+     sigZoneLabel/sigZoneIndex — unchanged thresholds, this is
+     presentation only.
+
+     Deliberately NOT "NR takes priority when active" (networkTypeText()
+     above uses that rule, and should keep it — "5G NSA" is the more
+     meaningful *label*, a separate question from which leg's signal
+     number to show). LTE is the PCC/anchor whenever it's active at
+     all — LTE-only *and* NR5G-NSA both anchor on it, EN-DC by
+     definition — so cell_nr_active alone says nothing about which leg
+     is the PCC; it's only ever true for NSA (LTE is still the PCC) or a
+     pure NR5G-SA session (no LTE leg exists then, so this falls through
+     to the NR reading below, correctly for that one case). Confirmed
+     live 2026-08-28: a healthy 3-CC NSA session read LTE PCC -86dBm/
+     17dB SINR against NR5G SCC -112dBm/1dB SINR — the old "prefer NR
+     when active" rule showed the SCC's much weaker reading as "the"
+     signal, including tripping the Critical Signal alert below off a
+     carrier that was never the connection's anchor. */
   function currentRsrp(state) {
-    if (state.cell_nr_active && typeof state.signal_nr_rsrp === 'number') return state.signal_nr_rsrp;
-    return state.signal_lte_rsrp;
+    if (state.cell_lte_active && typeof state.signal_lte_rsrp === 'number') return state.signal_lte_rsrp;
+    return state.signal_nr_rsrp;
   }
 
   // One height per RSRP_ZONES entry — keep this array's length in sync
