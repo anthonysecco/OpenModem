@@ -516,6 +516,64 @@ Confirmed on an actual RM520N-GL (2026-08-14), not assumed:
   (`at_command.sh`: `"$$_$(date +%s)_XXXXXX"`) rather than relying on
   BusyBox `find`'s `-mmin`/`stat` support, which wasn't verified present
   on this firmware.
+- **A second physical card exercised a live NR5G-NSA session for the
+  first time** (2026-08-28, `www` audited directly over HTTP against
+  `192.168.225.1:8080` rather than `adb`/`at_command.sh`) — the original
+  test card never carried an active NR component carrier. This both
+  confirmed several previously-untested assumptions and surfaced a real
+  bug that had been silently breaking the Serving Cell card and Network
+  Type badge on this card the whole time:
+  - `AT+QENG="servingcell"`'s response shape differs from the original
+    test card's: instead of embedding state directly in each RAT line
+    (`"servingcell","STATE","LTE","FDD",...`), this card emits a
+    separate state-only header line (`"servingcell","NOCONN"`) followed
+    by standalone `"LTE"`/`"NR5G-NSA"` data lines with no state/
+    `"servingcell"` tag at all. `collect_serving_cell()`'s old line
+    filter (`grep '^+QENG:.*"servingcell"'`) assumed every relevant line
+    repeated that tag and silently dropped both real data lines on this
+    shape, leaving `cell_lte_active`/`cell_nr_active` false and every
+    `cell_lte_*`/`cell_nr_*` field null despite a fully healthy,
+    high-throughput 3-CC LTE+NR5G-NSA session — which in turn blanked
+    the Serving Cell card, showed `—` for Network Type everywhere it's
+    used (Dashboard card + topbar), and dropped the PCC's UL segment
+    from the CA bandwidth bar (`F_CELL_LTE_UL_BW_MHZ`, sourced from this
+    same broken parse). Fixed by matching any `"+QENG:"` line and
+    falling back to the header line's state when a data line doesn't
+    carry its own. Also worth noting: that header line read `"NOCONN"`
+    on *every* poll throughout the healthy session, so it's captured
+    for display only now, never used to gate the `*_ACTIVE` flags.
+  - `AT+QENG="servingcell"`'s NR5G-NSA field layout (previously ported
+    from Quectel's docs, UNCONFIRMED) is now **confirmed live**:
+    PCID/RSRP/RSRQ/ARFCN/bandwidth all matched that same session's own
+    `+QCAINFO` NR5G row almost exactly (RSRQ within 1dB, everything else
+    exact).
+  - `AT+QNWCFG="nr5g_mimo_info"`'s field layout (previously assumed
+    identical to `lte_mimo_info`'s, UNCONFIRMED — this device had always
+    returned `ERROR` for it before) is now **confirmed live**:
+    `+QNWCFG: "nr5g_mimo_info",480,647328,2,1` matches the assumed
+    `PCID,freq,layers,is_pcell` order exactly, PCID/freq matching that
+    same session's serving NR carrier.
+  - `+QCAINFO`'s NR5G line genuinely never reports SINR at all
+    (previously documented from the command's spec, now also confirmed
+    live) — the CA table's NR row now fills that one gap from
+    `AT+QENG`'s NR5G-NSA line instead (matched by PCID, so a session
+    with more than one active NR component carrier — never observed —
+    degrades gracefully to leaving the non-matching rows null rather
+    than reusing one carrier's reading for another). This also fixed a
+    quieter bug: `compute_ca_throughput` was already substituting a
+    fallback SINR into that row's throughput math (via `AT+QSINR`'s
+    aggregate reading) without ever displaying it — and that fallback
+    disagreed with the real per-carrier reading by ~5dB in this session,
+    enough to roughly double the spectral-efficiency lookup it fed into.
+  - Unrelated bug caught by the same live session: `compute_ca_throughput`'s
+    `json_field()` awk helper couldn't distinguish a bare JSON `null`
+    token from literal text, so any per-carrier field that was
+    genuinely null (confirmed: `ul_earfcn` on every row of this session,
+    since none had a current uplink grant) re-serialized as the JSON
+    *string* `"null"` instead of a real `null`. `numish()` already
+    special-cased this for its own numeric-fallback logic but the
+    plain string-passthrough output fields didn't share the guard.
+    Fixed at the source in `json_field()` itself.
 
 ## Open questions
 
@@ -525,19 +583,24 @@ Confirmed on an actual RM520N-GL (2026-08-14), not assumed:
 - Factory reset was deliberately left out of Power (QuecControl has it;
   wasn't asked for here and is hard to make safely reversible) — revisit
   if actually needed.
-- NR5G RSRP/RSRQ/SINR still come from `AT+QRSRP`/`QRSRQ`/`QSINR`, unlike
-  LTE's equivalents which were switched to `AT+QCAINFO`'s PCC row (see
-  `bin/at_poller.sh`'s `collect_carrier_aggregation`) after live testing
-  showed `QRSRP` diverging from `QCAINFO`/`QENG` by a consistent ~5-7dB
-  on this device's LTE serving cell. Left alone for NR5G because this
-  device has never carried an active NR component carrier, so there's no
-  live output to test `QCAINFO`'s NR5G field layout against (already
-  flagged unconfirmed elsewhere in that function), and `QCAINFO`'s NR5G
-  line doesn't report SINR at all regardless. Revisit once a unit with an
-  active 5G NR connection is available to test against: confirm/fix the
-  NR5G `QCAINFO` field layout, decide whether NR RSRP/RSRQ should switch
-  the same way LTE's did, and figure out a SINR source for NR (QSINR
-  stays in `ALL_CMD` either way, since nothing else reports it for NR).
+- NR5G's *headline* RSRP/RSRQ/SINR (the Signal card's `signal_nr_*`
+  fields in `state.sh`) still come from `AT+QRSRP`/`QRSRQ`/`QSINR`,
+  unlike LTE's equivalents, which were switched to `AT+QCAINFO`'s PCC
+  row (see `bin/at_poller.sh`'s `collect_carrier_aggregation`) after live
+  testing showed `QRSRP` diverging from `QCAINFO`/`QENG` by a consistent
+  ~5-7dB on this device's LTE serving cell. A second card's first-ever
+  live NR5G-NSA session (2026-08-28, see above) resolved the CA table's
+  own SINR gap for the NR row (now sourced from `AT+QENG`'s confirmed
+  NR5G-NSA line instead of a coarser aggregate), but deliberately left
+  this broader question open: whether the *headline* NR RSRP/RSRQ/SINR
+  fields should also switch from `QRSRP`/`QRSRQ`/`QSINR` to
+  `QCAINFO`/`QENG` the same way LTE's did. That would need its own
+  divergence check (LTE's switch was driven by a measured ~5-7dB gap
+  between the two sources; NR hasn't had that comparison run yet) rather
+  than assuming the same conclusion applies. `AT+QENG="servingcell"`'s
+  NR5G-**SA** field layout (as opposed to NSA, which is now confirmed —
+  see above) is still entirely UNCONFIRMED — no card has carried an
+  active SA session yet, only NSA.
 
 ## Future enhancement candidates (2026-08-20)
 

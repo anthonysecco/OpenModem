@@ -401,8 +401,9 @@ collect_signal() {
 # The well-established leading QENG "servingcell" fields are parsed
 # (state, RAT, duplex, MCC, MNC, cellID, PCID, EARFCN/ARFCN, band, TAC).
 # Trailing fields (RSRP/RSRQ/RSSI/SINR/CQI/TA/...) are ambiguous across
-# firmware revisions and are skipped here — collect_signal()'s dedicated
-# QRSRP/QRSRQ/QSINR commands are the trusted source for those instead.
+# firmware revisions and are skipped here for LTE — collect_signal()'s
+# dedicated QRSRP/QRSRQ/QSINR commands are the trusted source for those
+# instead. NR5G-NSA is the one exception to that, see its branch below.
 #
 # AT+QENG="servingcell" answers with ONE line while camped on LTE or
 # NR5G-SA, but TWO lines while in NR5G-NSA (an "LTE" anchor line — same
@@ -413,12 +414,40 @@ collect_signal() {
 # F_CELL_LTE_*/F_CELL_NR_* sets rather than one shared set, so the LTE
 # and 5G NR cards can each show real data for their own leg even while
 # NSA has both active simultaneously. The LTE branch's field layout is
-# confirmed live (same as before this split). The NR5G-SA/NSA layouts
-# below are ported from Quectel's documented QENG field order but are
-# NOT independently confirmed against this hardware (this connection
-# has never carried an active NR component through this whole project,
-# same caveat as collect_carrier_aggregation's NR5G branch) — verify
-# once a real 5G session is observed and correct field offsets if wrong.
+# confirmed live (same as before this split).
+#
+# Two response shapes exist across cards/firmwares — confirmed live
+# 2026-08-28 on a second physical card (this project's original test
+# card never carried an active NR component to compare against):
+#   - Original test card: state is embedded directly in each data line,
+#     e.g. +QENG: "servingcell","CONNECT","LTE","FDD",...
+#   - Second card: a separate state-only header line
+#     (+QENG: "servingcell","NOCONN") precedes standalone "LTE"/
+#     "NR5G-NSA" data lines that don't repeat "servingcell"/state at
+#     all, e.g. +QENG: "LTE","FDD",... . Filtering the block down to
+#     lines that contain "servingcell" (the old approach) silently
+#     dropped both real data lines on this shape, leaving only the
+#     useless header — every cell_lte_*/cell_nr_* field, plus anything
+#     downstream that reads F_CELL_LTE_ACTIVE/F_CELL_NR_ACTIVE (the
+#     Network Type badge, F_CELL_LTE_UL_BW_MHZ feeding the CA bandwidth
+#     bar's PCC UL segment), went null/false despite a fully healthy,
+#     high-throughput 3-CC LTE+NR5G-NSA session running underneath. Now
+#     matches any "+QENG:" line, and the LTE branch falls back to the
+#     header line's own state when its own data line doesn't carry one.
+#     NOTE: on this second card that header state read "NOCONN" on
+#     every single poll throughout the healthy session above — so it is
+#     captured for display only and never used to gate
+#     F_CELL_LTE_ACTIVE/F_CELL_NR_ACTIVE, which come purely from whether
+#     an actual RAT data line was present, not from this state text.
+#   NR5G-NSA's field layout (below) was UNCONFIRMED before this second
+#   card's session — now confirmed live: PCID/RSRP/RSRQ/ARFCN/bandwidth
+#   all matched that same session's own +QCAINFO row for the same NR
+#   carrier (RSRQ within 1dB, everything else exact). It additionally
+#   carries a real per-carrier SINR that +QCAINFO's own NR5G line never
+#   reports — collect_carrier_aggregation()'s NR5G branch borrows it
+#   from here for that reason. NR5G-SA's layout below is still
+#   UNCONFIRMED — no card has carried an active SA session yet, only
+#   NSA.
 collect_serving_cell() {
     F_CELL_LTE_ACTIVE="0"; F_CELL_LTE_STATE="null"
     F_CELL_LTE_MCC="null"; F_CELL_LTE_MNC="null"; F_CELL_LTE_ID="null"
@@ -428,22 +457,40 @@ collect_serving_cell() {
     F_CELL_NR_ACTIVE="0"; F_CELL_NR_TYPE="null"; F_CELL_NR_STATE="null"
     F_CELL_NR_MCC="null"; F_CELL_NR_MNC="null"; F_CELL_NR_ID="null"
     F_CELL_NR_PCID="null"; F_CELL_NR_ARFCN="null"; F_CELL_NR_BAND="null"; F_CELL_NR_TAC="null"
+    # Raw (unquoted) PCID + RSRP/RSRQ/SINR straight from NR5G-NSA's own
+    # line — not exposed as their own state.sh fields (cell_nr_* stays
+    # MCC/MNC/PCID/ARFCN/band/TAC only, unchanged), just consumed by
+    # collect_carrier_aggregation() to fill the one gap +QCAINFO's NR5G
+    # line can't cover (SINR) for whichever CA row is this same carrier.
+    F_CELL_NR_PCID_RAW=""
+    F_CELL_NR_RSRP="null"; F_CELL_NR_RSRQ="null"; F_CELL_NR_SINR="null"
 
     _serv=$(nth_block "$1" 15)
-    _lines=$(printf '%s' "$_serv" | grep '^+QENG:.*"servingcell"')
+    _lines=$(printf '%s' "$_serv" | grep '^+QENG:')
     [ -z "$_lines" ] && return
+
+    # Fallback state for data lines that don't carry their own (see
+    # header comment above) — the standalone "servingcell" header line,
+    # when one exists on this card/firmware.
+    _header_state=$(printf '%s' "$_lines" | grep '^+QENG:.*"servingcell"' | head -1 | sed 's/.*"servingcell","//' | cut -d'"' -f1)
 
     _oldifs="$IFS"
     IFS='
 '
     for _line in $_lines; do
         if printf '%s' "$_line" | grep -qE '"LTE"'; then
-            _state=$(printf '%s' "$_line" | sed 's/.*"servingcell","//' | cut -d'"' -f1)
+            if printf '%s' "$_line" | grep -q '"servingcell"'; then
+                _state=$(printf '%s' "$_line" | sed 's/.*"servingcell","//' | cut -d'"' -f1)
+            else
+                _state="$_header_state"
+            fi
             F_CELL_LTE_ACTIVE="1"
             F_CELL_LTE_STATE=$(json_str "$_state")
 
-            # Rest of line after the 4th quoted field
-            # ("servingcell","STATE","LTE","FDD"/"TDD"):
+            # Rest of line after the last quoted field before the CSV
+            # data — either "servingcell","STATE","LTE","FDD"/"TDD" or
+            # just "LTE","FDD"/"TDD" with no per-line state (see header
+            # comment) — same fields follow either way:
             # MCC,MNC,cellID,PCID,EARFCN,band,ul_bw,dl_bw,TAC,...
             _rest=$(printf '%s' "$_line" | sed 's/.*"LTE","[A-Z]*",//')
             F_CELL_LTE_MCC=$(json_str    "$(printf '%s' "$_rest" | cut -d',' -f1 | tr -d ' \r\n')")
@@ -458,12 +505,17 @@ collect_serving_cell() {
             F_CELL_LTE_UL_BW_MHZ=$(json_num "$(qeng_bw_mhz "$_ul_bw_code")")
 
         elif printf '%s' "$_line" | grep -qE '"NR5G-SA"'; then
-            _state=$(printf '%s' "$_line" | sed 's/.*"servingcell","//' | cut -d'"' -f1)
+            if printf '%s' "$_line" | grep -q '"servingcell"'; then
+                _state=$(printf '%s' "$_line" | sed 's/.*"servingcell","//' | cut -d'"' -f1)
+            else
+                _state="$_header_state"
+            fi
             F_CELL_NR_ACTIVE="1"
             F_CELL_NR_TYPE=$(json_str "NR5G-SA")
             F_CELL_NR_STATE=$(json_str "$_state")
 
-            # UNCONFIRMED layout — after ("servingcell","STATE","NR5G-SA","FDD"/"TDD"):
+            # UNCONFIRMED layout — after ("servingcell","STATE","NR5G-SA","FDD"/"TDD")
+            # or just "NR5G-SA","FDD"/"TDD" (see header comment):
             # MCC,MNC,cellID,PCID,TAC,ARFCN,band,dl_bw,rsrp,rsrq,sinr,scs
             _rest=$(printf '%s' "$_line" | sed 's/.*"NR5G-SA","[A-Z]*",//')
             F_CELL_NR_MCC=$(json_str   "$(printf '%s' "$_rest" | cut -d',' -f1 | tr -d ' \r\n')")
@@ -483,12 +535,17 @@ collect_serving_cell() {
             # than copying the LTE state) keeps this field honest about
             # what was actually reported for the NR leg itself.
 
-            # UNCONFIRMED layout — no leading state/duplex fields on
-            # this line, just: MCC,MNC,PCID,rsrp,sinr,rsrq,ARFCN,band,dl_bw,scs
+            # Confirmed live 2026-08-28 (see header comment) — no leading
+            # state/duplex fields on this line, just:
+            # MCC,MNC,PCID,rsrp,sinr,rsrq,ARFCN,band,dl_bw,scs
             _rest=$(printf '%s' "$_line" | sed 's/.*"NR5G-NSA",//')
+            F_CELL_NR_PCID_RAW=$(printf '%s' "$_rest" | cut -d',' -f3 | tr -d ' \r\n')
             F_CELL_NR_MCC=$(json_str   "$(printf '%s' "$_rest" | cut -d',' -f1 | tr -d ' \r\n')")
             F_CELL_NR_MNC=$(json_str   "$(printf '%s' "$_rest" | cut -d',' -f2 | tr -d ' \r\n')")
-            F_CELL_NR_PCID=$(json_str  "$(printf '%s' "$_rest" | cut -d',' -f3 | tr -d ' \r\n')")
+            F_CELL_NR_PCID=$(json_str  "$F_CELL_NR_PCID_RAW")
+            F_CELL_NR_RSRP=$(json_num  "$(printf '%s' "$_rest" | cut -d',' -f4 | tr -d ' \r\n')")
+            F_CELL_NR_SINR=$(json_num  "$(printf '%s' "$_rest" | cut -d',' -f5 | tr -d ' \r\n')")
+            F_CELL_NR_RSRQ=$(json_num  "$(printf '%s' "$_rest" | cut -d',' -f6 | tr -d ' \r\n')")
             F_CELL_NR_ARFCN=$(json_str "$(printf '%s' "$_rest" | cut -d',' -f7 | tr -d ' \r\n')")
             F_CELL_NR_BAND=$(json_str  "$(printf '%s' "$_rest" | cut -d',' -f8 | tr -d ' \r\n')")
         fi
@@ -515,7 +572,13 @@ collect_carrier() {
 # RM520N-GL (2026-08-15, AT&T, 3-CC session: PCC LTE BAND 2 + 2x SCC LTE
 # BAND 66) — pci/rsrp/rsrq/sinr and the decoded bw_mhz all matched the
 # modem's real QCAINFO output.
-#   NR5G line: ...,<pci>,<rsrp>,<rsrq>,...               (no SINR reported)
+#   NR5G line: ...,<pci>,<rsrp>,<rsrq>,...               (no SINR field at
+#                                                          all — confirmed
+#                                                          live 2026-08-28;
+#                                                          filled in below
+#                                                          from AT+QENG's
+#                                                          NR5G-NSA line
+#                                                          instead)
 #   LTE line:  ...,<pci>,<rsrp>,<rsrq>,<rssi>,<sinr>,...  (SINR at field 10)
 
 # AT+QNWCFG="lte_mimo_info" / "nr5g_mimo_info" report one line per active
@@ -694,13 +757,30 @@ collect_carrier_aggregation() {
             _pci=$(printf '%s' "$_r" | cut -d',' -f5)
             _rsrp=$(printf '%s' "$_r" | cut -d',' -f6)
             _rsrq=$(printf '%s' "$_r" | cut -d',' -f7)
+            # +QCAINFO's NR5G line genuinely never reports SINR at all
+            # (confirmed live 2026-08-28) — unlike the LTE branch below,
+            # which carries it as its own field. Borrowed instead from
+            # AT+QENG="servingcell"'s NR5G-NSA line
+            # (collect_serving_cell(), F_CELL_NR_SINR/F_CELL_NR_PCID_RAW),
+            # confirmed live that same session to describe this same
+            # carrier — its PCID/RSRP/RSRQ/ARFCN/bandwidth all matched
+            # this same QCAINFO row almost exactly. Gated on a PCID
+            # match rather than applied unconditionally: AT+QENG
+            # ="servingcell" only ever describes one NR serving cell, so
+            # a session with more than one active NR component carrier
+            # (never observed on this project) would have no equivalent
+            # per-carrier source for its other NR rows, and those should
+            # stay null rather than reuse one carrier's reading for
+            # another.
             _sinr=""
-            # NR5G's own field layout here (state/UL/RSRP positions) is
-            # NOT independently confirmed live on this hardware, unlike
-            # the LTE branch below (this device has never carried an
-            # active NR component carrier through this whole project) —
-            # so UL fields are deliberately left unset for NR rather than
-            # guessed at an offset nothing has verified.
+            if [ -n "$_pci" ] && [ "$_pci" = "${F_CELL_NR_PCID_RAW:-}" ]; then
+                _sinr="$F_CELL_NR_SINR"
+            fi
+            # Rest of NR5G's own field layout here (state/UL positions)
+            # is still NOT independently confirmed — this device has
+            # never carried more than one active NR component carrier,
+            # so UL fields are deliberately left unset for NR rather
+            # than guessed at an offset nothing has verified.
         else
             _pci=$(printf '%s' "$_r" | cut -d',' -f6)
             _rsrp=$(printf '%s' "$_r" | cut -d',' -f7)
@@ -987,6 +1067,16 @@ compute_ca_throughput() {
             val = val c
             pos++
         }
+        # A bare (unquoted) JSON null token reads back here as the
+        # literal text "null", same as any other value. numish() below
+        # already guards against that (v != "null"), but any field that
+        # passes straight through to the caller without going through
+        # numish() needs the same treatment, or a genuinely-null
+        # upstream field re-serializes as the STRING "null" instead of a
+        # real null. Confirmed live 2026-08-28: ul_earfcn on every row
+        # of a real CA session (no carrier had a current uplink grant)
+        # came back as the quoted string "null".
+        if (val == "null") return ""
         return val
     }
     BEGIN {
