@@ -1146,8 +1146,7 @@ body {
 
 .om-apply-bar button:active { opacity: 0.85; }
 
-/* ── Throughput card design options (WAN page, temporary side-by-side
-   comparison — see app.js's renderThroughputOptions) ── */
+/* ── Throughput card (WAN page) — stat tiles ── */
 .om-tp-tiles {
   display: flex;
   gap: 1rem;
@@ -1182,70 +1181,6 @@ body {
   color: var(--text-dim);
   text-transform: uppercase;
   letter-spacing: 0.04em;
-}
-
-.om-tp-bar-row {
-  display: flex;
-  align-items: center;
-  gap: 0.6rem;
-  margin: 0.5rem 0;
-}
-
-.om-tp-bar-label {
-  width: 4.5rem;
-  font-size: 0.8rem;
-  color: var(--text-dim);
-  flex-shrink: 0;
-}
-
-.om-tp-bar-track {
-  flex: 1;
-  height: 10px;
-  border-radius: 999px;
-  background: var(--surface-inset);
-  overflow: hidden;
-}
-
-.om-tp-bar-fill {
-  height: 100%;
-  border-radius: 999px;
-  width: 0%;
-  transition: width 0.4s ease;
-}
-
-.om-tp-bar-value {
-  width: 4.5rem;
-  text-align: right;
-  font-size: 0.85rem;
-  font-variant-numeric: tabular-nums;
-  flex-shrink: 0;
-}
-
-.om-tp-spark-row {
-  display: flex;
-  align-items: center;
-  gap: 0.6rem;
-  margin: 0.5rem 0;
-}
-
-.om-tp-spark-label {
-  width: 6rem;
-  font-size: 0.8rem;
-  flex-shrink: 0;
-}
-
-.om-tp-sparkline {
-  flex: 1;
-  height: 24px;
-  display: block;
-}
-
-.om-tp-spark-value {
-  width: 4.5rem;
-  text-align: right;
-  font-size: 0.85rem;
-  font-variant-numeric: tabular-nums;
-  flex-shrink: 0;
 }
 
 /* ── Default-password warning banner (every page) ── */

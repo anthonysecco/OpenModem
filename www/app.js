@@ -361,15 +361,6 @@
     return (kbps < 10 ? kbps.toFixed(1) : Math.round(kbps)) + ' Kbps';
   }
 
-  function renderWanThroughput(state) {
-    var rxEl = document.getElementById('om-wan-rx-rate');
-    var txEl = document.getElementById('om-wan-tx-rate');
-    if (!rxEl && !txEl) return; // not on this page
-
-    if (rxEl) rxEl.textContent = fmtThroughput(state.wan_rx_mbps);
-    if (txEl) txEl.textContent = fmtThroughput(state.wan_tx_mbps);
-  }
-
   var historyWanRateSamples = [];
 
   // True on the WAN page (Receive/Send Rate charts) and the Dashboard
@@ -385,69 +376,17 @@
     pushCapped(historyWanRateSamples, { t: state._polled_at, rx_mbps: state.wan_rx_mbps, tx_mbps: state.wan_tx_mbps });
     renderWanBandwidthCharts();
     renderThroughputChart();
-    renderThroughputOptions(state);
+    renderThroughputTiles(state);
   }
 
-  /* ── Throughput card design options (WAN page) ───────────────────────
-     Three side-by-side treatments of the same wan_rx_mbps/tx_mbps data
-     for a live design comparison — not a permanent three-card layout.
-     Once one is picked, the other two (and this function) should be
-     removed and the winner folded into a single Throughput card. */
-  function renderThroughputOptions(state) {
-    if (!document.getElementById('om-tp-a-rx')) return; // not on this page
-
-    var rx = state.wan_rx_mbps;
-    var tx = state.wan_tx_mbps;
-
-    // Option A: stat tiles — just the formatted values.
-    document.getElementById('om-tp-a-rx').textContent = fmtThroughput(rx);
-    document.getElementById('om-tp-a-tx').textContent = fmtThroughput(tx);
-
-    // Option B: bar meters, filled relative to the peak seen in the same
-    // 5-min window the Bandwidth chart uses (WAN_RATE_MIN_RANGE floor
-    // keeps an idle link's bar from being undefined-percent rather than
-    // just empty).
-    var rxMax = WAN_RATE_MIN_RANGE, txMax = WAN_RATE_MIN_RANGE;
-    historyWanRateSamples.forEach(function (r) {
-      if (typeof r.rx_mbps === 'number' && r.rx_mbps > rxMax) rxMax = r.rx_mbps;
-      if (typeof r.tx_mbps === 'number' && r.tx_mbps > txMax) txMax = r.tx_mbps;
-    });
-    var rxFillEl = document.getElementById('om-tp-b-rx-fill');
-    if (rxFillEl) rxFillEl.style.width = (typeof rx === 'number' ? Math.min(100, (rx / rxMax) * 100) : 0) + '%';
-    var txFillEl = document.getElementById('om-tp-b-tx-fill');
-    if (txFillEl) txFillEl.style.width = (typeof tx === 'number' ? Math.min(100, (tx / txMax) * 100) : 0) + '%';
-    document.getElementById('om-tp-b-rx-value').textContent = fmtThroughput(rx);
-    document.getElementById('om-tp-b-tx-value').textContent = fmtThroughput(tx);
-
-    // Option C: live sparkline + value.
-    renderTpSparkline('om-tp-c-rx-spark', function (r) { return r.rx_mbps; }, '#2f6fed');
-    renderTpSparkline('om-tp-c-tx-spark', function (r) { return r.tx_mbps; }, '#8b5cf6');
-    document.getElementById('om-tp-c-rx-value').textContent = fmtThroughput(rx);
-    document.getElementById('om-tp-c-tx-value').textContent = fmtThroughput(tx);
-  }
-
-  function renderTpSparkline(svgId, getValue, color) {
-    var svg = document.getElementById(svgId);
-    if (!svg) return;
-    var samples = historyWanRateSamples;
-    var n = samples.length;
-    if (!n) { svg.innerHTML = ''; return; }
-
-    var max = WAN_RATE_MIN_RANGE;
-    samples.forEach(function (r) {
-      var v = getValue(r);
-      if (typeof v === 'number' && v > max) max = v;
-    });
-
-    var w = 100, h = 24;
-    var points = samples.map(function (r, i) {
-      var v = getValue(r);
-      var x = n > 1 ? (i / (n - 1)) * w : w;
-      var y = h - ((typeof v === 'number' ? v : 0) / max) * h;
-      return x.toFixed(1) + ',' + y.toFixed(1);
-    }).join(' ');
-    svg.innerHTML = '<polyline points="' + points + '" fill="none" stroke="' + color +
-      '" stroke-width="1.5" vector-effect="non-scaling-stroke"/>';
+  // WAN page's Throughput card — stat tiles with directional arrows,
+  // picked after a live comparison against a bar-meter and sparkline
+  // treatment (both dropped).
+  function renderThroughputTiles(state) {
+    var rxEl = document.getElementById('om-tp-a-rx');
+    if (!rxEl) return; // not on this page
+    rxEl.textContent = fmtThroughput(state.wan_rx_mbps);
+    document.getElementById('om-tp-a-tx').textContent = fmtThroughput(state.wan_tx_mbps);
   }
 
   // Flat single-color "zone" tables (always matches, since rate >= 0)
@@ -809,11 +748,14 @@
   }
 
   function renderConnectivityCard(netState) {
-    var icmpStatusTextEl = document.getElementById('om-conn-icmp-status-text');
-    if (!icmpStatusTextEl) return; // not on this page
-
+    // Each field guards itself independently rather than one early
+    // return on the first element — WAN's Internet card carries
+    // Connectivity Check but not Ping Check, so a single icmp-only
+    // guard here was silently skipping check204/cfPop/geo updates too
+    // on that page (found live: Connectivity Check never populated).
     var icmpStatus = netState.icmp_status;
-    icmpStatusTextEl.textContent = connStatusText(icmpStatus);
+    var icmpStatusTextEl = document.getElementById('om-conn-icmp-status-text');
+    if (icmpStatusTextEl) icmpStatusTextEl.textContent = connStatusText(icmpStatus);
     var icmpDotEl = document.getElementById('om-conn-icmp-dot');
     if (icmpDotEl) setRingDotColor(icmpDotEl, connStatusColor(icmpStatus), false);
 
@@ -1513,7 +1455,6 @@
           safeRender(renderTopbarSignal, state);
           safeRender(renderCellTooltips, state);
           safeRender(renderStatusDots, state);
-          safeRender(renderWanThroughput, state);
           safeRender(renderAuthWarning, state);
           safeRender(pushSignalHistorySample, state);
           safeRender(pushWanHistorySample, state);
