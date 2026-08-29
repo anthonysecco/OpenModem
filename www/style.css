@@ -351,6 +351,15 @@ body {
   gap: 0.25rem;
 }
 
+/* Wider gap for a value+dot pair where the halo (the dot's own
+   box-shadow, which paints outside the layout box and isn't accounted
+   for by flex gap) reads as crowding the text at the default 0.25rem —
+   WAN page's State/Connectivity Check rows specifically, not applied
+   to every value/dot pair site-wide. */
+.om-row-value-wrap--spaced {
+  gap: 0.5rem;
+}
+
 /* A <select> used as a row's value (Network Mode/Data Roaming) rather
    than a stacked .om-form-row — sized to its content, not the row's
    full width, matching how every other row's plain-text value sits to

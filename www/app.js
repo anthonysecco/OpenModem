@@ -3210,8 +3210,10 @@
      protocol the request actually used, so it's routed into the IPv4 or
      IPv6 row by its shape rather than assumed, leaving the other row
      blank rather than guessed. org comes back as "AS7018 AT&T
-     Services, Inc." — split on the first space into ASN + ISP rather
-     than shown as one blob, since the card has separate rows for each. */
+     Services, Inc." — split on the first space into ASN + ISP, but ASN
+     (and hostname) aren't worth their own rows — both surface as a
+     hover tooltip on the ISP value instead, via the same .om-hint
+     cursor-help affordance used for definition tooltips elsewhere. */
   function fetchWanInternet() {
     var statusEl = document.getElementById('om-wan-inet-status');
     fetch('/cgi-bin/internet_info.sh')
@@ -3221,10 +3223,16 @@
 
         var org = data.org || '';
         var m = org.match(/^(AS\d+)\s*(.*)$/);
-        document.getElementById('om-wan-inet-isp').textContent = m ? (m[2] || '—') : (org || '—');
-        document.getElementById('om-wan-inet-asn').textContent = m ? m[1] : '—';
+        var ispEl = document.getElementById('om-wan-inet-isp');
+        ispEl.textContent = m ? (m[2] || '—') : (org || '—');
 
-        document.getElementById('om-wan-inet-hostname').textContent = data.hostname || '—';
+        var asn = m ? m[1] : null;
+        var hostname = data.hostname || null;
+        var tooltipLines = [];
+        if (asn) tooltipLines.push('ASN: ' + asn);
+        if (hostname) tooltipLines.push('Hostname: ' + hostname);
+        ispEl.title = tooltipLines.join('\n');
+        ispEl.classList.toggle('om-hint', tooltipLines.length > 0);
 
         var ip = data.ip || '';
         document.getElementById('om-wan-inet-ipv4').textContent = (ip && ip.indexOf(':') === -1) ? ip : '—';
