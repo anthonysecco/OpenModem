@@ -3169,7 +3169,7 @@
           severity: 'low',
           title: 'Reset Data Counter',
           message: 'Reset the WAN data usage counter to zero? This only affects the number shown here, not your actual data connection.',
-          confirmLabel: 'Reset Counter',
+          confirmLabel: 'Reset',
           onConfirm: function () {
             var statusEl = document.getElementById('om-wan-reset-status');
             resetBtn.disabled = true;

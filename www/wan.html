@@ -49,7 +49,7 @@
         <div class="om-row"><span class="om-row-label">Received</span><span data-field="wan_data_rx">—</span></div>
         <div class="om-row"><span class="om-row-label">Sent</span><span data-field="wan_data_tx">—</span></div>
         <p class="om-note">Cumulative since last reset or module boot.</p>
-        <button id="om-wan-reset-counter" type="button">Reset Counter</button>
+        <button id="om-wan-reset-counter" type="button">Reset</button>
         <p id="om-wan-reset-status" class="om-note"></p>
       </div>
 
@@ -62,8 +62,8 @@
       <div class="om-card">
         <h2 class="om-hint" title="Makes traffic from other devices behind this modem look like it's coming from the modem itself — can prevent your carrier from detecting and throttling tethering/hotspot use.">TTL Spoofing</h2>
         <div class="om-form-row">
-          <label for="om-wan-ttl">TTL / Hop Limit (0 = disabled, 1–255)</label>
           <input type="number" id="om-wan-ttl" min="0" max="255" placeholder="0">
+          <label for="om-wan-ttl">TTL / Hop Limit (0 = disabled, 1–255)</label>
         </div>
       </div>
 
