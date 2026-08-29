@@ -1493,25 +1493,35 @@
   }
 
   /* ── Update (System page) ──────────────────────────────────────────
-     Confirms with the user, then kicks off installer.sh via
-     cgi-bin/update.sh and polls its status until the reinstalled httpd
-     comes back up (or the poll simply starts failing while services
-     restart, which is expected and not treated as a hard error). */
+     Confirms with the user, then keeps that same confirm modal open
+     (confirmDialog's keepOpen) as a progress view instead of closing it
+     — this is long-running enough to be worth watching, unlike every
+     other confirmDialog caller. Kicks off installer.sh via cgi-bin/
+     update.sh and polls its status to update the progress text and
+     detect real completion, but the actual page reload is guaranteed by
+     a fixed UPDATE_REFRESH_MS timer regardless of what polling sees —
+     real installs observed live finish in well under a minute, and a
+     stuck/undetected poll (a transient network hiccup, an httpd restart
+     landing between requests) shouldn't leave the modal open
+     indefinitely the way the old open-ended "may have hung" warning
+     could. Whichever finishes first — polling's own running:false
+     detection, or the timer — triggers the reload; polling normally
+     wins on a healthy fast install, the timer is the backstop. */
   var UPDATE_POLL_MS = 5000;
-  // installer.sh has its own server-side crash resilience (see git
-  // history — "Make installer.sh and update.sh resilient to
-  // failed/crashed updates"), but this poll loop only had a running
-  // branch and a finished branch: if the running-marker were ever left
-  // set with nothing left actually running, the user was stuck on
-  // "Updating…" forever with no cancel or give-up message. Client-side
-  // safety net, not a replacement for the server-side fix. 2026-08-19.
-  var UPDATE_POLL_MAX_MS = 8 * 60 * 1000;
+  var UPDATE_REFRESH_MS = 60000;
   var updatePollTimer = null;
-  var updatePollStartedAt = null;
+  var updateRefreshTimer = null;
 
   function setUpdateStatus(text) {
-    var el = document.getElementById('om-update-status');
+    var el = document.getElementById('om-update-modal-status');
     if (el) el.textContent = text;
+  }
+
+  function finishUpdateAndReload(text) {
+    if (updatePollTimer) { clearInterval(updatePollTimer); updatePollTimer = null; }
+    if (updateRefreshTimer) { clearTimeout(updateRefreshTimer); updateRefreshTimer = null; }
+    setUpdateStatus(text);
+    window.location.reload();
   }
 
   function pollUpdateStatus() {
@@ -1519,18 +1529,9 @@
       .then(function (r) { return r.json(); })
       .then(function (data) {
         if (data.running) {
-          if (Date.now() - updatePollStartedAt > UPDATE_POLL_MAX_MS) {
-            clearInterval(updatePollTimer);
-            updatePollTimer = null;
-            setUpdateStatus('Update is taking much longer than expected — it may have hung. Check the modem directly, or reload this page once it responds again.');
-            return;
-          }
           setUpdateStatus('Updating… this can take a few minutes.');
         } else {
-          clearInterval(updatePollTimer);
-          updatePollTimer = null;
-          setUpdateStatus('Update finished. Reloading…');
-          setTimeout(function () { window.location.reload(); }, 1500);
+          finishUpdateAndReload('Update finished. Reloading…');
         }
       })
       .catch(function () {
@@ -1547,22 +1548,34 @@
         'replacing the current install. It can take several minutes and ' +
         'will restart all services — you may briefly lose connection to ' +
         'this page.',
-      confirmLabel: 'Install Update',
+      confirmLabel: 'Install Latest',
+      keepOpen: true,
       onConfirm: function () {
-        setUpdateStatus('Starting update…');
+        var actionsEl = document.querySelector('#om-confirm-modal .om-modal-actions');
+        var messageEl = document.getElementById('om-confirm-message');
+        if (actionsEl) actionsEl.style.display = 'none';
+        if (messageEl) {
+          messageEl.innerHTML = '<span class="om-scan-progress"><span class="om-spinner"></span>' +
+            '<span id="om-update-modal-status">Starting update…</span></span>';
+        }
+
         fetch('/cgi-bin/update.sh?action=start&confirm=1')
           .then(function (r) { return r.json(); })
           .then(function (data) {
             if (data.error) {
               setUpdateStatus('Could not start update: ' + data.error);
+              if (actionsEl) actionsEl.style.display = '';
               return;
             }
             setUpdateStatus('Update started…');
-            updatePollStartedAt = Date.now();
             updatePollTimer = setInterval(pollUpdateStatus, UPDATE_POLL_MS);
+            updateRefreshTimer = setTimeout(function () {
+              finishUpdateAndReload('Refreshing…');
+            }, UPDATE_REFRESH_MS);
           })
           .catch(function (err) {
             setUpdateStatus('Could not start update: ' + err);
+            if (actionsEl) actionsEl.style.display = '';
           });
       }
     });
@@ -1957,7 +1970,13 @@
     });
   }
 
-  /* opts: { severity: 'low'|'medium'|'high', title, message, confirmLabel, onConfirm } */
+  /* opts: { severity: 'low'|'medium'|'high', title, message, confirmLabel,
+     onConfirm, keepOpen }. keepOpen (default false) skips the normal
+     close-on-click behavior — used by the Update flow, which turns this
+     same modal into a progress view instead of closing it, since the
+     operation is long-running and worth watching rather than firing and
+     forgetting like every other confirmDialog caller (Reboot, LAN mode,
+     Reset Counter, etc.), which still close immediately as before. */
   function confirmDialog(opts) {
     ensureConfirmModal();
     var iconKey = CONFIRM_SEVERITY_ICON[opts.severity] || 'warning';
@@ -1979,7 +1998,7 @@
     newOk.textContent = opts.confirmLabel || 'Continue';
     newOk.className = opts.severity === 'high' ? 'om-danger' : '';
     newOk.addEventListener('click', function () {
-      closeModal('om-confirm-modal');
+      if (!opts.keepOpen) closeModal('om-confirm-modal');
       opts.onConfirm();
     });
 
