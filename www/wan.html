@@ -54,9 +54,50 @@
       </div>
 
       <div class="om-card">
-        <h2>Throughput</h2>
-        <div class="om-row"><span class="om-row-label">Receive Rate</span><span id="om-wan-rx-rate">—</span></div>
-        <div class="om-row"><span class="om-row-label">Send Rate</span><span id="om-wan-tx-rate">—</span></div>
+        <h2>Throughput — Option A: Stat Tiles</h2>
+        <p class="om-note">Big glanceable numbers with directional arrows — closest to the site's existing hero-stat style (Dashboard trend charts).</p>
+        <div class="om-tp-tiles">
+          <div class="om-tp-tile">
+            <span class="om-tp-tile-arrow" style="color:#2f6fed">&darr;</span>
+            <div class="om-tp-tile-value" id="om-tp-a-rx">—</div>
+            <div class="om-tp-tile-label">Download</div>
+          </div>
+          <div class="om-tp-tile">
+            <span class="om-tp-tile-arrow" style="color:#8b5cf6">&uarr;</span>
+            <div class="om-tp-tile-value" id="om-tp-a-tx">—</div>
+            <div class="om-tp-tile-label">Upload</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="om-card">
+        <h2>Throughput — Option B: Bar Meters</h2>
+        <p class="om-note">Each bar fills relative to the peak rate seen in the last 5 minutes, giving a sense of "how busy is this link right now" rather than just a bare number.</p>
+        <div class="om-tp-bar-row">
+          <span class="om-tp-bar-label">Download</span>
+          <div class="om-tp-bar-track"><div class="om-tp-bar-fill" id="om-tp-b-rx-fill" style="background:#2f6fed"></div></div>
+          <span class="om-tp-bar-value" id="om-tp-b-rx-value">—</span>
+        </div>
+        <div class="om-tp-bar-row">
+          <span class="om-tp-bar-label">Upload</span>
+          <div class="om-tp-bar-track"><div class="om-tp-bar-fill" id="om-tp-b-tx-fill" style="background:#8b5cf6"></div></div>
+          <span class="om-tp-bar-value" id="om-tp-b-tx-value">—</span>
+        </div>
+      </div>
+
+      <div class="om-card">
+        <h2>Throughput — Option C: Live Sparkline</h2>
+        <p class="om-note">The live number plus a trailing trend line, so you see the last few minutes' shape without leaving this card for the Bandwidth chart below.</p>
+        <div class="om-tp-spark-row">
+          <span class="om-tp-spark-label" style="color:#2f6fed">&darr; Download</span>
+          <svg class="om-tp-sparkline" id="om-tp-c-rx-spark" viewBox="0 0 100 24" preserveAspectRatio="none"></svg>
+          <span class="om-tp-spark-value" id="om-tp-c-rx-value">—</span>
+        </div>
+        <div class="om-tp-spark-row">
+          <span class="om-tp-spark-label" style="color:#8b5cf6">&uarr; Upload</span>
+          <svg class="om-tp-sparkline" id="om-tp-c-tx-spark" viewBox="0 0 100 24" preserveAspectRatio="none"></svg>
+          <span class="om-tp-spark-value" id="om-tp-c-tx-value">—</span>
+        </div>
       </div>
 
       <div class="om-card">
