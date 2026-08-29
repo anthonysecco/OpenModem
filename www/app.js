@@ -2670,7 +2670,7 @@
     if (!band) return '—';
     var num = bandNumberFromLabel(band);
     if (num === null) return band;
-    return /NR5G/i.test(band) ? ('NR5G n' + num) : ('LTE B' + num);
+    return /NR5G/i.test(band) ? ('5G NR n' + num) : ('LTE B' + num);
   }
 
   function carrierCenterFreqMhz(c) {
