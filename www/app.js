@@ -1437,6 +1437,7 @@
           safeRender(renderCellTooltips, state);
           safeRender(renderStatusDots, state);
           safeRender(renderWanThroughput, state);
+          safeRender(renderAuthWarning, state);
           safeRender(pushSignalHistorySample, state);
           safeRender(pushWanHistorySample, state);
           markRefreshedNow();
@@ -3285,6 +3286,69 @@
     setInterval(fetchLanClients, LAN_CLIENTS_POLL_MS);
   }
 
+  /* ── Default-password warning banner (every page) ──────────────────────
+     #om-auth-warning-bar exists in every page's static markup (same
+     shared-shell convention as the footer/topbar). Driven by state.sh's
+     web_auth_is_default, itself a passthrough of openmodem.conf's
+     WEB_AUTH_IS_DEFAULT (see bin/at_poller.sh) — cleared server-side by
+     auth_action.sh's set_password, not by dismissing this banner. */
+  function renderAuthWarning(state) {
+    var bar = document.getElementById('om-auth-warning-bar');
+    if (!bar) return;
+    bar.style.display = state.web_auth_is_default ? 'flex' : 'none';
+  }
+
+  /* ── Change Password (System page) ─────────────────────────────────────
+     No current-password field: the entire site (including this card's
+     own auth_action.sh endpoint) already sits behind BusyBox httpd's
+     Basic Auth, so reaching this form at all already proves the current
+     password. Confirmed via confirmDialog rather than a plain
+     window.confirm() (see confirmDialog's own header comment) since this
+     restarts the web server and poller — same severity class as Reboot. */
+  function initChangePassword() {
+    var btn = document.getElementById('om-change-password-btn');
+    if (!btn) return; // not on this page
+    var statusEl = document.getElementById('om-change-password-status');
+    var newEl = document.getElementById('om-new-password');
+    var confirmEl = document.getElementById('om-confirm-password');
+
+    btn.addEventListener('click', function () {
+      var pw = newEl.value;
+      var confirmPw = confirmEl.value;
+      if (pw.length < 4) {
+        statusEl.textContent = 'Password must be at least 4 characters.';
+        return;
+      }
+      if (pw !== confirmPw) {
+        statusEl.textContent = 'Passwords do not match.';
+        return;
+      }
+
+      confirmDialog({
+        severity: 'medium',
+        title: 'Change Password',
+        message: 'This restarts the web server and poller. You will need ' +
+          'to log in again with the new password.',
+        confirmLabel: 'Change Password',
+        onConfirm: function () {
+          statusEl.textContent = 'Changing password…';
+          fetch('/cgi-bin/auth_action.sh?action=set_password&password=' + encodeURIComponent(pw))
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+              statusEl.textContent = data.message || data.error || 'Unknown response.';
+              if (data.success) {
+                newEl.value = '';
+                confirmEl.value = '';
+              }
+            })
+            .catch(function (err) {
+              statusEl.textContent = 'Request failed: ' + err;
+            });
+        }
+      });
+    });
+  }
+
   /* ── SIM slot cards (SIM page) ───────────────────────────────────────
      This module has 2 SIM slots but only one is active/queryable at a
      time (AT+QUIMSLOT selects which) — sim_status/sim_iccid/sim_imsi/
@@ -3388,5 +3452,6 @@
     initWanInternet();
     initSimSlotToggle();
     initLanClients();
+    initChangePassword();
   });
 })();

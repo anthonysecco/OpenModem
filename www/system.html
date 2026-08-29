@@ -15,6 +15,10 @@
   <nav class="om-sidebar" id="om-sidebar-nav"></nav>
 
   <main class="om-main">
+    <div class="om-apply-bar om-banner-warning" id="om-auth-warning-bar" style="display:none;">
+      <span class="om-apply-bar-label">Using the default password. Change it on the System page for security.</span>
+      <a href="/system.html#om-change-password-card">Change Password</a>
+    </div>
     <div class="om-cards">
       <div class="om-card">
         <h2>Device Info</h2>
@@ -39,6 +43,21 @@
         <p id="om-update-status">Reinstalls the latest OpenModem from GitHub.</p>
         <button id="om-update-btn" type="button">Check for Update / Install Latest</button>
       </div>
+      <div class="om-card" id="om-change-password-card">
+        <h2>Change Password</h2>
+        <div class="om-form-row">
+          <label for="om-new-password">New Password</label>
+          <input type="password" id="om-new-password" autocomplete="new-password">
+        </div>
+        <div class="om-form-row">
+          <label for="om-confirm-password">Confirm Password</label>
+          <input type="password" id="om-confirm-password" autocomplete="new-password">
+        </div>
+        <p class="om-note">Restarts the web server — you'll be asked to log in again with the new password.</p>
+        <button id="om-change-password-btn" type="button">Change Password</button>
+        <span id="om-change-password-status" class="om-note"></span>
+      </div>
+
       <div class="om-card om-card-wide">
         <div class="om-term-header">
           <h2 style="margin:0;">AT Terminal</h2>

@@ -18,6 +18,7 @@ LOG_LEVEL=1
 POLL_INTERVAL=10
 HISTORY_WINDOW_SAMPLES=60
 MIMO_MAX_WINDOW_S=300
+WEB_AUTH_IS_DEFAULT=1
 [ -f "$CONF_FILE" ] && . "$CONF_FILE"
 
 AT_CMD_BIN="/usrdata/openmodem/bin/at_command.sh"
@@ -1379,6 +1380,7 @@ write_state() {
   "_polled_at": ${_polled_at},
   "_poll_duration_s": ${_duration},
   "_poll_interval_s": ${POLL_INTERVAL},
+  "web_auth_is_default": $(json_bool "$WEB_AUTH_IS_DEFAULT"),
   "device_model": ${F_MODEL},
   "device_imei": ${F_IMEI},
   "device_firmware": ${F_FIRMWARE},

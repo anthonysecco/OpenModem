@@ -45,6 +45,39 @@ goal).
   (`+CME ERROR: 10`, confirmed while testing the switch) — the code
   handles that as a normal case, not an error state.
 - **System** — device info, raw AT command terminal, reboot/power actions.
+- **Web UI authentication** — the entire site (not just action endpoints)
+  sits behind BusyBox httpd's own built-in Basic Auth, confirmed live
+  (2026-08-29) via a disposable httpd instance on a spare port before
+  wiring it into the real service: the auth config format is a plain
+  `/path:user:crypt-hash` line in a `-c CONFFILE`, realm set separately
+  via `-r REALM`, and `busybox httpd -m STRING` generates an MD5-crypt
+  hash — all built into the exact BusyBox 1.31.1 this project already
+  runs, no new software. Default credentials are `admin`/`admin`.
+  `bin/apply_httpd_auth.sh` (run via `openmodem-httpd.service`'s
+  `ExecStartPre`, since BusyBox httpd only reads `-c` at startup — no
+  hot-reload) regenerates `/usrdata/openmodem/httpd_auth.conf` from
+  `openmodem.conf`'s `WEB_AUTH_USER`/`WEB_AUTH_HASH`, lazily seeding the
+  default credential into `openmodem.conf` itself the first time it runs
+  on a device whose config predates this feature (same migration
+  approach as SimpleFirewall's `ttlvalue` -> `TTL_VALUE`). The System
+  page's Change Password card (`www/cgi-bin/auth_action.sh`) hashes a
+  new password, persists it, and restarts `openmodem-httpd.service` +
+  `openmodem-poller.service` — the restart is deliberately deferred a
+  couple seconds inside its own detached `systemd-run` unit rather than
+  fired immediately, since `auth_action.sh` runs as a CGI child inside
+  `openmodem-httpd.service`'s own cgroup and an immediate
+  `KillMode=control-group` restart risks killing that still-running
+  script before its JSON response reaches the browser (same failure
+  mode `update.sh`'s own restart already works around, documented
+  there). No current-password re-entry is required to change it: the
+  request already had to pass Basic Auth to reach the endpoint at all.
+  A site-wide warning banner (driven by `state.sh`'s
+  `web_auth_is_default`, itself a passthrough of `openmodem.conf`) links
+  to that card until the password is changed away from the default.
+  `WEB_AUTH_HASH` must stay single-quoted everywhere it's written into
+  `openmodem.conf`: the file is dot-sourced as real shell, and an
+  unquoted `$1$salt$hash` is parsed as positional-parameter expansion,
+  silently corrupting the hash — confirmed live before catching it.
 - **WAN status/actions** — richer WAN status (IP type, IPv6 address,
   cumulative data usage from `AT+QGDCNT?`, with a reset action) plus TTL
   spoofing, adapted from QuecControl's `wan_action.sh`. TTL spoofing is
@@ -639,17 +672,6 @@ closed decisions, same status as GPS above.
   Useful before/after `update.sh` runs, or to replicate settings to a
   second unit. No AT-side risk — this is read/write of local config state
   only.
-- **Auth in front of the CGI action endpoints.** Currently nothing in
-  `www/cgi-bin/` requires authentication — checked, there's no
-  auth/password/htpasswd handling anywhere in the CGI layer. Probably
-  fine on a trusted LAN, but worth an explicit decision rather than an
-  oversight, especially since `bin/apply_iptables.sh` already gates port
-  8080 to specific interfaces (`bridge0`/`eth0`/`tailscale0`) — a basic
-  HTTP auth prompt in front of the action endpoints (band lock, radio
-  power, reboot, TTL, LAN mode) would sit behind a boundary that already
-  exists rather than needing new plumbing. Read-only endpoints
-  (`state.sh`, `net_state.sh`, `history_*.sh`) probably don't need the
-  same gate.
 
 ## Frontend wiring
 

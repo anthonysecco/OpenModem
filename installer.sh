@@ -179,7 +179,7 @@ download() {
 FAIL=0
 
 echo "  Downloading bin scripts..."
-for script in at_broker.sh at_command.sh at_poller.sh apply_iptables.sh net_poller.sh; do
+for script in at_broker.sh at_command.sh at_poller.sh apply_iptables.sh apply_httpd_auth.sh net_poller.sh; do
     download "$REPO/bin/$script" "$STAGING_DIR/bin/$script" || FAIL=1
 done
 
@@ -189,7 +189,7 @@ for page in style.css app.js index.html cellular.html sim.html wan.html lan.html
 done
 
 echo "  Downloading CGI scripts..."
-for cgi in state.sh update.sh at_cmd.sh band_lock.sh carrier_scan.sh lan_action.sh lan_clients.sh wan_action.sh internet_info.sh mtu_test.sh sim_action.sh network_action.sh net_state.sh history_signal.sh history_net.sh history_wan.sh ha_state.sh version.sh; do
+for cgi in state.sh update.sh at_cmd.sh band_lock.sh carrier_scan.sh lan_action.sh lan_clients.sh wan_action.sh internet_info.sh mtu_test.sh sim_action.sh network_action.sh net_state.sh history_signal.sh history_net.sh history_wan.sh ha_state.sh version.sh auth_action.sh; do
     download "$REPO/www/cgi-bin/$cgi" "$STAGING_DIR/www/cgi-bin/$cgi" || FAIL=1
 done
 
@@ -473,7 +473,8 @@ Requires=openmodem-broker.service
 
 [Service]
 Type=simple
-ExecStart=/usr/sbin/httpd -f -h /usrdata/openmodem/www -p 8080
+ExecStartPre=/bin/sh /usrdata/openmodem/bin/apply_httpd_auth.sh
+ExecStart=/usr/sbin/httpd -f -h /usrdata/openmodem/www -p 8080 -c /usrdata/openmodem/httpd_auth.conf -r OpenModem
 Restart=always
 RestartSec=3
 

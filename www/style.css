@@ -1137,6 +1137,16 @@ body {
 
 .om-apply-bar button:active { opacity: 0.85; }
 
+/* ── Default-password warning banner (every page) ── */
+.om-banner-warning {
+  border-color: var(--warn);
+}
+
+.om-banner-warning a {
+  color: var(--warn-bar);
+  font-weight: 600;
+}
+
 /* ── WAN page: TTL carrier reference ── */
 .om-ttl-carriers {
   display: flex;
