@@ -1286,6 +1286,40 @@
       .catch(function () {});
   }
 
+  /* Same one-shot-on-load pattern as loadVersionInfo above — checks
+     GitHub once per page load, not on a timer, both to stay well under
+     GitHub's unauthenticated API rate limit and because "is an update
+     available" only changes when someone pushes to main, not every few
+     seconds. Tri-state dot (unlike Ping/Connectivity Check's binary
+     online/offline): green = up to date, amber = update available, gray
+     = couldn't check (rate-limited, no signal) — an unresolved check is
+     deliberately never shown as "up to date" either, since that's just
+     as wrong a claim as "update available" would be. */
+  function loadUpdateCheck() {
+    var textEl = document.getElementById('om-update-check-text');
+    if (!textEl) return; // not on this page
+    var dotEl = document.getElementById('om-update-check-dot');
+
+    fetch('/cgi-bin/version_check.sh')
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        if (!data.latest_sha) {
+          textEl.textContent = 'Unknown';
+          if (dotEl) setRingDotColor(dotEl, '#5c5c5e', false);
+        } else if (data.update_available) {
+          textEl.textContent = 'Yes';
+          if (dotEl) setRingDotColor(dotEl, '#e0a63e', false);
+        } else {
+          textEl.textContent = 'No — up to date';
+          if (dotEl) setRingDotColor(dotEl, '#34c777', false);
+        }
+      })
+      .catch(function () {
+        textEl.textContent = 'Unknown';
+        if (dotEl) setRingDotColor(dotEl, '#5c5c5e', false);
+      });
+  }
+
   // Same seed-on-load as seedHistoryOnce above, for the WAN page's
   // Bandwidth graphs and the Dashboard's Throughput graph (both consume
   // historyWanRateSamples, see wanChartsPresent above) — kept as its own
@@ -1515,15 +1549,36 @@
   var UPDATE_REFRESH_MS = 60000;
   var updatePollTimer = null;
   var updateRefreshTimer = null;
+  var updateCountdownTimer = null;
+  var updateStartedAt = null;
+  // True once a status poll fails to reach the server at all (httpd
+  // mid-restart, the expected case near the end of an install) —
+  // distinct from data.running=true, where the server is still
+  // reachable and reporting real progress. Only in this unreachable
+  // state does the display switch to a countdown, since that's the
+  // only state where "when will this reload" (the fixed backstop) is
+  // the only information left to show — a reachable "still running"
+  // poll always wins with its own real status text instead.
+  var updateUnreachable = false;
 
   function setUpdateStatus(text) {
     var el = document.getElementById('om-update-modal-status');
     if (el) el.textContent = text;
   }
 
+  // Ticks once a second (independent of the 5s poll cadence, same
+  // reasoning as tickAge's "Updated Xs ago") so the countdown itself
+  // moves smoothly rather than jumping in 5s steps.
+  function tickUpdateCountdown() {
+    if (!updateUnreachable || updateStartedAt === null) return;
+    var remaining = Math.max(0, Math.ceil((updateStartedAt + UPDATE_REFRESH_MS - Date.now()) / 1000));
+    setUpdateStatus('Updating… Restarting (' + remaining + 's)');
+  }
+
   function finishUpdateAndReload(text) {
     if (updatePollTimer) { clearInterval(updatePollTimer); updatePollTimer = null; }
     if (updateRefreshTimer) { clearTimeout(updateRefreshTimer); updateRefreshTimer = null; }
+    if (updateCountdownTimer) { clearInterval(updateCountdownTimer); updateCountdownTimer = null; }
     setUpdateStatus(text);
     window.location.reload();
   }
@@ -1533,14 +1588,18 @@
       .then(function (r) { return r.json(); })
       .then(function (data) {
         if (data.running) {
+          updateUnreachable = false;
           setUpdateStatus('Updating… this can take a few minutes.');
         } else {
           finishUpdateAndReload('Update finished. Reloading…');
         }
       })
       .catch(function () {
-        // Expected while services restart and httpd is briefly down.
-        setUpdateStatus('Updating… (server restarting)');
+        // Expected while services restart and httpd is briefly down —
+        // switch to the countdown immediately rather than waiting up to
+        // 1s for the next tick to reflect it.
+        updateUnreachable = true;
+        tickUpdateCountdown();
       });
   }
 
@@ -1572,7 +1631,10 @@
               return;
             }
             setUpdateStatus('Update started…');
+            updateUnreachable = false;
+            updateStartedAt = Date.now();
             updatePollTimer = setInterval(pollUpdateStatus, UPDATE_POLL_MS);
+            updateCountdownTimer = setInterval(tickUpdateCountdown, 1000);
             updateRefreshTimer = setTimeout(function () {
               finishUpdateAndReload('Refreshing…');
             }, UPDATE_REFRESH_MS);
@@ -3472,6 +3534,7 @@
     seedHistoryOnce();
     seedWanHistoryOnce();
     loadVersionInfo();
+    loadUpdateCheck();
     initChartHover('om-hist-rsrp-chart', 'dBm', RSRP_ZONES, false);
     initChartHover('om-hist-speed-chart', 'Mbps', SPEED_ZONES, false);
     initChartHover('om-hist-latency-chart', 'ms', LATENCY_ZONES, true);

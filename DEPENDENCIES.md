@@ -24,6 +24,7 @@ to `—`/"Unable to fetch…" rather than breaking the page.
 | ipinfo.io | `https://ipinfo.io/json` | `www/cgi-bin/internet_info.sh` | On-demand — once per WAN page load, not on a timer | WAN page's Internet card (ISP/ASN/hostname/IP/location) |
 | Cloudflare | ICMP ping (DF bit, sizes 1200–MTU) to `1.1.1.1` (same `NET_ICMP_TARGET`) | `www/cgi-bin/mtu_test.sh` | On-demand only — WAN page's "Test MTU" button | WAN page's Path MTU section (configured vs. verified MTU) |
 | GitHub (raw.githubusercontent.com) | `https://raw.githubusercontent.com/anthonysecco/OpenModem/<ref>/…` | `installer.sh` (fetched by hand or via `www/cgi-bin/update.sh`) | On-demand only — manual `curl \| sh`, or the System page's Update button | Install/update: downloads `installer.sh` + every file under `bin/`, `config/`, `www/` |
+| GitHub (api.github.com) | `https://api.github.com/repos/anthonysecco/OpenModem/commits/main` | `www/cgi-bin/version_check.sh` | On-demand — once per System page load, not on a timer | System page's "Update Available" row |
 
 ## Detail
 
@@ -119,6 +120,17 @@ every file under `bin/`, `config/`, and `www/` (including `www/cgi-bin/`)
 fresh from the `main` branch, or from a pinned commit if
 `OPENMODEM_INSTALL_REF` is set — see `CLAUDE.md`'s Development section
 for why a pinned installer URL alone doesn't pin the files it downloads.
+
+### GitHub — update-availability check (System page)
+
+`www/cgi-bin/version_check.sh` queries GitHub's commits API for `main`'s
+current HEAD sha and compares it to `/usrdata/openmodem/VERSION`'s
+locally-recorded `COMMIT_SHA` — the same lookup `installer.sh`'s own
+"Checking for updates" step already does to decide whether a run is a
+no-op, just read-only here and fetched once when the System page loads
+rather than as part of an actual install. An unresolved lookup (rate
+limit, no signal) reports `update_available:false` rather than guessing,
+same as `installer.sh` never skipping on an unknown sha.
 
 ## Not a dependency: Home Assistant
 
