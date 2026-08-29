@@ -66,6 +66,20 @@
           <input type="text" id="om-lan-dhcp-end" placeholder="192.168.225.200" autocomplete="off">
         </div>
       </div>
+
+      <div class="om-card om-card-wide">
+        <h2>Connected Clients</h2>
+        <div class="om-table-wrap">
+          <table class="om-table">
+            <thead>
+              <tr><th>Hostname</th><th>IP Address</th><th>MAC Address</th><th>Lease Expires</th></tr>
+            </thead>
+            <tbody id="om-lan-clients-tbody">
+              <tr><td colspan="4" class="om-note">Loading…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
     <footer class="om-footer" id="om-footer"></footer>
   </main>

@@ -74,7 +74,6 @@ goal).
   SimpleFirewall's `ttlvalue` file into `openmodem.conf`'s `TTL_VALUE`
   before removing it, so an operator's existing TTL spoofing survives
   the switch instead of silently reverting to disabled.
-  Interface up/down (`AT+CGACT=0,1` / `1,1`) is still unimplemented.
 - **LAN config** — local network configuration (QuecControl's
   `lan_action.sh`). Implemented: DHCP pool/gateway IP (`AT+QMAP="LANIP"`),
   DNS proxy mode (`AT+QMAP="DHCPV4DNS"`), and NAT vs. IP Passthrough
@@ -87,6 +86,22 @@ goal).
   revisit if actually needed. VLAN tagging (`AT+QMAP="VLAN"`) was
   implemented, tested against real hardware for the read side, then
   dropped entirely — not needed for this deployment's single-device LAN.
+- **Connected Clients** — a full-width table (Hostname/IP/MAC/Lease
+  Expires) on the LAN page listing current DHCP leases. Not AT-sourced
+  like the rest of this project's data — confirmed live (2026-08-29)
+  that LAN client info instead comes from dnsmasq's own lease file,
+  `/var/run/data/dnsmasq.leases` (path taken from the actual running
+  `--conf-file`, `/var/run/data/dnsmasq.conf.bridge0`'s
+  `dhcp-leasefile=` setting, not dnsmasq's compiled-in default), on
+  `bridge0` — the same interface the web UI itself is served on.
+  World-readable and `httpd` runs as root, so no permission gap.
+  `www/cgi-bin/lan_clients.sh` parses it directly (separate from
+  `at_poller.sh`, matching the LAN-client-info note elsewhere in this
+  doc) and `app.js`'s `fetchLanClients()` polls it on its own fixed
+  15s interval, independent of `state.sh`'s cadence since leases have
+  nothing to do with the AT poller's cycle. A hostname of `*` (dnsmasq's
+  own "none given" marker) renders as `—`, same convention as every
+  other missing field.
 
 ## Out of scope
 
@@ -577,9 +592,6 @@ Confirmed on an actual RM520N-GL (2026-08-14), not assumed:
 
 ## Open questions
 
-- Interface up/down for WAN is still unimplemented.
-- LAN client list: confirm the dnsmasq lease file path on this firmware
-  and write a collector for it (separate from `at_poller.sh`).
 - Factory reset was deliberately left out of Power (QuecControl has it;
   wasn't asked for here and is hard to make safely reversible) — revisit
   if actually needed.

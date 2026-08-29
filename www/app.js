@@ -3234,6 +3234,57 @@
     fetchWanInternet();
   }
 
+  /* ── Connected Clients (LAN page) ─────────────────────────────────────
+     Backed by www/cgi-bin/lan_clients.sh, which reads dnsmasq's own
+     lease file directly rather than any AT command — LAN client info
+     has never been AT-sourced on this hardware (see SCOPE.md). Polled
+     on a fixed interval independent of state.sh's cadence, since leases
+     are unrelated to the AT poller's own cycle. */
+  var LAN_CLIENTS_POLL_MS = 15000;
+
+  function fmtLeaseExpiry(epochSeconds) {
+    if (!epochSeconds) return '—';
+    var secs = Math.round(epochSeconds - Date.now() / 1000);
+    if (secs <= 0) return 'expired';
+    var mins = Math.round(secs / 60);
+    if (mins < 60) return 'in ' + mins + 'm';
+    return 'in ' + Math.floor(mins / 60) + 'h ' + (mins % 60) + 'm';
+  }
+
+  function lanClientsHtml(clients) {
+    if (!clients || !clients.length) {
+      return '<tr><td colspan="4" class="om-note">No clients currently connected.</td></tr>';
+    }
+    var sorted = clients.slice().sort(function (a, b) {
+      return (a.ip || '') < (b.ip || '') ? -1 : 1;
+    });
+    return sorted.map(function (c) {
+      return '<tr><td>' + escapeHtml(c.hostname || '—') + '</td>' +
+        '<td>' + escapeHtml(c.ip || '—') + '</td>' +
+        '<td>' + escapeHtml(c.mac || '—') + '</td>' +
+        '<td>' + escapeHtml(fmtLeaseExpiry(c.expires_at)) + '</td></tr>';
+    }).join('');
+  }
+
+  function fetchLanClients() {
+    var tbody = document.getElementById('om-lan-clients-tbody');
+    if (!tbody) return; // not on this page
+    fetch('/cgi-bin/lan_clients.sh')
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        tbody.innerHTML = lanClientsHtml(data.clients);
+      })
+      .catch(function () {
+        tbody.innerHTML = '<tr><td colspan="4" class="om-note">Unable to load connected clients.</td></tr>';
+      });
+  }
+
+  function initLanClients() {
+    if (!document.getElementById('om-lan-clients-tbody')) return; // not on this page
+    fetchLanClients();
+    setInterval(fetchLanClients, LAN_CLIENTS_POLL_MS);
+  }
+
   /* ── SIM slot cards (SIM page) ───────────────────────────────────────
      This module has 2 SIM slots but only one is active/queryable at a
      time (AT+QUIMSLOT selects which) — sim_status/sim_iccid/sim_imsi/
@@ -3336,5 +3387,6 @@
     initWanMtuTest();
     initWanInternet();
     initSimSlotToggle();
+    initLanClients();
   });
 })();
