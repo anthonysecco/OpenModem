@@ -1,8 +1,7 @@
 # OpenModem
 
 A local web front end for the Quectel RM520N-GL modem. Runs directly on the
-modem's onboard Linux, served over the modem's local network/USB interface,
-with no cloud dependency and no build step.
+modem's onboard Linux, served over the modem's local network/USB interface.
 
 Architecture takes inspiration from [QuecControl](https://github.com/anthonysecco/QuecControl),
 an existing project for the same modem, but is a standalone replacement, not
