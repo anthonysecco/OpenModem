@@ -57,9 +57,8 @@ Re-running the installer command above is how updates happen — it skips
 straight through if the installed commit already matches `main`, otherwise
 it installs the new version, health-checks it, and automatically rolls back
 to the previous install if anything comes up unhealthy. The same flow is
-also available from the System page's "Check for Update / Install Latest"
-button, which triggers it remotely and polls until the reinstalled web UI
-comes back.
+also available from the System page's "Check for Update" button, which
+triggers it remotely and polls until the reinstalled web UI comes back.
 
 ### Uninstalling
 
