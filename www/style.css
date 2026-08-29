@@ -291,13 +291,13 @@ body {
   bottom: 0.2rem;
 }
 
-/* Dashboard Throughput chart's Download/Upload key — same swatch-plus-
-   label shape as .om-ttl-carrier (WAN page), just inline rather than
-   stacked since there are only two entries and this sits above a chart
-   rather than a card's full width. Each item's trailing number is the
-   same element renderDualLineChart writes the latest sample's value
-   into, colored via the swatch beside it rather than the text itself so
-   the two stay legible at this font size. */
+/* Dashboard Throughput chart's Download/Upload key — a swatch-plus-
+   label shape, inline rather than stacked since there are only two
+   entries and this sits above a chart rather than a card's full width.
+   Each item's trailing number is the same element renderDualLineChart
+   writes the latest sample's value into, colored via the swatch beside
+   it rather than the text itself so the two stay legible at this font
+   size. */
 .om-chart-legend {
   display: flex;
   gap: 1rem;
@@ -1145,29 +1145,6 @@ body {
 .om-banner-warning a {
   color: var(--warn-bar);
   font-weight: 600;
-}
-
-/* ── WAN page: TTL carrier reference ── */
-.om-ttl-carriers {
-  display: flex;
-  flex-direction: column;
-  gap: 0.4rem;
-  margin: 0.5rem 0 1rem;
-  font-size: 0.8rem;
-  color: var(--text-dim);
-}
-
-.om-ttl-carrier {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-}
-
-.om-ttl-swatch {
-  width: 0.65rem;
-  height: 0.65rem;
-  border-radius: 50%;
-  flex-shrink: 0;
 }
 
 /* ── LAN page: mode/DNS toggles ── */

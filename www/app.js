@@ -654,6 +654,19 @@
     setRingDotColor(el, REG_DOT_COLORS[state[field]] || '#5c5c5e', false);
   }
 
+  // wan_active is a plain online/offline boolean, not a graduated
+  // measurement or a registration code — same binary green/red/gray
+  // vocabulary as connStatusColor (Ping/Connectivity Check), just kept
+  // separate since it reads straight off state.sh's own boolean rather
+  // than net_state.sh's icmp_status/check204_status strings.
+  function applyBoolRingDot(field, state) {
+    var el = document.querySelector('[data-ring="' + field + '"]');
+    if (!el) return;
+    var val = state[field];
+    var color = val === true ? '#34c777' : val === false ? '#e05a4e' : '#5c5c5e';
+    setRingDotColor(el, color, false);
+  }
+
   function renderStatusDots(state) {
     // No page-level guard here: applyRegRingDot/applyRingDot each check
     // their own element's existence and no-op if absent, so this is
@@ -667,6 +680,7 @@
     applyRingDot('signal_nr_rsrp', RSRP_ZONES, state);
     applyRingDot('signal_nr_rsrq', RSRQ_ZONES, state);
     applyRingDot('signal_nr_sinr', SINR_ZONES, state);
+    applyBoolRingDot('wan_active', state);
   }
 
   /* ── Connectivity card (Dashboard) ───────────────────────────────────
@@ -3154,40 +3168,36 @@
     }
   }
 
-  /* ── Path MTU (WAN page, TTL Spoofing card) ──────────────────────────
-     Button-triggered, like Reset Counter — a handful of pings (a few
-     hundred ms to a couple seconds), not disruptive enough to need a
-     confirm dialog. cgi-bin/mtu_test.sh reports both the WAN interface's
-     configured MTU and a binary-searched "verified" MTU (largest DF-bit
-     ping that actually got a reply) — see that script's header for why
-     both numbers matter. */
+  /* ── Path MTU (WAN page) ─────────────────────────────────────────────
+     Runs once automatically on page load rather than behind a button —
+     a handful of pings (a few hundred ms to a couple seconds), not
+     disruptive enough to need a confirm dialog or manual trigger.
+     cgi-bin/mtu_test.sh reports both the WAN interface's configured MTU
+     and a binary-searched "verified" MTU (largest DF-bit ping that
+     actually got a reply) — see that script's header for why both
+     numbers matter. */
   function initWanMtuTest() {
-    var btn = document.getElementById('om-wan-mtu-test');
-    if (!btn) return; // not on this page
-
     var configuredEl = document.getElementById('om-wan-mtu-configured');
+    if (!configuredEl) return; // not on this page
+
     var effectiveEl = document.getElementById('om-wan-mtu-effective');
     var statusEl = document.getElementById('om-wan-mtu-status');
 
-    btn.addEventListener('click', function () {
-      btn.disabled = true;
-      statusEl.textContent = 'Testing…';
-      fetch('/cgi-bin/mtu_test.sh')
-        .then(function (r) { return r.json(); })
-        .then(function (data) {
-          if (!data.success) {
-            statusEl.textContent = 'Failed: ' + data.error;
-            return;
-          }
-          configuredEl.textContent = data.configured_mtu + ' bytes';
-          effectiveEl.textContent = (data.effective_path_mtu != null)
-            ? (data.effective_path_mtu + ' bytes')
-            : 'Inconclusive';
-          statusEl.textContent = data.note || '';
-        })
-        .catch(function (err) { statusEl.textContent = 'Failed: ' + err; })
-        .finally(function () { btn.disabled = false; });
-    });
+    statusEl.textContent = 'Testing…';
+    fetch('/cgi-bin/mtu_test.sh')
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        if (!data.success) {
+          statusEl.textContent = 'Failed: ' + data.error;
+          return;
+        }
+        configuredEl.textContent = data.configured_mtu + ' bytes';
+        effectiveEl.textContent = (data.effective_path_mtu != null)
+          ? (data.effective_path_mtu + ' bytes')
+          : 'Inconclusive';
+        statusEl.textContent = data.note || '';
+      })
+      .catch(function (err) { statusEl.textContent = 'Failed: ' + err; });
   }
 
   /* ── Internet card (WAN page) ────────────────────────────────────────
