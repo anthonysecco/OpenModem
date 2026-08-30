@@ -184,12 +184,12 @@ for script in at_broker.sh at_command.sh at_poller.sh apply_iptables.sh apply_ht
 done
 
 echo "  Downloading web pages..."
-for page in style.css app.js index.html cellular.html sim.html wan.html lan.html system.html; do
+for page in style.css app.js index.html cellular.html sim.html wan.html lan.html gps.html system.html; do
     download "$REPO/www/$page" "$STAGING_DIR/www/$page" || FAIL=1
 done
 
 echo "  Downloading CGI scripts..."
-for cgi in state.sh update.sh at_cmd.sh band_lock.sh carrier_scan.sh lan_action.sh lan_clients.sh wan_action.sh internet_info.sh mtu_test.sh sim_action.sh network_action.sh net_state.sh history_signal.sh history_net.sh history_wan.sh ha_state.sh version.sh version_check.sh auth_action.sh; do
+for cgi in state.sh update.sh at_cmd.sh band_lock.sh carrier_scan.sh lan_action.sh lan_clients.sh wan_action.sh internet_info.sh mtu_test.sh sim_action.sh network_action.sh net_state.sh history_signal.sh history_net.sh history_wan.sh ha_state.sh version.sh version_check.sh auth_action.sh gps_action.sh; do
     download "$REPO/www/cgi-bin/$cgi" "$STAGING_DIR/www/cgi-bin/$cgi" || FAIL=1
 done
 
