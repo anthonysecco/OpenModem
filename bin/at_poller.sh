@@ -1375,24 +1375,33 @@ collect_lan() {
     esac
 }
 
-# GPS: chained onto ALL_CMD_BASE (as block 33, see the main loop's
-# `[ -f "$GPS_FLAG" ] && _cmd="${_cmd};+QGPSLOC=2"`) only while enabled — a
-# disabled GPS module means block 33 was never sent this cycle, so this
-# returns immediately without touching nth_block at all.
+# GPS: a SEPARATE, isolated run_at() call (own broker round trip) rather
+# than chained onto ALL_CMD — only while GPS_FLAG exists. NOT chained
+# because a real live session found the "append it last" design (kept
+# here as a design-history note, not current behavior) still broken:
+# AT+QNWCFG="nr5g_mimo_info" (the block immediately before where GPS used
+# to sit) legitimately errors whenever there's no active NR component
+# carrier — a common, documented, expected case elsewhere in this file —
+# and a chain aborts at its first error, so GPS silently never even ran
+# that cycle despite a real live fix being available (confirmed live
+# 2026-08-30: manual standalone AT+QGPSLOC=2 returned real coordinates
+# the same moment the chained poller cycle showed nr5g_mimo_info's block
+# as a bare "ERROR" with every gps_* field null). Reordering GPS earlier
+# in the chain would just move the same fragility onto CNUM/nr5g_mimo_info
+# instead, since QGPSLOC itself legitimately errors on no-fix too — three
+# commands that can each legitimately error can't all safely share one
+# chain no matter the order. An isolated round trip costs one extra
+# ~0.25-0.35s broker call only while GPS is enabled, trivial against the
+# ~2-3s of slack a 5s POLL_INTERVAL cycle otherwise has (measured live).
 #
 # +QGPSLOC=2 field order below (UTC,lat,lon,hdop,altitude,fix,cog,spkm,spkn,
 # date,nsat) is Quectel's documented shape for this mode, same order
-# QuecControl's own GPS page assumes — but UNCONFIRMED against a real fix on
-# this hardware: across three live sessions this module never obtained one
-# (see SCOPE.md), so only the no-fix error path ("+CME ERROR: Not fixed
-# now" — empty _line below, every field stays null) has actually been
-# exercised. Verify field-by-field against a real live fix before trusting
-# this blindly.
+# QuecControl's own GPS page assumes — confirmed live 2026-08-30 against a
+# real fix (14 satellites, HDOP 0.7): matched exactly, field-by-field.
 collect_gps() {
     F_GPS_FIX_TYPE="null"; F_GPS_LAT="null"; F_GPS_LON="null"
     F_GPS_ALT_M="null"; F_GPS_HDOP="null"
     F_GPS_SPEED_KMH="null"; F_GPS_HEADING="null"; F_GPS_NUM_SATS="null"
-    F_GPS_DEBUG_31="null"; F_GPS_DEBUG_32="null"; F_GPS_DEBUG_33="null"; F_GPS_DEBUG_34="null"
 
     if [ -f "$GPS_FLAG" ]; then
         F_GPS_ENABLED="true"
@@ -1401,18 +1410,7 @@ collect_gps() {
         return
     fi
 
-    _blob="$1"
-    # TEMP DEBUG 2026-08-30: a real live fix confirmed the QGPSLOC field
-    # order is correct (manual standalone AT+QGPSLOC=2 parsed fine), but
-    # the poller's chained result still comes back all-null — capturing
-    # blocks 31-34 to find where the chain's block numbering actually
-    # lands vs. the assumed fixed index 33. Remove once resolved.
-    F_GPS_DEBUG_31=$(json_str "$(nth_block "$_blob" 31)")
-    F_GPS_DEBUG_32=$(json_str "$(nth_block "$_blob" 32)")
-    F_GPS_DEBUG_33=$(json_str "$(nth_block "$_blob" 33)")
-    F_GPS_DEBUG_34=$(json_str "$(nth_block "$_blob" 34)")
-    _loc=$(nth_block "$_blob" 33)
-    _line=$(printf '%s' "$_loc" | grep '^+QGPSLOC:' | sed 's/^+QGPSLOC: //')
+    _line=$(run_at "AT+QGPSLOC=2" 8 | grep '^+QGPSLOC:' | sed 's/^+QGPSLOC: //')
     [ -z "$_line" ] && return   # no fix this cycle — fields stay null
 
     F_GPS_LAT=$(json_num "$(printf '%s' "$_line" | cut -d',' -f2)")
@@ -1508,11 +1506,7 @@ write_state() {
   "gps_hdop": ${F_GPS_HDOP},
   "gps_speed_kmh": ${F_GPS_SPEED_KMH},
   "gps_heading": ${F_GPS_HEADING},
-  "gps_num_sats": ${F_GPS_NUM_SATS},
-  "_gps_debug_31": ${F_GPS_DEBUG_31},
-  "_gps_debug_32": ${F_GPS_DEBUG_32},
-  "_gps_debug_33": ${F_GPS_DEBUG_33},
-  "_gps_debug_34": ${F_GPS_DEBUG_34}
+  "gps_num_sats": ${F_GPS_NUM_SATS}
 }
 EOF
 )
@@ -1560,10 +1554,8 @@ log_op "Starting — interval=${POLL_INTERVAL}s log_level=${LOG_LEVEL}"
 #  29 QNWPREFCFG=mode_pref 30 QNWCFG=data_roaming
 #  31 CNUM
 #  32 QNWCFG=nr5g_mimo_info
-#  33 QGPSLOC=2 — NOT part of ALL_CMD itself; appended per-cycle only while
-#     GPS is enabled (see GPS_FLAG/collect_gps below), always at the very
-#     end so blocks 1-32 keep their fixed indices whether or not it's
-#     present this cycle.
+# GPS (AT+QGPSLOC=2) is NOT part of this chain — see collect_gps()'s own
+# header comment for why chaining it (even last) still wasn't safe.
 # Both CNUM and nr5g_mimo_info are documented to legitimately ERROR —
 # CNUM on SIMs without a provisioned MSISDN, nr5g_mimo_info whenever
 # there's no active NR component carrier (confirmed LIVE: this is the
@@ -1580,7 +1572,7 @@ log_op "Starting — interval=${POLL_INTERVAL}s log_level=${LOG_LEVEL}"
 # (confirmed live 2026-08-17 to always answer OK) are ordered right
 # after lte_mimo_info, ahead of both risky commands, so neither
 # failure can take them out too.
-ALL_CMD_BASE='AT+GSN;+QGMR;I;+QTEMP;+CPIN?;+CIMI;+QCCID;+QUIMSLOT?;+CEREG?;+C5GREG?;+CREG?;+QRSRP;+QRSRQ;+QSINR;+QENG="servingcell";+COPS?;+QSPN;+QCAINFO;+QNWPREFCFG="lte_band";+QNWPREFCFG="nr5g_band";+CGDCONT?;+CGPADDR;+CGACT?;+QGDCNT?;+QMAP="LANIP";+QMAP="MPDN_rule";+QMAP="DHCPV4DNS";+QNWCFG="lte_mimo_info";+QNWPREFCFG="mode_pref";+QNWCFG="data_roaming";+CNUM;+QNWCFG="nr5g_mimo_info"'
+ALL_CMD='AT+GSN;+QGMR;I;+QTEMP;+CPIN?;+CIMI;+QCCID;+QUIMSLOT?;+CEREG?;+C5GREG?;+CREG?;+QRSRP;+QRSRQ;+QSINR;+QENG="servingcell";+COPS?;+QSPN;+QCAINFO;+QNWPREFCFG="lte_band";+QNWPREFCFG="nr5g_band";+CGDCONT?;+CGPADDR;+CGACT?;+QGDCNT?;+QMAP="LANIP";+QMAP="MPDN_rule";+QMAP="DHCPV4DNS";+QNWCFG="lte_mimo_info";+QNWPREFCFG="mode_pref";+QNWCFG="data_roaming";+CNUM;+QNWCFG="nr5g_mimo_info"'
 
 _cycle=0
 
@@ -1590,9 +1582,7 @@ while true; do
     _cycle=$(( _cycle + 1 ))
     [ $(( _cycle % 20 )) -eq 0 ] && rotate_log
 
-    _cmd="$ALL_CMD_BASE"
-    [ -f "$GPS_FLAG" ] && _cmd="${_cmd};+QGPSLOC=2"
-    _blob=$(run_at "$_cmd" 15)
+    _blob=$(run_at "$ALL_CMD" 15)
 
     # Fed once per cycle, right after the one call that can legitimately
     # block for a while (run_at) — proves the cycle is actually making
@@ -1613,7 +1603,7 @@ while true; do
     collect_wan "$_blob"
     compute_wan_rate "$_start"
     collect_lan "$_blob"
-    collect_gps "$_blob"
+    collect_gps
 
     _end=$(date +%s)
     write_state "$_start" "$(( _end - _start ))"
