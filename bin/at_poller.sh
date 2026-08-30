@@ -1392,6 +1392,7 @@ collect_gps() {
     F_GPS_FIX_TYPE="null"; F_GPS_LAT="null"; F_GPS_LON="null"
     F_GPS_ALT_M="null"; F_GPS_HDOP="null"
     F_GPS_SPEED_KMH="null"; F_GPS_HEADING="null"; F_GPS_NUM_SATS="null"
+    F_GPS_DEBUG_31="null"; F_GPS_DEBUG_32="null"; F_GPS_DEBUG_33="null"; F_GPS_DEBUG_34="null"
 
     if [ -f "$GPS_FLAG" ]; then
         F_GPS_ENABLED="true"
@@ -1401,6 +1402,15 @@ collect_gps() {
     fi
 
     _blob="$1"
+    # TEMP DEBUG 2026-08-30: a real live fix confirmed the QGPSLOC field
+    # order is correct (manual standalone AT+QGPSLOC=2 parsed fine), but
+    # the poller's chained result still comes back all-null — capturing
+    # blocks 31-34 to find where the chain's block numbering actually
+    # lands vs. the assumed fixed index 33. Remove once resolved.
+    F_GPS_DEBUG_31=$(json_str "$(nth_block "$_blob" 31)")
+    F_GPS_DEBUG_32=$(json_str "$(nth_block "$_blob" 32)")
+    F_GPS_DEBUG_33=$(json_str "$(nth_block "$_blob" 33)")
+    F_GPS_DEBUG_34=$(json_str "$(nth_block "$_blob" 34)")
     _loc=$(nth_block "$_blob" 33)
     _line=$(printf '%s' "$_loc" | grep '^+QGPSLOC:' | sed 's/^+QGPSLOC: //')
     [ -z "$_line" ] && return   # no fix this cycle — fields stay null
@@ -1498,7 +1508,11 @@ write_state() {
   "gps_hdop": ${F_GPS_HDOP},
   "gps_speed_kmh": ${F_GPS_SPEED_KMH},
   "gps_heading": ${F_GPS_HEADING},
-  "gps_num_sats": ${F_GPS_NUM_SATS}
+  "gps_num_sats": ${F_GPS_NUM_SATS},
+  "_gps_debug_31": ${F_GPS_DEBUG_31},
+  "_gps_debug_32": ${F_GPS_DEBUG_32},
+  "_gps_debug_33": ${F_GPS_DEBUG_33},
+  "_gps_debug_34": ${F_GPS_DEBUG_34}
 }
 EOF
 )
