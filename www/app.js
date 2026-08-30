@@ -326,7 +326,6 @@
   function fmtDbm(v) { return (v === null || v === undefined) ? null : v + ' dBm'; }
   function fmtReg(v) { return REG_LABELS[v] !== undefined ? REG_LABELS[v] : null; }
   function fmtBool(v) { return v === true ? 'Active' : v === false ? 'Inactive' : null; }
-  function fmtEnabled(v) { return v === true ? 'Enabled' : v === false ? 'Disabled' : null; }
   function fmtGpsFixType(v) { return v === 2 ? '2D Fix' : v === 3 ? '3D Fix' : null; }
   function fmtGpsCoord(v) { return (typeof v === 'number') ? v.toFixed(6) + '°' : null; }
   function fmtGpsAlt(v) { return (typeof v === 'number') ? v + ' m' : null; }
@@ -535,7 +534,6 @@
     sim_active_slot: fmtSimSlot,
     device_uptime_s: fmtUptime,
     device_temp_c: fmtTempC,
-    gps_enabled: fmtEnabled,
     gps_fix_type: fmtGpsFixType,
     gps_lat: fmtGpsCoord, gps_lon: fmtGpsCoord,
     gps_alt_m: fmtGpsAlt,
@@ -701,7 +699,6 @@
     applyRingDot('signal_nr_rsrq', RSRQ_ZONES, state);
     applyRingDot('signal_nr_sinr', SINR_ZONES, state);
     applyBoolRingDot('wan_active', state);
-    applyBoolRingDot('gps_enabled', state);
   }
 
   /* ── Connectivity card (Dashboard) ───────────────────────────────────
@@ -3547,26 +3544,28 @@
   }
 
   /* ── GPS Control card (GPS page) ─────────────────────────────────────
-     A single button whose label/target action flips with server state
-     (Enable GPS <-> Disable GPS), same immediate confirm-then-act shape
-     as SIM slot switching — nothing staged here either. Unlike
-     renderSimSlots, this DOES need to manage its own button.disabled
-     during the in-flight request, since the poll-driven render function
-     below would otherwise reset the label/disabled state out from under
-     a request that's still running (a >1 poll-interval-long enable/
-     disable call is unlikely but not impossible) — gpsActionPending
-     gates that. */
+     A slider (checkbox styled as an .om-switch track/thumb) rather than
+     a labeled button — same immediate confirm-then-act shape as SIM slot
+     switching, just a different control. The click listener below calls
+     preventDefault() before the checkbox's native toggle applies, so the
+     visual slide only ever happens once the action actually succeeds —
+     simpler than letting it flip immediately and reverting it on
+     cancel/failure, since confirmDialog has no cancel-callback hook to
+     revert from. Unlike renderSimSlots, this DOES need to manage its own
+     input.disabled during the in-flight request, since the poll-driven
+     render function below would otherwise reset it out from under a
+     request that's still running (a >1 poll-interval-long enable/disable
+     call is unlikely but not impossible) — gpsActionPending gates that. */
   var gpsActionPending = false;
 
   function renderGpsCard(state) {
-    var btn = document.getElementById('om-gps-toggle-btn');
-    if (!btn) return; // not on this page
+    var input = document.getElementById('om-gps-toggle-input');
+    if (!input) return; // not on this page
     if (gpsActionPending) return; // don't fight the in-flight request's own state
 
     var enabled = state.gps_enabled === true;
-    btn.disabled = false;
-    btn.textContent = enabled ? 'Disable GPS' : 'Enable GPS';
-    btn.setAttribute('data-enabled', String(enabled));
+    input.disabled = false;
+    input.checked = enabled;
 
     var noteEl = document.getElementById('om-gps-fix-note');
     if (noteEl) {
@@ -3576,8 +3575,8 @@
     }
   }
 
-  function applyGpsToggle(btn) {
-    var enabled = btn.getAttribute('data-enabled') === 'true';
+  function applyGpsToggle(input) {
+    var enabled = input.checked; // pre-toggle state — the click was prevented, see initGpsControl
     var action = enabled ? 'disable' : 'enable';
     var statusEl = document.getElementById('om-gps-toggle-status');
     confirmDialog({
@@ -3589,23 +3588,27 @@
       confirmLabel: enabled ? 'Disable' : 'Enable',
       onConfirm: function () {
         gpsActionPending = true;
-        btn.disabled = true;
+        input.disabled = true;
         statusEl.textContent = (enabled ? 'Disabling' : 'Enabling') + '…';
         fetch('/cgi-bin/gps_action.sh?action=' + action)
           .then(function (r) { return r.json(); })
           .then(function (data) {
             statusEl.textContent = data.success ? data.message : ('Failed: ' + data.error);
+            if (data.success) input.checked = !enabled;
           })
           .catch(function (err) { statusEl.textContent = 'Failed: ' + err; })
-          .finally(function () { gpsActionPending = false; btn.disabled = false; });
+          .finally(function () { gpsActionPending = false; input.disabled = false; });
       }
     });
   }
 
   function initGpsControl() {
-    var btn = document.getElementById('om-gps-toggle-btn');
-    if (!btn) return; // not on this page
-    btn.addEventListener('click', function () { applyGpsToggle(btn); });
+    var input = document.getElementById('om-gps-toggle-input');
+    if (!input) return; // not on this page
+    input.addEventListener('click', function (e) {
+      e.preventDefault();
+      applyGpsToggle(input);
+    });
   }
 
   window.OM = { init: initShell };

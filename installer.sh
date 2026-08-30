@@ -188,6 +188,21 @@ for page in style.css app.js index.html cellular.html sim.html wan.html lan.html
     download "$REPO/www/$page" "$STAGING_DIR/www/$page" || FAIL=1
 done
 
+# Cache-bust the two shared static assets (style.css/app.js) every page
+# references: their URL is otherwise identical across every deploy, so a
+# browser can (and does — confirmed live 2026-08-30: a brand-new page
+# loaded fine, but ran a stale cached app.js that predated it, silently
+# missing new functions/fields) keep serving an old cached copy straight
+# through a fresh install. Appending a per-deploy query string forces a
+# fresh fetch. _commit_sha may be empty (unresolved GitHub API lookup,
+# see step 2) — a timestamp works just as well here, since this only
+# needs to change on every deploy, not identify a specific commit.
+_cachebust="${_commit_sha:-$(date +%s)}"
+for _f in "$STAGING_DIR"/www/*.html; do
+    [ -f "$_f" ] || continue
+    sed -i "s#/style\.css\"#/style.css?v=${_cachebust}\"#; s#/app\.js\"#/app.js?v=${_cachebust}\"#" "$_f"
+done
+
 echo "  Downloading CGI scripts..."
 for cgi in state.sh update.sh at_cmd.sh band_lock.sh carrier_scan.sh lan_action.sh lan_clients.sh wan_action.sh internet_info.sh mtu_test.sh sim_action.sh network_action.sh net_state.sh history_signal.sh history_net.sh history_wan.sh ha_state.sh version.sh version_check.sh auth_action.sh gps_action.sh; do
     download "$REPO/www/cgi-bin/$cgi" "$STAGING_DIR/www/cgi-bin/$cgi" || FAIL=1
