@@ -33,41 +33,55 @@ if [ -n "$QUERY_STRING" ]; then
 fi
 [ -z "$ACTION" ] && ACTION="invalid"
 
-json_esc() { printf '%s' "$1" | tr -d '\r\n' | sed 's/\\/\\\\/g; s/"/\\"/g'; }
+json_esc() { printf '%s' "$1" | tr '\r\n' '  ' | sed 's/\\/\\\\/g; s/"/\\"/g'; }
 
 case "$ACTION" in
 
   enable)
-    RESP=$("$AT_CMD" "AT+QGPS=1" 10 2>/dev/null | tr -d '\r')
-    # AT+QGPS=1 is NOT idempotent on this hardware (confirmed live
-    # 2026-08-30): calling it while a GPS session is already running
-    # returns "+CME ERROR: Session is ongoing", not OK. Treated as
-    # success here too — GPS_FLAG only tracks UI intent, and the actual
-    # desired state (module enabled) is already true either way, so
-    # refusing would show a false "Failed" if the flag file and the
-    # module's real state ever drift (e.g. after manual AT testing).
-    if echo "$RESP" | grep -q '^OK' || echo "$RESP" | grep -q 'Session is ongoing'; then
+    # Neither AT+QGPS=1 nor AT+QGPSEND (below) is idempotent on this
+    # hardware — calling either while already in the target state
+    # returns a +CME ERROR, not OK (confirmed live 2026-08-30: "Session
+    # is ongoing" / "Session not activity" in verbose CMEE mode, and
+    # "+CME ERROR: 504" in the numeric mode this modem apparently
+    # defaults back to — CMEE=2 was only ever set manually in one AT
+    # session and doesn't persist, so matching specific error text/codes
+    # here is fragile). Checking the real module state with AT+QGPS?
+    # first and skipping the command entirely when already there sidesteps
+    # needing to parse that error at all, in either CMEE mode.
+    _cur=$("$AT_CMD" "AT+QGPS?" 8 2>/dev/null | tr -d '\r')
+    if echo "$_cur" | grep -q '^+QGPS: 1'; then
         "$AT_CMD" 'AT+QGPSCFG="nmeasrc",1' 10 >/dev/null 2>&1
         mkdir -p "$RUN_DIR"
         touch "$GPS_FLAG"
-        echo '{"success":true,"message":"GPS enabled. Acquiring a fix can take a while outdoors with a clear sky view."}'
+        echo '{"success":true,"message":"GPS already enabled."}'
     else
-        printf '{"success":false,"error":"AT command failed: %s"}\n' "$(json_esc "$RESP")"
-        exit 1
+        RESP=$("$AT_CMD" "AT+QGPS=1" 10 2>/dev/null | tr -d '\r')
+        if echo "$RESP" | grep -q '^OK'; then
+            "$AT_CMD" 'AT+QGPSCFG="nmeasrc",1' 10 >/dev/null 2>&1
+            mkdir -p "$RUN_DIR"
+            touch "$GPS_FLAG"
+            echo '{"success":true,"message":"GPS enabled. Acquiring a fix can take a while outdoors with a clear sky view."}'
+        else
+            printf '{"success":false,"error":"AT command failed: %s"}\n' "$(json_esc "$RESP")"
+            exit 1
+        fi
     fi
     ;;
 
   disable)
-    RESP=$("$AT_CMD" "AT+QGPSEND" 10 2>/dev/null | tr -d '\r')
-    # Same non-idempotency as AT+QGPS=1 above, confirmed live in the
-    # other direction: AT+QGPSEND while no session is running returns
-    # "+CME ERROR: Session not activity", not OK.
-    if echo "$RESP" | grep -q '^OK' || echo "$RESP" | grep -q 'Session not activity'; then
+    _cur=$("$AT_CMD" "AT+QGPS?" 8 2>/dev/null | tr -d '\r')
+    if echo "$_cur" | grep -q '^+QGPS: 0'; then
         rm -f "$GPS_FLAG"
-        echo '{"success":true,"message":"GPS disabled."}'
+        echo '{"success":true,"message":"GPS already disabled."}'
     else
-        printf '{"success":false,"error":"AT command failed: %s"}\n' "$(json_esc "$RESP")"
-        exit 1
+        RESP=$("$AT_CMD" "AT+QGPSEND" 10 2>/dev/null | tr -d '\r')
+        if echo "$RESP" | grep -q '^OK'; then
+            rm -f "$GPS_FLAG"
+            echo '{"success":true,"message":"GPS disabled."}'
+        else
+            printf '{"success":false,"error":"AT command failed: %s"}\n' "$(json_esc "$RESP")"
+            exit 1
+        fi
     fi
     ;;
 
