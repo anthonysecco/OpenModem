@@ -147,13 +147,32 @@ goal).
   `AT+QGPS=1`/`AT+QGPSEND` (both confirmed live, clean disable-then-
   re-enable cycle, no side effects) and touch/remove a presence-only flag
   file (`GPS_FLAG`, `/tmp/openmodem/gps_enabled`) rather than a dedicated
-  script owning any other state. `bin/at_poller.sh`'s main loop appends
-  `;+QGPSLOC=2` to its per-cycle AT chain only while that flag file
-  exists (checked once per cycle, not a live `AT+QGPS?` round trip) —
-  always as the last block (33) so blocks 1-32's fixed `nth_block()`
-  indices never shift whether or not GPS is enabled. Mode 2 returns
-  decimal degrees directly, unlike QuecControl's `=0` which returns raw
-  NMEA `ddmm.mmmm` needing manual conversion.
+  script owning any other state. `bin/at_poller.sh`'s `collect_gps()`
+  issues `AT+QGPSLOC=2` as its own **isolated** `run_at()` round trip
+  (not chained onto `ALL_CMD`) only while that flag file exists (checked
+  once per cycle, not a live `AT+QGPS?` round trip) — see the real bug
+  this replaced, just below. Mode 2 returns decimal degrees directly,
+  unlike QuecControl's `=0` which returns raw NMEA `ddmm.mmmm` needing
+  manual conversion.
+  - **Real bug, found live 2026-08-30 once a fix finally landed**: the
+    original design chained `AT+QGPSLOC=2` onto the end of `ALL_CMD` (as
+    a would-be block 33), reasoned to be safe since QGPSLOC was the only
+    command there expected to legitimately error (on no-fix) and a chain
+    aborts at its first error. That reasoning missed that
+    `AT+QNWCFG="nr5g_mimo_info"` — the block immediately before it —
+    *also* legitimately errors, and commonly (whenever there's no active
+    NR component carrier, already documented elsewhere in this file).
+    Confirmed live: a manual standalone `AT+QGPSLOC=2` returned a real
+    fix at the exact moment the poller's own chained cycle showed
+    `nr5g_mimo_info`'s block as a bare `ERROR` and every `gps_*` field
+    null — the chain had aborted one step before ever reaching GPS.
+    Reordering GPS earlier would only move the same fragility onto
+    CNUM/nr5g_mimo_info instead (QGPSLOC errors on no-fix just as
+    commonly) — three commands that can each legitimately error can't
+    safely share one chain regardless of order. Fixed by giving GPS its
+    own isolated round trip instead, ~0.25-0.35s only while enabled,
+    trivial against the ~2-3s of slack a 5s `POLL_INTERVAL` cycle has
+    (measured live in the same session — see below).
   - `enable` also sets `AT+QGPSCFG="nmeasrc",1` — a real finding from
     this session: `nmeasrc` had drifted back to `0` since earlier
     sessions confirmed the `AT+QGPSGNMEA` family working (see below),
@@ -162,47 +181,66 @@ goal).
     feature (the Satellites/`GSV` card that would have needed it was
     dropped), but set defensively so a GNMEA-based feature added later
     doesn't have to rediscover this.
-  - **No fix ever obtained**, now across three separate live sessions on
-    this hardware (two multi-minute sessions plus this one) — one saw a
-    single weak satellite (PRN 31, SNR 26), another zero, this one saw 8
-    satellites in `AT+QGPSGNMEA="GSV"` but all with blank SNR (detected,
-    not tracked) and `AT+QGPSLOC=2` consistently returned `+CME ERROR:
-    Not fixed now`. Points at the GNSS antenna (connection or sky
-    visibility), not the command set, which is fully functional —
-    `AT+QGPS=1`/`AT+QGPS?`/`AT+QGPSEND` and every `AT+QGPSGNMEA` sentence
-    (`GGA`/`RMC`/`GSV`/`GSA`/`VTG`/`GNS`) all confirmed working once
-    `nmeasrc` was set.
-  - **`+QGPSLOC=2`'s success-response field order is UNCONFIRMED** on
-    this hardware — `collect_gps()`'s parsing (`UTC,lat,lon,hdop,
-    altitude,fix,cog,spkm,spkn,date,nsat`) follows Quectel's documented
-    shape (same order QuecControl's own GPS page assumes), but only the
-    no-fix error path has actually been exercised live. Verify
-    field-by-field against a real fix (antenna fixed, or tested outdoors)
-    before trusting `gps_lat`/`gps_lon`/etc. blindly.
+  - **First real fix obtained, 2026-08-30**, after three prior sessions
+    (two multi-minute, one this session's earlier attempt) never got one
+    — this time from a location known to have clear sky visibility.
+    `AT+QGPSLOC=2` returned `37.33238,-121.94587`, HDOP 0.7, 15
+    satellites, 3D fix, altitude ~25m — held rock-solid identical across
+    6+ consecutive poll cycles once the chain-isolation bug above was
+    fixed. Confirms the earlier "no fix" sessions really were an antenna/
+    sky-visibility issue, not the command set.
+  - **`+QGPSLOC=2`'s success-response field order is now CONFIRMED** —
+    `collect_gps()`'s parsing (`UTC,lat,lon,hdop,altitude,fix,cog,spkm,
+    spkn,date,nsat`) matched the real fix above field-by-field exactly,
+    same order Quectel's docs and QuecControl's own GPS page assume.
   - **`gps_action.sh`'s CGI endpoints confirmed live end-to-end**
     (2026-08-30, invoked directly with `QUERY_STRING` set rather than
     through `httpd` — this device's Basic Auth password had been changed
     away from the default earlier and wasn't known): `enable`/`disable`
     each round-tripped correctly (flag file created/removed, `nmeasrc`
     set on enable, `state.sh`'s `gps_enabled` flipped on the poller's
-    next cycle), and the extended 33-block chain didn't disturb any
-    other field (`device_model`/`signal_lte_rsrp`/`reg_lte` all still
-    populated normally, `_poll_duration_s` stayed at 2s).
+    next cycle). Also confirmed at the time (before GPS moved to its own
+    isolated round trip — see the chain-isolation bug above): chaining
+    `AT+QGPSLOC=2` as a would-be block 33 didn't disturb any of the other
+    32 blocks (`device_model`/`signal_lte_rsrp`/`reg_lte` all still
+    populated normally, `_poll_duration_s` stayed at 2s) — the bug was
+    specifically GPS's own block never being *reached*, not corruption of
+    what came before it.
   - **Neither `AT+QGPS=1` nor `AT+QGPSEND` is idempotent** on this
-    hardware, found live while re-testing `enable` (the module was still
-    on from earlier manual testing): `AT+QGPS=1` while already running
-    returns `+CME ERROR: Session is ongoing`; `AT+QGPSEND` with nothing
-    running returns `+CME ERROR: Session not activity`. `gps_action.sh`
-    now treats both as success alongside `OK` — `GPS_FLAG` only tracks
-    UI intent, and the actually-desired module state is already true
-    either way, so refusing would show a false "Failed" the moment the
-    flag file and the module's real state drift apart (exactly what
-    happened here, from having enabled it manually before this button
-    existed).
+    hardware — calling either while already in the target state returns
+    a `+CME ERROR`, not `OK` (`Session is ongoing` / `Session not
+    activity`). First fixed by matching those error strings, then found
+    live (2026-08-30, a real user click) that this was fragile: the
+    verbose error text only appears under `AT+CMEE=2`, a mode set
+    manually in one ad-hoc AT session that doesn't persist — a real click
+    hit the numeric form (`+CME ERROR: 504`) instead, which the text
+    match missed, surfacing a false "Failed" on a genuinely successful
+    no-op. `gps_action.sh` now checks `AT+QGPS?` first and skips sending
+    the command at all when already in the target state, instead of
+    sending it and parsing whatever error format comes back — correct
+    regardless of CMEE mode. `json_esc()` was also fixed to replace
+    `\r`/`\n` with spaces instead of deleting them (was mashing
+    multi-line error text into one unreadable string).
+  - **`GPS_FLAG` does not survive a reinstall** — `installer.sh`'s step 5
+    wipes `/tmp/*` runtime state on every update (see "Install / update"
+    below), which includes `/tmp/openmodem/gps_enabled`. The AT module
+    itself stays enabled across a software reinstall (it's baseband
+    firmware state, confirmed live: `AT+QGPS?` still read `1` immediately
+    after a fresh install with no flag file present) but the poller
+    reports `gps_enabled: false` until GPS is re-enabled through the UI —
+    discovered mid-session when several consecutive diagnostic redeploys
+    each silently reset it, requiring a fresh `enable` call every time.
+    Not fixed — `gps_action.sh`'s `enable` already recovers cleanly from
+    this drift (see the idempotency fix above), so it's a one-click
+    annoyance after every update rather than a broken state, but worth
+    fixing properly later: either persist the flag somewhere `/tmp`
+    cleanup doesn't reach (`openmodem.conf`?), or have the poller sync
+    its GPS-enabled belief from a one-time `AT+QGPS?` check at its own
+    startup instead of assuming disabled.
   - GPS page itself not yet exercised against a real browser (only its
-    JSON-producing backend paths above were verified) — same Basic Auth
-    credential gap as `gps_action.sh` above blocked a direct browser
-    check this session.
+    JSON-producing backend paths above were verified, via `curl` with
+    credentials the user provided directly for this session's debugging —
+    not recorded here).
 
 ## Out of scope
 
