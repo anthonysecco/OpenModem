@@ -39,7 +39,14 @@ case "$ACTION" in
 
   enable)
     RESP=$("$AT_CMD" "AT+QGPS=1" 10 2>/dev/null | tr -d '\r')
-    if echo "$RESP" | grep -q '^OK'; then
+    # AT+QGPS=1 is NOT idempotent on this hardware (confirmed live
+    # 2026-08-30): calling it while a GPS session is already running
+    # returns "+CME ERROR: Session is ongoing", not OK. Treated as
+    # success here too — GPS_FLAG only tracks UI intent, and the actual
+    # desired state (module enabled) is already true either way, so
+    # refusing would show a false "Failed" if the flag file and the
+    # module's real state ever drift (e.g. after manual AT testing).
+    if echo "$RESP" | grep -q '^OK' || echo "$RESP" | grep -q 'Session is ongoing'; then
         "$AT_CMD" 'AT+QGPSCFG="nmeasrc",1' 10 >/dev/null 2>&1
         mkdir -p "$RUN_DIR"
         touch "$GPS_FLAG"
@@ -52,7 +59,10 @@ case "$ACTION" in
 
   disable)
     RESP=$("$AT_CMD" "AT+QGPSEND" 10 2>/dev/null | tr -d '\r')
-    if echo "$RESP" | grep -q '^OK'; then
+    # Same non-idempotency as AT+QGPS=1 above, confirmed live in the
+    # other direction: AT+QGPSEND while no session is running returns
+    # "+CME ERROR: Session not activity", not OK.
+    if echo "$RESP" | grep -q '^OK' || echo "$RESP" | grep -q 'Session not activity'; then
         rm -f "$GPS_FLAG"
         echo '{"success":true,"message":"GPS disabled."}'
     else

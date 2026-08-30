@@ -179,9 +179,30 @@ goal).
     no-fix error path has actually been exercised live. Verify
     field-by-field against a real fix (antenna fixed, or tested outdoors)
     before trusting `gps_lat`/`gps_lon`/etc. blindly.
-  - Not yet exercised: `gps_action.sh`'s actual CGI endpoints (only the
-    underlying AT commands were tested directly via `at_command.sh`), and
-    the GPS page itself against a real browser/live poller cycle.
+  - **`gps_action.sh`'s CGI endpoints confirmed live end-to-end**
+    (2026-08-30, invoked directly with `QUERY_STRING` set rather than
+    through `httpd` — this device's Basic Auth password had been changed
+    away from the default earlier and wasn't known): `enable`/`disable`
+    each round-tripped correctly (flag file created/removed, `nmeasrc`
+    set on enable, `state.sh`'s `gps_enabled` flipped on the poller's
+    next cycle), and the extended 33-block chain didn't disturb any
+    other field (`device_model`/`signal_lte_rsrp`/`reg_lte` all still
+    populated normally, `_poll_duration_s` stayed at 2s).
+  - **Neither `AT+QGPS=1` nor `AT+QGPSEND` is idempotent** on this
+    hardware, found live while re-testing `enable` (the module was still
+    on from earlier manual testing): `AT+QGPS=1` while already running
+    returns `+CME ERROR: Session is ongoing`; `AT+QGPSEND` with nothing
+    running returns `+CME ERROR: Session not activity`. `gps_action.sh`
+    now treats both as success alongside `OK` — `GPS_FLAG` only tracks
+    UI intent, and the actually-desired module state is already true
+    either way, so refusing would show a false "Failed" the moment the
+    flag file and the module's real state drift apart (exactly what
+    happened here, from having enabled it manually before this button
+    existed).
+  - GPS page itself not yet exercised against a real browser (only its
+    JSON-producing backend paths above were verified) — same Basic Auth
+    credential gap as `gps_action.sh` above blocked a direct browser
+    check this session.
 
 ## Out of scope
 
