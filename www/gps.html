@@ -22,10 +22,11 @@
     <div class="om-cards">
       <div class="om-card">
         <h2>GPS Control</h2>
-        <label class="om-switch">
-          <input type="checkbox" id="om-gps-toggle-input" aria-label="Enable GPS">
-          <span class="om-switch-track"><span class="om-switch-thumb"></span></span>
-        </label>
+        <div class="om-row"><span class="om-row-label">Status</span><span class="om-row-value-wrap"><span data-field="gps_enabled">—</span><span class="om-ring-dot" data-ring="gps_enabled"></span></span></div>
+        <div class="om-toggle-group" id="om-gps-toggle">
+          <button type="button" data-gps-action="enable">Enable</button>
+          <button type="button" data-gps-action="disable">Disable</button>
+        </div>
         <p class="om-note" id="om-gps-toggle-status"></p>
       </div>
 
