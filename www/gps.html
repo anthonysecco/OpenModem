@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>OpenModem — GPS</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header class="om-topbar">
+    <span class="device-name">OpenModem</span>
+    <div class="om-topbar-signal" id="om-topbar-signal"></div>
+  </header>
+
+  <nav class="om-sidebar" id="om-sidebar-nav"></nav>
+
+  <main class="om-main">
+    <div class="om-apply-bar om-banner-warning" id="om-auth-warning-bar" style="display:none;">
+      <span class="om-apply-bar-label">Using the default password. Change it on the System page for security.</span>
+      <a href="/system.html#om-change-password-card">Change Password</a>
+    </div>
+    <div class="om-cards">
+      <div class="om-card">
+        <h2>GPS Control</h2>
+        <div class="om-row"><span class="om-row-label">Status</span><span class="om-row-value-wrap"><span data-field="gps_enabled">—</span><span class="om-ring-dot" data-ring="gps_enabled"></span></span></div>
+        <button type="button" id="om-gps-toggle-btn">—</button>
+        <p class="om-note" id="om-gps-toggle-status"></p>
+      </div>
+
+      <div class="om-card">
+        <h2>Position</h2>
+        <div class="om-row"><span class="om-row-label">Fix Type</span><span data-field="gps_fix_type">—</span></div>
+        <div class="om-row"><span class="om-row-label">Latitude</span><span data-field="gps_lat">—</span></div>
+        <div class="om-row"><span class="om-row-label">Longitude</span><span data-field="gps_lon">—</span></div>
+        <div class="om-row"><span class="om-row-label">Altitude</span><span data-field="gps_alt_m">—</span></div>
+        <div class="om-row"><span class="om-row-label om-hint" title="Horizontal Dilution of Precision — lower is better; under 2 is excellent, over 10 is poor.">HDOP</span><span data-field="gps_hdop">—</span></div>
+        <div class="om-row"><span class="om-row-label om-hint" title="Number of satellites actually used in the current fix, not just visible in the sky.">Satellites</span><span data-field="gps_num_sats">—</span></div>
+        <p class="om-note" id="om-gps-fix-note"></p>
+      </div>
+
+      <div class="om-card">
+        <h2>Movement</h2>
+        <div class="om-row"><span class="om-row-label">Speed</span><span data-field="gps_speed_kmh">—</span></div>
+        <div class="om-row"><span class="om-row-label">Heading</span><span data-field="gps_heading">—</span></div>
+      </div>
+    </div>
+    <footer class="om-footer" id="om-footer"></footer>
+  </main>
+
+  <nav class="om-tabbar" id="om-tabbar-nav"></nav>
+
+  <script src="/app.js"></script>
+  <script>OM.init('gps');</script>
+</body>
+</html>

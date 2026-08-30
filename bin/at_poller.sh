@@ -30,6 +30,10 @@ HISTORY_SCRATCH="$RUN_DIR/history_signal_scratch"
 HISTORY_FILE_WAN="$RUN_DIR/history_wan.json"
 HISTORY_SCRATCH_WAN="$RUN_DIR/history_wan_scratch"
 MIMO_CACHE="$RUN_DIR/mimo_max_cache"
+# Presence-only flag, set/cleared by www/cgi-bin/gps_action.sh's
+# enable/disable — see collect_gps() for why this exists instead of a live
+# AT+QGPS? check every cycle.
+GPS_FLAG="$RUN_DIR/gps_enabled"
 LOG_MAX_BYTES=262144
 LOG_SLOTS=2
 
@@ -1371,6 +1375,46 @@ collect_lan() {
     esac
 }
 
+# GPS: chained onto ALL_CMD_BASE (as block 33, see the main loop's
+# `[ -f "$GPS_FLAG" ] && _cmd="${_cmd};+QGPSLOC=2"`) only while enabled — a
+# disabled GPS module means block 33 was never sent this cycle, so this
+# returns immediately without touching nth_block at all.
+#
+# +QGPSLOC=2 field order below (UTC,lat,lon,hdop,altitude,fix,cog,spkm,spkn,
+# date,nsat) is Quectel's documented shape for this mode, same order
+# QuecControl's own GPS page assumes — but UNCONFIRMED against a real fix on
+# this hardware: across three live sessions this module never obtained one
+# (see SCOPE.md), so only the no-fix error path ("+CME ERROR: Not fixed
+# now" — empty _line below, every field stays null) has actually been
+# exercised. Verify field-by-field against a real live fix before trusting
+# this blindly.
+collect_gps() {
+    F_GPS_FIX_TYPE="null"; F_GPS_LAT="null"; F_GPS_LON="null"
+    F_GPS_ALT_M="null"; F_GPS_HDOP="null"
+    F_GPS_SPEED_KMH="null"; F_GPS_HEADING="null"; F_GPS_NUM_SATS="null"
+
+    if [ -f "$GPS_FLAG" ]; then
+        F_GPS_ENABLED="true"
+    else
+        F_GPS_ENABLED="false"
+        return
+    fi
+
+    _blob="$1"
+    _loc=$(nth_block "$_blob" 33)
+    _line=$(printf '%s' "$_loc" | grep '^+QGPSLOC:' | sed 's/^+QGPSLOC: //')
+    [ -z "$_line" ] && return   # no fix this cycle — fields stay null
+
+    F_GPS_LAT=$(json_num "$(printf '%s' "$_line" | cut -d',' -f2)")
+    F_GPS_LON=$(json_num "$(printf '%s' "$_line" | cut -d',' -f3)")
+    F_GPS_HDOP=$(json_num "$(printf '%s' "$_line" | cut -d',' -f4)")
+    F_GPS_ALT_M=$(json_num "$(printf '%s' "$_line" | cut -d',' -f5)")
+    F_GPS_FIX_TYPE=$(json_num "$(printf '%s' "$_line" | cut -d',' -f6)")
+    F_GPS_HEADING=$(json_num "$(printf '%s' "$_line" | cut -d',' -f7)")
+    F_GPS_SPEED_KMH=$(json_num "$(printf '%s' "$_line" | cut -d',' -f8)")
+    F_GPS_NUM_SATS=$(json_num "$(printf '%s' "$_line" | cut -d',' -f11)")
+}
+
 write_state() {
     _polled_at="$1"
     _duration="$2"
@@ -1445,7 +1489,16 @@ write_state() {
   "lan_dhcp_end": ${F_LAN_DHCP_END},
   "lan_mode": ${F_LAN_MODE},
   "lan_mpdn_mac": ${F_LAN_MPDN_MAC},
-  "lan_dns_mode": ${F_LAN_DNS_MODE}
+  "lan_dns_mode": ${F_LAN_DNS_MODE},
+  "gps_enabled": ${F_GPS_ENABLED},
+  "gps_fix_type": ${F_GPS_FIX_TYPE},
+  "gps_lat": ${F_GPS_LAT},
+  "gps_lon": ${F_GPS_LON},
+  "gps_alt_m": ${F_GPS_ALT_M},
+  "gps_hdop": ${F_GPS_HDOP},
+  "gps_speed_kmh": ${F_GPS_SPEED_KMH},
+  "gps_heading": ${F_GPS_HEADING},
+  "gps_num_sats": ${F_GPS_NUM_SATS}
 }
 EOF
 )
@@ -1493,6 +1546,10 @@ log_op "Starting — interval=${POLL_INTERVAL}s log_level=${LOG_LEVEL}"
 #  29 QNWPREFCFG=mode_pref 30 QNWCFG=data_roaming
 #  31 CNUM
 #  32 QNWCFG=nr5g_mimo_info
+#  33 QGPSLOC=2 — NOT part of ALL_CMD itself; appended per-cycle only while
+#     GPS is enabled (see GPS_FLAG/collect_gps below), always at the very
+#     end so blocks 1-32 keep their fixed indices whether or not it's
+#     present this cycle.
 # Both CNUM and nr5g_mimo_info are documented to legitimately ERROR —
 # CNUM on SIMs without a provisioned MSISDN, nr5g_mimo_info whenever
 # there's no active NR component carrier (confirmed LIVE: this is the
@@ -1509,7 +1566,7 @@ log_op "Starting — interval=${POLL_INTERVAL}s log_level=${LOG_LEVEL}"
 # (confirmed live 2026-08-17 to always answer OK) are ordered right
 # after lte_mimo_info, ahead of both risky commands, so neither
 # failure can take them out too.
-ALL_CMD='AT+GSN;+QGMR;I;+QTEMP;+CPIN?;+CIMI;+QCCID;+QUIMSLOT?;+CEREG?;+C5GREG?;+CREG?;+QRSRP;+QRSRQ;+QSINR;+QENG="servingcell";+COPS?;+QSPN;+QCAINFO;+QNWPREFCFG="lte_band";+QNWPREFCFG="nr5g_band";+CGDCONT?;+CGPADDR;+CGACT?;+QGDCNT?;+QMAP="LANIP";+QMAP="MPDN_rule";+QMAP="DHCPV4DNS";+QNWCFG="lte_mimo_info";+QNWPREFCFG="mode_pref";+QNWCFG="data_roaming";+CNUM;+QNWCFG="nr5g_mimo_info"'
+ALL_CMD_BASE='AT+GSN;+QGMR;I;+QTEMP;+CPIN?;+CIMI;+QCCID;+QUIMSLOT?;+CEREG?;+C5GREG?;+CREG?;+QRSRP;+QRSRQ;+QSINR;+QENG="servingcell";+COPS?;+QSPN;+QCAINFO;+QNWPREFCFG="lte_band";+QNWPREFCFG="nr5g_band";+CGDCONT?;+CGPADDR;+CGACT?;+QGDCNT?;+QMAP="LANIP";+QMAP="MPDN_rule";+QMAP="DHCPV4DNS";+QNWCFG="lte_mimo_info";+QNWPREFCFG="mode_pref";+QNWCFG="data_roaming";+CNUM;+QNWCFG="nr5g_mimo_info"'
 
 _cycle=0
 
@@ -1519,7 +1576,9 @@ while true; do
     _cycle=$(( _cycle + 1 ))
     [ $(( _cycle % 20 )) -eq 0 ] && rotate_log
 
-    _blob=$(run_at "$ALL_CMD" 15)
+    _cmd="$ALL_CMD_BASE"
+    [ -f "$GPS_FLAG" ] && _cmd="${_cmd};+QGPSLOC=2"
+    _blob=$(run_at "$_cmd" 15)
 
     # Fed once per cycle, right after the one call that can legitimately
     # block for a while (run_at) — proves the cycle is actually making
@@ -1540,6 +1599,7 @@ while true; do
     collect_wan "$_blob"
     compute_wan_rate "$_start"
     collect_lan "$_blob"
+    collect_gps "$_blob"
 
     _end=$(date +%s)
     write_state "$_start" "$(( _end - _start ))"

@@ -10,6 +10,7 @@
     { label: 'SIM',       href: '/sim.html',      key: 'sim'       },
     { label: 'WAN',       href: '/wan.html',      key: 'wan'       },
     { label: 'LAN',       href: '/lan.html',      key: 'lan'       },
+    { label: 'GPS',       href: '/gps.html',      key: 'gps'       },
     { label: 'System',    href: '/system.html',   key: 'system'    },
   ];
 
@@ -38,6 +39,11 @@
       '<circle cx="12" cy="12" r="2"/>' +
       '<circle cx="4" cy="5" r="2"/><circle cx="20" cy="5" r="2"/><circle cx="12" cy="20" r="2"/>' +
       '<line x1="12" y1="12" x2="4" y2="5"/><line x1="12" y1="12" x2="20" y2="5"/><line x1="12" y1="12" x2="12" y2="20"/>',
+    gps:
+      '<circle cx="12" cy="12" r="8"/>' +
+      '<circle cx="12" cy="12" r="1.5" fill="currentColor" stroke="none"/>' +
+      '<line x1="12" y1="2" x2="12" y2="5"/><line x1="12" y1="19" x2="12" y2="22"/>' +
+      '<line x1="2" y1="12" x2="5" y2="12"/><line x1="19" y1="12" x2="22" y2="12"/>',
     system:
       '<circle cx="12" cy="12" r="3"/><circle cx="12" cy="12" r="7"/>' +
       '<line x1="19" y1="12" x2="21.5" y2="12"/>' +
@@ -320,6 +326,12 @@
   function fmtDbm(v) { return (v === null || v === undefined) ? null : v + ' dBm'; }
   function fmtReg(v) { return REG_LABELS[v] !== undefined ? REG_LABELS[v] : null; }
   function fmtBool(v) { return v === true ? 'Active' : v === false ? 'Inactive' : null; }
+  function fmtEnabled(v) { return v === true ? 'Enabled' : v === false ? 'Disabled' : null; }
+  function fmtGpsFixType(v) { return v === 2 ? '2D Fix' : v === 3 ? '3D Fix' : null; }
+  function fmtGpsCoord(v) { return (typeof v === 'number') ? v.toFixed(6) + '°' : null; }
+  function fmtGpsAlt(v) { return (typeof v === 'number') ? v + ' m' : null; }
+  function fmtGpsSpeed(v) { return (typeof v === 'number') ? v + ' km/h' : null; }
+  function fmtGpsHeading(v) { return (typeof v === 'number') ? v + '°' : null; }
   function fmtBands(v) { return (typeof v === 'string' && v.length) ? v.split(':').join(', ') : v; }
   function fmtMhz(v) { return (typeof v === 'number') ? v + ' MHz' : null; }
   function fmtTempC(v) {
@@ -522,7 +534,13 @@
     wan_data_rx: fmtBytes, wan_data_tx: fmtBytes,
     sim_active_slot: fmtSimSlot,
     device_uptime_s: fmtUptime,
-    device_temp_c: fmtTempC
+    device_temp_c: fmtTempC,
+    gps_enabled: fmtEnabled,
+    gps_fix_type: fmtGpsFixType,
+    gps_lat: fmtGpsCoord, gps_lon: fmtGpsCoord,
+    gps_alt_m: fmtGpsAlt,
+    gps_speed_kmh: fmtGpsSpeed,
+    gps_heading: fmtGpsHeading
   };
 
   function renderState(state) {
@@ -683,6 +701,7 @@
     applyRingDot('signal_nr_rsrq', RSRQ_ZONES, state);
     applyRingDot('signal_nr_sinr', SINR_ZONES, state);
     applyBoolRingDot('wan_active', state);
+    applyBoolRingDot('gps_enabled', state);
   }
 
   /* ── Connectivity card (Dashboard) ───────────────────────────────────
@@ -1480,6 +1499,7 @@
           lastSeenPolledAt = state._polled_at;
           safeRender(renderState, state);
           safeRender(renderSimSlots, state);
+          safeRender(renderGpsCard, state);
           safeRender(renderCarrierAggregation, state);
           safeRender(renderNetPrefs, state);
           safeRender(renderNetworkType, state);
@@ -3526,6 +3546,68 @@
     }
   }
 
+  /* ── GPS Control card (GPS page) ─────────────────────────────────────
+     A single button whose label/target action flips with server state
+     (Enable GPS <-> Disable GPS), same immediate confirm-then-act shape
+     as SIM slot switching — nothing staged here either. Unlike
+     renderSimSlots, this DOES need to manage its own button.disabled
+     during the in-flight request, since the poll-driven render function
+     below would otherwise reset the label/disabled state out from under
+     a request that's still running (a >1 poll-interval-long enable/
+     disable call is unlikely but not impossible) — gpsActionPending
+     gates that. */
+  var gpsActionPending = false;
+
+  function renderGpsCard(state) {
+    var btn = document.getElementById('om-gps-toggle-btn');
+    if (!btn) return; // not on this page
+    if (gpsActionPending) return; // don't fight the in-flight request's own state
+
+    var enabled = state.gps_enabled === true;
+    btn.disabled = false;
+    btn.textContent = enabled ? 'Disable GPS' : 'Enable GPS';
+    btn.setAttribute('data-enabled', String(enabled));
+
+    var noteEl = document.getElementById('om-gps-fix-note');
+    if (noteEl) {
+      noteEl.textContent = (enabled && !state.gps_fix_type)
+        ? 'No GPS fix — check the antenna connection and sky visibility.'
+        : '';
+    }
+  }
+
+  function applyGpsToggle(btn) {
+    var enabled = btn.getAttribute('data-enabled') === 'true';
+    var action = enabled ? 'disable' : 'enable';
+    var statusEl = document.getElementById('om-gps-toggle-status');
+    confirmDialog({
+      severity: 'low',
+      title: enabled ? 'Disable GPS' : 'Enable GPS',
+      message: enabled
+        ? 'Disable GPS? Position data will stop updating until it is re-enabled.'
+        : 'Enable GPS? The module will start acquiring a satellite fix, which can take a while outdoors with a clear sky view.',
+      confirmLabel: enabled ? 'Disable' : 'Enable',
+      onConfirm: function () {
+        gpsActionPending = true;
+        btn.disabled = true;
+        statusEl.textContent = (enabled ? 'Disabling' : 'Enabling') + '…';
+        fetch('/cgi-bin/gps_action.sh?action=' + action)
+          .then(function (r) { return r.json(); })
+          .then(function (data) {
+            statusEl.textContent = data.success ? data.message : ('Failed: ' + data.error);
+          })
+          .catch(function (err) { statusEl.textContent = 'Failed: ' + err; })
+          .finally(function () { gpsActionPending = false; btn.disabled = false; });
+      }
+    });
+  }
+
+  function initGpsControl() {
+    var btn = document.getElementById('om-gps-toggle-btn');
+    if (!btn) return; // not on this page
+    btn.addEventListener('click', function () { applyGpsToggle(btn); });
+  }
+
   window.OM = { init: initShell };
 
   document.addEventListener('DOMContentLoaded', function () {
@@ -3555,6 +3637,7 @@
     initWanMtuTest();
     initWanInternet();
     initSimSlotToggle();
+    initGpsControl();
     initLanClients();
     initChangePassword();
   });

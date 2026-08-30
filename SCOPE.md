@@ -135,6 +135,53 @@ goal).
   nothing to do with the AT poller's cycle. A hostname of `*` (dnsmasq's
   own "none given" marker) renders as `—`, same convention as every
   other missing field.
+- **GPS** — a new GPS page (Control/Position/Movement cards), moved here
+  from "Out of scope" 2026-08-30 after being implemented. Deliberately
+  drops QuecControl's Satellites breakdown, Location (Nominatim reverse
+  geocode), and Live Map (Leaflet/OSM tiles) cards — the latter two for
+  the same internet-dependency exclusion this doc applies elsewhere,
+  Satellites by explicit request when this was picked back up. This
+  module only speaks the `AT+QGPS*` family (`AT+CGNSSINFO`, used on some
+  other Quectel SKUs, confirmed returns plain `ERROR` here, re-confirmed
+  2026-08-30). `www/cgi-bin/gps_action.sh`'s `enable`/`disable` run
+  `AT+QGPS=1`/`AT+QGPSEND` (both confirmed live, clean disable-then-
+  re-enable cycle, no side effects) and touch/remove a presence-only flag
+  file (`GPS_FLAG`, `/tmp/openmodem/gps_enabled`) rather than a dedicated
+  script owning any other state. `bin/at_poller.sh`'s main loop appends
+  `;+QGPSLOC=2` to its per-cycle AT chain only while that flag file
+  exists (checked once per cycle, not a live `AT+QGPS?` round trip) —
+  always as the last block (33) so blocks 1-32's fixed `nth_block()`
+  indices never shift whether or not GPS is enabled. Mode 2 returns
+  decimal degrees directly, unlike QuecControl's `=0` which returns raw
+  NMEA `ddmm.mmmm` needing manual conversion.
+  - `enable` also sets `AT+QGPSCFG="nmeasrc",1` — a real finding from
+    this session: `nmeasrc` had drifted back to `0` since earlier
+    sessions confirmed the `AT+QGPSGNMEA` family working (see below),
+    silently breaking every `QGPSGNMEA` sentence with `+CME ERROR:
+    Function not enable` until re-set. Not otherwise used by this
+    feature (the Satellites/`GSV` card that would have needed it was
+    dropped), but set defensively so a GNMEA-based feature added later
+    doesn't have to rediscover this.
+  - **No fix ever obtained**, now across three separate live sessions on
+    this hardware (two multi-minute sessions plus this one) — one saw a
+    single weak satellite (PRN 31, SNR 26), another zero, this one saw 8
+    satellites in `AT+QGPSGNMEA="GSV"` but all with blank SNR (detected,
+    not tracked) and `AT+QGPSLOC=2` consistently returned `+CME ERROR:
+    Not fixed now`. Points at the GNSS antenna (connection or sky
+    visibility), not the command set, which is fully functional —
+    `AT+QGPS=1`/`AT+QGPS?`/`AT+QGPSEND` and every `AT+QGPSGNMEA` sentence
+    (`GGA`/`RMC`/`GSV`/`GSA`/`VTG`/`GNS`) all confirmed working once
+    `nmeasrc` was set.
+  - **`+QGPSLOC=2`'s success-response field order is UNCONFIRMED** on
+    this hardware — `collect_gps()`'s parsing (`UTC,lat,lon,hdop,
+    altitude,fix,cog,spkm,spkn,date,nsat`) follows Quectel's documented
+    shape (same order QuecControl's own GPS page assumes), but only the
+    no-fix error path has actually been exercised live. Verify
+    field-by-field against a real fix (antenna fixed, or tested outdoors)
+    before trusting `gps_lat`/`gps_lon`/etc. blindly.
+  - Not yet exercised: `gps_action.sh`'s actual CGI endpoints (only the
+    underlying AT commands were tested directly via `at_command.sh`), and
+    the GPS page itself against a real browser/live poller cycle.
 
 ## Out of scope
 
@@ -149,38 +196,6 @@ goal).
 - **Scout (ping/latency tests)** — QuecControl's `ping.sh`/`force_poll.sh`.
   Actively tests internet connectivity; dropped because OpenModem is
   narrowing away from features that assume a working internet connection.
-- **GPS location** — QuecControl's `api_gps.sh`. Dropped. Revisited
-  2026-08-19 (a GPS tab with an enable/disable dropdown, position/
-  movement cards) but parked before implementation — kept here as a
-  future-enhancement candidate, not a closed decision. What's already
-  confirmed live against this hardware, so a later attempt doesn't have
-  to re-derive it:
-  - This module only speaks the `AT+QGPS*` family (`AT+CGNSSINFO`,
-    used on some other Quectel SKUs, returns plain `ERROR` here).
-    `AT+QGPS=1`/`AT+QGPS?`/`AT+QGPSEND` (lifecycle), `AT+QGPSLOC=2`
-    (position — format 2 returns decimal degrees directly, unlike
-    QuecControl's `=0` which returns raw NMEA `ddmm.mmmm` strings
-    needing manual conversion), and `AT+QGPSGNMEA="GGA"/"RMC"/"GSV"/
-    "GSA"/"VTG"/"GNS"` (`nmeasrc` was already `1`) all confirmed
-    working.
-  - No fix was ever obtained across two multi-minute live sessions —
-    one saw a single weak satellite (PRN 31, SNR 26), the other saw
-    zero — pointing at the GNSS antenna (connection or sky visibility),
-    not the command set. Worth checking the physical antenna before
-    building UI around live fix data.
-  - Design direction if picked back up: cards inspired by QuecControl's
-    `gps.html` (GPS Control/Position/Movement, optional Satellites
-    breakdown) but deliberately dropping its Location (Nominatim
-    reverse geocode) and Live Map (Leaflet/OSM tiles) cards — same
-    internet-dependency exclusion this section already applies
-    elsewhere, unless explicitly carved out like the WAN Internet card
-    below. `AT+QGPSLOC`/`AT+QGPSGNMEA="GSV"` would extend the main
-    poller's chained `ALL_CMD` only while GPS is enabled (tracked via a
-    cheap local flag file, not a live `AT+QGPS?` poll), ordered last —
-    GSV before QGPSLOC specifically, since QGPSLOC is the one that
-    legitimately errors on no-fix and GSV reliably returns `OK` even
-    with zero satellites — same chain-abort-ordering fix already
-    applied to CNUM/nr5g_mimo_info.
 - **Explicit exception: WAN's "Internet" card** (ISP, ASN, hostname,
   IPv4, IPv6, Location via `ipinfo.io`) — internet-dependent by
   definition, which is exactly the category this section otherwise
@@ -650,7 +665,7 @@ Confirmed on an actual RM520N-GL (2026-08-14), not assumed:
 ## Future enhancement candidates (2026-08-20)
 
 Not started, not scoped in detail — parked here as candidates rather than
-closed decisions, same status as GPS above.
+closed decisions.
 
 - **Connectivity watchdog / auto-recovery.** `bin/net_poller.sh` already
   tracks consecutive `check204` failures for the dashboard pill but never
