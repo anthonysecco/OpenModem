@@ -1402,6 +1402,7 @@ collect_gps() {
     F_GPS_FIX_TYPE="null"; F_GPS_LAT="null"; F_GPS_LON="null"
     F_GPS_ALT_M="null"; F_GPS_HDOP="null"
     F_GPS_SPEED_KMH="null"; F_GPS_HEADING="null"; F_GPS_NUM_SATS="null"
+    F_GPS_DEBUG_RAW="null"
 
     if [ -f "$GPS_FLAG" ]; then
         F_GPS_ENABLED="true"
@@ -1410,7 +1411,9 @@ collect_gps() {
         return
     fi
 
-    _line=$(run_at "AT+QGPSLOC=2" 8 | grep '^+QGPSLOC:' | sed 's/^+QGPSLOC: //')
+    _raw=$(run_at "AT+QGPSLOC=2" 8)
+    F_GPS_DEBUG_RAW=$(json_str "$_raw")
+    _line=$(printf '%s' "$_raw" | grep '^+QGPSLOC:' | sed 's/^+QGPSLOC: //')
     [ -z "$_line" ] && return   # no fix this cycle — fields stay null
 
     F_GPS_LAT=$(json_num "$(printf '%s' "$_line" | cut -d',' -f2)")
@@ -1506,7 +1509,8 @@ write_state() {
   "gps_hdop": ${F_GPS_HDOP},
   "gps_speed_kmh": ${F_GPS_SPEED_KMH},
   "gps_heading": ${F_GPS_HEADING},
-  "gps_num_sats": ${F_GPS_NUM_SATS}
+  "gps_num_sats": ${F_GPS_NUM_SATS},
+  "_gps_debug_raw": ${F_GPS_DEBUG_RAW}
 }
 EOF
 )
