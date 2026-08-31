@@ -184,7 +184,7 @@ for script in at_broker.sh at_command.sh at_poller.sh apply_iptables.sh apply_ht
 done
 
 echo "  Downloading web pages..."
-for page in style.css app.js index.html cellular.html sim.html wan.html lan.html gps.html system.html; do
+for page in style.css app.js index.html cellular.html wan.html lan.html gps.html system.html; do
     download "$REPO/www/$page" "$STAGING_DIR/www/$page" || FAIL=1
 done
 

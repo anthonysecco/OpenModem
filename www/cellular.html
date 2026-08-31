@@ -26,6 +26,19 @@
     </div>
     <div class="om-cards">
       <div class="om-card">
+        <h2>Active SIM</h2>
+        <div class="om-toggle-group" id="om-sim-slot-toggle">
+          <button type="button" data-slot="1">SIM1</button>
+          <button type="button" data-slot="2">SIM2</button>
+        </div>
+        <div class="om-row"><span class="om-row-label">Active SIM</span><span data-field="sim_active_slot">—</span></div>
+        <div class="om-row"><span class="om-row-label">Status</span><span data-field="sim_status">—</span></div>
+        <div class="om-row"><span class="om-row-label">ICCID</span><span data-field="sim_iccid">—</span></div>
+        <div class="om-row"><span class="om-row-label">IMSI</span><span data-field="sim_imsi">—</span></div>
+        <div class="om-row"><span class="om-row-label">Phone Number</span><span data-field="sim_phone">—</span></div>
+        <p id="om-sim-slot-status" class="om-note"></p>
+      </div>
+      <div class="om-card">
         <h2>Network</h2>
         <div class="om-row"><span class="om-row-label">Operator</span><span data-field="carrier_name">—</span></div>
         <div class="om-row"><span class="om-row-label om-hint" title="Public Land Mobile Network ID — identifies your carrier's network (country code + operator code).">PLMN</span><span data-field="carrier_plmn">—</span></div>

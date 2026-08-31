@@ -30,20 +30,26 @@ goal).
   require an actual `AT+QUIMSLOT=N` switch, which is genuinely
   disruptive (confirmed live: triggers a full USB re-enumeration on the
   AT/diag interface, not just a SIM reinit — `adb` briefly lost the
-  device entirely mid-test). So the SIM page shows two cards (SIM1/
-  SIM2, each with Status/ICCID/IMSI/Phone Number), but only the
-  currently-active slot's card is ever populated with live data — the
-  inactive one shows a "not currently active" note rather than stale or
-  fabricated values. A third card shows which slot is active and a
-  toggle to switch, via `www/cgi-bin/sim_action.sh`'s `set_slot` (an
-  immediate confirm-then-act button, not a batched/staged setting —
-  there's nothing to protect against a background poll clobbering,
-  unlike LAN's forms). Phone number comes from `AT+CNUM` (confirmed
-  live, real number returned) — not every carrier/SIM provisions this,
-  so it degrades to "—" like everything else here rather than being
-  hidden. On this specific test device, slot 2 has no physical SIM
-  (`+CME ERROR: 10`, confirmed while testing the switch) — the code
-  handles that as a normal case, not an error state.
+  device entirely mid-test). Originally its own SIM page with two cards
+  (SIM1/SIM2, each independently populated or showing a "not currently
+  active" note); consolidated (2026-08-31, by request) into a single
+  "Active SIM" card on the Cellular page instead — SIM1/SIM2 toggle at
+  the top, then Active SIM/Status/ICCID/IMSI/Phone Number rows
+  underneath, all bound straight to `sim_active_slot`/`sim_status`/
+  `sim_iccid`/`sim_imsi`/`sim_phone` via the generic `data-field`
+  mechanism rather than per-slot element IDs — there was never a second
+  set of values to null out in the first place, since those fields
+  always describe whichever slot is active, never both. `sim_action.sh`'s
+  `set_slot` (immediate confirm-then-act, not staged) is unchanged, still
+  behind a `confirmDialog` warning the switch may briefly disconnect the
+  modem (including the web UI) while it reinitializes — same
+  severity-`high` pattern as every other disruptive action on the site.
+  Phone number comes from `AT+CNUM` (confirmed live, real number
+  returned) — not every carrier/SIM provisions this, so it degrades to
+  "—" like everything else here rather than being hidden. On this
+  specific test device, slot 2 has no physical SIM (`+CME ERROR: 10`,
+  confirmed while testing the switch) — the code handles that as a
+  normal case, not an error state.
 - **System** — device info, raw AT command terminal, reboot/power actions.
 - **Web UI authentication** — the entire site (not just action endpoints)
   sits behind BusyBox httpd's own built-in Basic Auth, confirmed live

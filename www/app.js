@@ -7,7 +7,6 @@
   var NAV = [
     { label: 'Dashboard', href: '/',            key: 'dashboard' },
     { label: 'Cellular',  href: '/cellular.html', key: 'cellular'  },
-    { label: 'SIM',       href: '/sim.html',      key: 'sim'       },
     { label: 'WAN',       href: '/wan.html',      key: 'wan'       },
     { label: 'LAN',       href: '/lan.html',      key: 'lan'       },
     { label: 'GPS',       href: '/gps.html',      key: 'gps'       },
@@ -28,9 +27,6 @@
       '<rect x="4" y="15" width="3" height="6" rx="0.5"/>' +
       '<rect x="10.5" y="10" width="3" height="11" rx="0.5"/>' +
       '<rect x="17" y="5" width="3" height="16" rx="0.5"/>',
-    sim:
-      '<path d="M8 3h10l2 2v16H6V5z"/>' +
-      '<rect x="9" y="9" width="6" height="5" rx="1"/>',
     wan:
       '<circle cx="12" cy="12" r="9"/>' +
       '<ellipse cx="12" cy="12" rx="4" ry="9"/>' +
@@ -2502,7 +2498,7 @@
       return {
         level: 'critical',
         title: 'SIM Issue',
-        detail: 'SIM status: ' + state.sim_status + '. Check the SIM page for details.'
+        detail: 'SIM status: ' + state.sim_status + '. Check the Cellular page for details.'
       };
     }
 
@@ -3543,34 +3539,23 @@
     });
   }
 
-  /* ── SIM slot cards (SIM page) ───────────────────────────────────────
+  /* ── Active SIM card (Cellular page) ─────────────────────────────────
      This module has 2 SIM slots but only one is active/queryable at a
      time (AT+QUIMSLOT selects which) — sim_status/sim_iccid/sim_imsi/
      sim_phone always describe whichever slot sim_active_slot names,
      never both, since reading the inactive slot would require an
-     actual disruptive switch (see sim_action.sh). Called from
-     refreshState() on every poll tick (not gated behind an initX()
-     page guard) so both cards and the toggle's highlighted button stay
-     truthful to the modem's real state — there's no "pending edit" to
-     protect here the way LAN/Band Lock's forms have, since clicking a
-     slot button fires the switch immediately rather than staging one. */
+     actual disruptive switch (see sim_action.sh). That's exactly what
+     this one-card design shows: no per-slot nulling needed the way a
+     two-card SIM1/SIM2 layout would require, since there's only ever
+     one slot's data to bind — the generic data-field mechanism in
+     renderState already handles sim_status/sim_iccid/sim_imsi/sim_phone/
+     sim_active_slot; this just keeps the toggle-group's highlighted
+     button in sync with the real active slot. */
   function renderSimSlots(state) {
-    if (!document.getElementById('om-sim1-status')) return; // not on this page
+    var group = document.getElementById('om-sim-slot-toggle');
+    if (!group) return; // not on this page
 
     var active = state.sim_active_slot;
-    [1, 2].forEach(function (n) {
-      var isActive = active === n;
-      var vals = isActive
-        ? { status: state.sim_status, iccid: state.sim_iccid, imsi: state.sim_imsi, phone: state.sim_phone }
-        : { status: null, iccid: null, imsi: null, phone: null };
-      ['status', 'iccid', 'imsi', 'phone'].forEach(function (key) {
-        var el = document.getElementById('om-sim' + n + '-' + key);
-        if (el) el.textContent = (vals[key] === null || vals[key] === undefined || vals[key] === '') ? '—' : vals[key];
-      });
-      var noteEl = document.getElementById('om-sim' + n + '-note');
-      if (noteEl) noteEl.textContent = isActive ? '' : 'Not currently active — switch to this SIM to view its details.';
-    });
-
     setToggleActive('om-sim-slot-toggle', 'data-slot', active === 1 || active === 2 ? String(active) : null);
   }
 
