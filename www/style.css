@@ -1188,6 +1188,14 @@ body {
   font-weight: 700;
   color: var(--text-heading);
   font-variant-numeric: tabular-nums;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.om-tp-tile-unit {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-dim);
 }
 
 .om-tp-tile-label {

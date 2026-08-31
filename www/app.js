@@ -417,6 +417,18 @@
     return (kbps < 10 ? kbps.toFixed(1) : Math.round(kbps)) + ' Kbps';
   }
 
+  /* Splits a formatted "<value> <unit>" string (fmtThroughput/fmtBytes'
+     output) into markup with the unit in its own smaller-font span, so
+     stat tiles (.om-tp-tile-value) can render the unit visibly smaller
+     than the number while white-space:nowrap (see style.css) keeps them
+     on one line instead of ever wrapping the unit onto its own row. */
+  function tileValueHtml(text) {
+    if (!text || text === '—') return '—';
+    var idx = text.lastIndexOf(' ');
+    if (idx === -1) return escapeHtml(text);
+    return escapeHtml(text.slice(0, idx)) + '<span class="om-tp-tile-unit"> ' + escapeHtml(text.slice(idx + 1)) + '</span>';
+  }
+
   var historyWanRateSamples = [];
 
   // True on the WAN page (Receive/Send Rate charts) and the Dashboard
@@ -441,8 +453,21 @@
   function renderThroughputTiles(state) {
     var rxEl = document.getElementById('om-tp-a-rx');
     if (!rxEl) return; // not on this page
-    rxEl.textContent = fmtThroughput(state.wan_rx_mbps);
-    document.getElementById('om-tp-a-tx').textContent = fmtThroughput(state.wan_tx_mbps);
+    rxEl.innerHTML = tileValueHtml(fmtThroughput(state.wan_rx_mbps));
+    document.getElementById('om-tp-a-tx').innerHTML = tileValueHtml(fmtThroughput(state.wan_tx_mbps));
+  }
+
+  // Data Usage card's cumulative Received/Sent tiles (wan_data_rx/tx) —
+  // bound via the generic data-field loop (renderState) for the plain
+  // text value, then re-rendered here with the unit split into its own
+  // span (see tileValueHtml). Runs after renderState in the dispatch
+  // list so this HTML version is what's left on screen each cycle.
+  function renderDataUsageTiles(state) {
+    var rxEl = document.querySelector('[data-field="wan_data_rx"]');
+    if (!rxEl) return; // not on this page
+    rxEl.innerHTML = tileValueHtml(fmtBytes(state.wan_data_rx));
+    var txEl = document.querySelector('[data-field="wan_data_tx"]');
+    if (txEl) txEl.innerHTML = tileValueHtml(fmtBytes(state.wan_data_tx));
   }
 
   // Flat single-color "zone" tables (always matches, since rate >= 0)
@@ -1056,7 +1081,7 @@
       path.setAttribute('d', segPathD(s));
       path.setAttribute('fill', 'none');
       path.setAttribute('stroke', color);
-      path.setAttribute('stroke-width', '2');
+      path.setAttribute('stroke-width', '2.6');
       path.setAttribute('stroke-linecap', 'round');
       svg.appendChild(path);
     });
@@ -1108,7 +1133,7 @@
         path.setAttribute('d', segPathD(seg));
         path.setAttribute('fill', 'none');
         path.setAttribute('stroke', s.color);
-        path.setAttribute('stroke-width', '2');
+        path.setAttribute('stroke-width', '2.6');
         path.setAttribute('stroke-linecap', 'round');
         svg.appendChild(path);
       });
@@ -1572,6 +1597,7 @@
         if (!state._error && state._polled_at !== lastSeenPolledAt) {
           lastSeenPolledAt = state._polled_at;
           safeRender(renderState, state);
+          safeRender(renderDataUsageTiles, state);
           safeRender(renderSimSlots, state);
           safeRender(renderGpsCard, state);
           safeRender(renderCarrierAggregation, state);
