@@ -54,6 +54,21 @@
       </div>
 
       <div class="om-card">
+        <h2 class="om-hint" title="Makes traffic from other devices behind this modem look like it's coming from the modem itself — can prevent your carrier from detecting and throttling tethering/hotspot use.">TTL Spoofing</h2>
+        <div class="om-form-row">
+          <input type="number" id="om-wan-ttl" min="0" max="255" placeholder="0">
+          <label for="om-wan-ttl">TTL / Hop Limit (0 = disabled, 1–255)</label>
+        </div>
+      </div>
+
+      <div class="om-card">
+        <h2 class="om-hint" title="Sends increasing-size pings with the Don't Fragment bit set to check what actually reaches the internet, not just what the modem's interface is configured for.">Path MTU</h2>
+        <div class="om-row"><span class="om-row-label">Configured MTU</span><span id="om-wan-mtu-configured">—</span></div>
+        <div class="om-row"><span class="om-row-label">Verified Path MTU</span><span id="om-wan-mtu-effective">—</span></div>
+        <p id="om-wan-mtu-status" class="om-note"></p>
+      </div>
+
+      <div class="om-card">
         <h2>Throughput</h2>
         <div class="om-tp-tiles">
           <div class="om-tp-tile">
@@ -69,23 +84,8 @@
         </div>
       </div>
 
-      <div class="om-card">
-        <h2 class="om-hint" title="Makes traffic from other devices behind this modem look like it's coming from the modem itself — can prevent your carrier from detecting and throttling tethering/hotspot use.">TTL Spoofing</h2>
-        <div class="om-form-row">
-          <input type="number" id="om-wan-ttl" min="0" max="255" placeholder="0">
-          <label for="om-wan-ttl">TTL / Hop Limit (0 = disabled, 1–255)</label>
-        </div>
-      </div>
-
-      <div class="om-card">
-        <h2 class="om-hint" title="Sends increasing-size pings with the Don't Fragment bit set to check what actually reaches the internet, not just what the modem's interface is configured for.">Path MTU</h2>
-        <div class="om-row"><span class="om-row-label">Configured MTU</span><span id="om-wan-mtu-configured">—</span></div>
-        <div class="om-row"><span class="om-row-label">Verified Path MTU</span><span id="om-wan-mtu-effective">—</span></div>
-        <p id="om-wan-mtu-status" class="om-note"></p>
-      </div>
-
       <div class="om-card om-card-wide">
-        <h2>Bandwidth (5 min)</h2>
+        <h2>Throughput (5 min)</h2>
 
         <div class="om-hero-label">Receive Rate (Mbps)</div>
         <div class="om-chart-wrap">
