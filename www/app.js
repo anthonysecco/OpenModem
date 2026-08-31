@@ -534,11 +534,12 @@
      serve different purposes and are deliberately kept separate.
      Covers the same band universes as LTE_BANDS/NR_BANDS (Band Lock's
      own checkbox lists), dual-block bands (e.g. AWS) shown as
-     "low/high" rather than picking one arbitrarily. Originally folded
-     into the Band row's own text as "B66 (1700/2100)"; moved to its own
-     desktop-only "Frequency" column on the Carrier Aggregation table
-     instead (fmtCaNominalFreq below) so the Band row itself stays a
-     plain band label. */
+     "low/high" rather than picking one arbitrarily. Shown two places:
+     space-separated (no parens/unit) in the Band row's own text, e.g.
+     "B66 1700/2100" (fmtLteBandNum/fmtNrBandNum below), and again as
+     the Carrier Aggregation table's own desktop-only "Frequency" column
+     (fmtCaNominalFreq below) — same table, same lookup, since a CA row
+     is per-component-carrier where the Band row is just the PCC. */
   var LTE_BAND_NOMINAL_MHZ = {
     1: '2100', 2: '1900', 3: '1800', 4: '1700/2100', 5: '850', 7: '2600', 8: '900',
     12: '700', 13: '700', 14: '700', 17: '700', 18: '800', 19: '800', 20: '800',
@@ -556,11 +557,13 @@
 
   function fmtLteBandNum(v) {
     if (typeof v !== 'string' || !v) return null;
-    return 'B' + v;
+    var mhz = LTE_BAND_NOMINAL_MHZ[Number(v)];
+    return 'B' + v + (mhz ? ' ' + mhz : '');
   }
   function fmtNrBandNum(v) {
     if (typeof v !== 'string' || !v) return null;
-    return 'n' + v;
+    var mhz = NR_BAND_NOMINAL_MHZ[Number(v)];
+    return 'n' + v + (mhz ? ' ' + mhz : '');
   }
   function fmtNrType(v) {
     return v === 'NR5G-SA' ? 'Standalone (SA)' : v === 'NR5G-NSA' ? 'Non-Standalone (NSA)' : null;
@@ -2917,8 +2920,9 @@
      More rows are added freely above this floor; it's a minimum, not a
      cap. */
   var MIN_CA_ROWS = 5;
-  var CA_EMPTY_ROW = '<tr class="om-ca-row-empty"><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td>' +
-    '<td class="om-col-desktop">—</td><td class="om-col-desktop">—</td></tr>';
+  var CA_EMPTY_ROW = '<tr class="om-ca-row-empty"><td>—</td>' +
+    '<td class="om-col-desktop">—</td><td class="om-col-desktop">—</td><td class="om-col-desktop">—</td>' +
+    '<td>—</td><td>—</td><td>—</td><td>—</td></tr>';
 
   function padCaRows(rows) {
     var out = rows.slice();
@@ -2948,14 +2952,24 @@
   }
 
   // Desktop-only columns (.om-col-desktop, hidden under 768px — see
-  // style.css) — nominal frequency (LTE_BAND_NOMINAL_MHZ/
-  // NR_BAND_NOMINAL_MHZ, same tables the Band row used to fold into its
-  // own text) and raw PCID per carrier row.
+  // style.css) — nominal frequency (same LTE_BAND_NOMINAL_MHZ/
+  // NR_BAND_NOMINAL_MHZ tables the Band row itself uses), raw PCID, and
+  // dwell time, per carrier row.
   function fmtCaNominalFreq(c) {
     var num = bandNumberFromLabel(c.band);
     if (num === null) return '—';
     var mhz = /NR5G/i.test(c.band || '') ? NR_BAND_NOMINAL_MHZ[num] : LTE_BAND_NOMINAL_MHZ[num];
-    return mhz ? mhz + ' MHz' : '—';
+    return mhz || '—';
+  }
+
+  /* Dwell time is only tracked per RAT (at_poller.sh's track_pcid_dwell,
+     off the serving/PCC cell's own PCID — see cell_lte_pcid_dwell_s/
+     cell_nr_pcid_dwell_s), not per individual component carrier, so an
+     SCC row shows its RAT's serving-cell dwell time rather than its own
+     — the closest available approximation, not a per-carrier measure. */
+  function fmtCaDwell(c, state) {
+    var secs = /NR5G/i.test(c.band || '') ? state.cell_nr_pcid_dwell_s : state.cell_lte_pcid_dwell_s;
+    return typeof secs === 'number' ? fmtUptime(secs) : '—';
   }
 
   function renderCarrierAggregation(state) {
@@ -2968,7 +2982,7 @@
     if (!Array.isArray(carriers) || !carriers.length) {
       bar.innerHTML = '<div class="om-ca-bwbar-empty"></div>';
       freqRow.innerHTML = '';
-      tbody.innerHTML = padCaRows(['<tr><td colspan="7" class="om-note">No carrier aggregation active.</td></tr>']).join('');
+      tbody.innerHTML = padCaRows(['<tr><td colspan="8" class="om-note">No carrier aggregation active.</td></tr>']).join('');
       return;
     }
 
@@ -3039,12 +3053,13 @@
       var groupCls = (idx > 0 && withFreq[idx - 1].c.type !== c.type) ? ' om-ca-row-group-start' : '';
       return '<tr class="' + groupCls.trim() + '">' +
         '<td><span class="om-ca-carrier-name ' + nameCls + '" title="' + escapeHtml(idTitle) + '">' + escapeHtml(fmtCarrierBand(c.band)) + '</span></td>' +
+        '<td class="om-col-desktop">' + fmtCaNominalFreq(c) + '</td>' +
+        '<td class="om-col-desktop">' + escapeHtml(c.pci || '—') + '</td>' +
+        '<td class="om-col-desktop">' + fmtCaDwell(c, state) + '</td>' +
         '<td>' + fmtBwCell(s.bw) + '</td>' +
         '<td>' + fmtMimoCell(c.mimo_layers) + '</td>' +
         '<td>' + sigBarCell(c.rsrp, RSRP_ZONES, RSRP_MIN, RSRP_MAX, 'dBm') + '</td>' +
         '<td>' + sigBarCell(c.sinr, SINR_ZONES, SINR_MIN, SINR_MAX, 'dB') + '</td>' +
-        '<td class="om-col-desktop">' + fmtCaNominalFreq(c) + '</td>' +
-        '<td class="om-col-desktop">' + escapeHtml(c.pci || '—') + '</td>' +
         '</tr>';
     });
     tbody.innerHTML = padCaRows(caRows).join('');
