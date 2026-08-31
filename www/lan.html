@@ -26,16 +26,8 @@
     </div>
     <div class="om-cards">
       <div class="om-card">
-        <h2>Status</h2>
-        <div class="om-row"><span class="om-row-label">Mode</span><span data-field="lan_mode">—</span></div>
-        <div class="om-row"><span class="om-row-label">Router IP</span><span data-field="lan_router_ip">—</span></div>
-        <div class="om-row"><span class="om-row-label">DHCP Start</span><span data-field="lan_dhcp_start">—</span></div>
-        <div class="om-row"><span class="om-row-label">DHCP End</span><span data-field="lan_dhcp_end">—</span></div>
-        <div class="om-row"><span class="om-row-label">DNS Mode</span><span data-field="lan_dns_mode">—</span></div>
-      </div>
-
-      <div class="om-card">
         <h2>Network Mode</h2>
+        <div class="om-row"><span class="om-row-label">Status</span><span data-field="lan_mode">—</span></div>
         <div class="om-toggle-group" id="om-lan-mode-toggle">
           <button type="button" data-mode="nat" title="Standard routing — devices behind this modem share one IP address, like a typical home router.">NAT</button>
           <button type="button" data-mode="passthrough" title="Gives one downstream device the modem's own public IP directly, instead of sharing it — used when that device needs to do its own NAT/firewall.">IP Passthrough</button>
@@ -46,7 +38,8 @@
           <input type="text" id="om-lan-mac" placeholder="FF:FF:FF:FF:FF:FF" value="FF:FF:FF:FF:FF:FF" autocomplete="off">
         </div>
 
-        <h2>DNS Settings</h2>
+        <h2>DNS Mode</h2>
+        <div class="om-row"><span class="om-row-label">Status</span><span data-field="lan_dns_mode">—</span></div>
         <div class="om-toggle-group" id="om-lan-dns-toggle">
           <button type="button" data-dns="local" title="Use the modem's own DNS resolver.">Local</button>
           <button type="button" data-dns="carrier" title="Use your carrier's DNS servers directly.">Carrier</button>
@@ -55,7 +48,7 @@
       </div>
 
       <div class="om-card" id="om-lan-ip-card">
-        <h2>IP &amp; DHCP Range</h2>
+        <h2>LAN IP Settings</h2>
         <div class="om-form-row">
           <label for="om-lan-router-ip">Router IP</label>
           <input type="text" id="om-lan-router-ip" placeholder="192.168.225.1" autocomplete="off">
@@ -68,11 +61,10 @@
           <label for="om-lan-dhcp-end">DHCP End</label>
           <input type="text" id="om-lan-dhcp-end" placeholder="192.168.225.200" autocomplete="off">
         </div>
-        <p class="om-note">Changing this disconnects the current LAN session.</p>
       </div>
 
       <div class="om-card om-card-wide">
-        <h2>Connected Clients</h2>
+        <h2><span>Connected Clients</span><span class="om-card-title-value" id="om-lan-clients-count">—</span></h2>
         <div class="om-table-wrap">
           <table class="om-table">
             <thead>

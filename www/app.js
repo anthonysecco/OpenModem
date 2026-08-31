@@ -3460,13 +3460,16 @@
   function fetchLanClients() {
     var tbody = document.getElementById('om-lan-clients-tbody');
     if (!tbody) return; // not on this page
+    var countEl = document.getElementById('om-lan-clients-count');
     fetch('/cgi-bin/lan_clients.sh')
       .then(function (r) { return r.json(); })
       .then(function (data) {
         tbody.innerHTML = lanClientsHtml(data.clients);
+        if (countEl) countEl.textContent = data.clients ? String(data.clients.length) : '0';
       })
       .catch(function () {
         tbody.innerHTML = '<tr><td colspan="4" class="om-note">Unable to load connected clients.</td></tr>';
+        if (countEl) countEl.textContent = '—';
       });
   }
 
