@@ -816,22 +816,29 @@ collect_carrier_aggregation() {
             _rsrq=$(printf '%s' "$_r" | cut -d',' -f7)
             # +QCAINFO's NR5G line genuinely never reports SINR at all
             # (confirmed live 2026-08-28) — unlike the LTE branch below,
-            # which carries it as its own field. Borrowed instead from
-            # AT+QENG="servingcell"'s NR5G-NSA line
-            # (collect_serving_cell(), F_CELL_NR_SINR/F_CELL_NR_PCID_RAW),
-            # confirmed live that same session to describe this same
-            # carrier — its PCID/RSRP/RSRQ/ARFCN/bandwidth all matched
-            # this same QCAINFO row almost exactly. Gated on a PCID
-            # match rather than applied unconditionally: AT+QENG
-            # ="servingcell" only ever describes one NR serving cell, so
-            # a session with more than one active NR component carrier
-            # (never observed on this project) would have no equivalent
-            # per-carrier source for its other NR rows, and those should
-            # stay null rather than reuse one carrier's reading for
-            # another.
+            # which carries it as its own field. RSRP/RSRQ are usually
+            # present but not guaranteed: confirmed live 2026-08-31 a
+            # dormant/inactive NR5G SCC's QCAINFO line came back as just
+            # "SCC",<earfcn>,<bw>,"NR5G BAND 77",<pci> — 5 fields total,
+            # cut -f6/-f7 landing past the end and returning empty rather
+            # than a real value. All three are borrowed, when missing,
+            # from AT+QENG="servingcell"'s NR5G-NSA line
+            # (collect_serving_cell(), F_CELL_NR_RSRP/RSRQ/SINR/
+            # PCID_RAW), confirmed live to describe this same carrier —
+            # its PCID/RSRP/RSRQ/ARFCN/bandwidth matched this same
+            # QCAINFO row almost exactly when both were present at once.
+            # Gated on a PCID match rather than applied unconditionally:
+            # AT+QENG="servingcell" only ever describes one NR serving
+            # cell, so a session with more than one active NR component
+            # carrier (never observed on this project) would have no
+            # equivalent per-carrier source for its other NR rows, and
+            # those should stay null rather than reuse one carrier's
+            # reading for another.
             _sinr=""
             if [ -n "$_pci" ] && [ "$_pci" = "${F_CELL_NR_PCID_RAW:-}" ]; then
                 _sinr="$F_CELL_NR_SINR"
+                [ -z "$_rsrp" ] && _rsrp="$F_CELL_NR_RSRP"
+                [ -z "$_rsrq" ] && _rsrq="$F_CELL_NR_RSRQ"
             fi
             # Rest of NR5G's own field layout here (state/UL positions)
             # is still NOT independently confirmed — this device has

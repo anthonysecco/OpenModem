@@ -175,6 +175,7 @@
      handful of discrete states like "Registered"/"Denied". */
   var RSRP_MIN = -140, RSRP_MAX = -75;
   var SINR_MIN = -10, SINR_MAX = 30;
+  var RSRQ_MIN = -30, RSRQ_MAX = -5;
   var RSRP_ZONES = [
     { thresh: -80, bar: '#1e8a4e', label: 'Excellent' },
     { thresh: -90, bar: '#34c777', label: 'Good' },
@@ -2922,7 +2923,7 @@
   var MIN_CA_ROWS = 5;
   var CA_EMPTY_ROW = '<tr class="om-ca-row-empty"><td>—</td>' +
     '<td class="om-col-desktop">—</td><td class="om-col-desktop">—</td><td class="om-col-desktop">—</td>' +
-    '<td>—</td><td>—</td><td>—</td><td>—</td></tr>';
+    '<td>—</td><td>—</td><td>—</td><td>—</td><td class="om-col-desktop">—</td></tr>';
 
   function padCaRows(rows) {
     var out = rows.slice();
@@ -2982,7 +2983,7 @@
     if (!Array.isArray(carriers) || !carriers.length) {
       bar.innerHTML = '<div class="om-ca-bwbar-empty"></div>';
       freqRow.innerHTML = '';
-      tbody.innerHTML = padCaRows(['<tr><td colspan="8" class="om-note">No carrier aggregation active.</td></tr>']).join('');
+      tbody.innerHTML = padCaRows(['<tr><td colspan="9" class="om-note">No carrier aggregation active.</td></tr>']).join('');
       return;
     }
 
@@ -3060,6 +3061,7 @@
         '<td>' + fmtMimoCell(c.mimo_layers) + '</td>' +
         '<td>' + sigBarCell(c.rsrp, RSRP_ZONES, RSRP_MIN, RSRP_MAX, 'dBm') + '</td>' +
         '<td>' + sigBarCell(c.sinr, SINR_ZONES, SINR_MIN, SINR_MAX, 'dB') + '</td>' +
+        '<td class="om-col-desktop">' + sigBarCell(c.rsrq, RSRQ_ZONES, RSRQ_MIN, RSRQ_MAX, 'dB') + '</td>' +
         '</tr>';
     });
     tbody.innerHTML = padCaRows(caRows).join('');
