@@ -364,7 +364,7 @@ collect_sim() {
     # of it) has the same net effect on its own field as it running and
     # erroring itself — build_mimo_lookup() just sees an empty block
     # either way — so this reordering loses nothing.
-    _cnum=$(nth_block "$_blob" 31)
+    _cnum=$(nth_block "$_blob" 29)
     F_SIM_PHONE=$(json_str "$(printf '%s' "$_cnum" | grep '^+CNUM:' | head -1 | sed 's/^+CNUM: //' | cut -d',' -f2 | tr -d '"\r\n')")
 }
 
@@ -456,12 +456,12 @@ collect_signal() {
 #   NSA.
 collect_serving_cell() {
     F_CELL_LTE_ACTIVE="0"; F_CELL_LTE_STATE="null"
-    F_CELL_LTE_MCC="null"; F_CELL_LTE_MNC="null"; F_CELL_LTE_ID="null"
+    F_CELL_LTE_ID="null"
     F_CELL_LTE_PCID="null"; F_CELL_LTE_EARFCN="null"; F_CELL_LTE_BAND="null"; F_CELL_LTE_TAC="null"
     F_CELL_LTE_UL_BW_MHZ="null"
 
     F_CELL_NR_ACTIVE="0"; F_CELL_NR_TYPE="null"; F_CELL_NR_STATE="null"
-    F_CELL_NR_MCC="null"; F_CELL_NR_MNC="null"; F_CELL_NR_ID="null"
+    F_CELL_NR_ID="null"
     F_CELL_NR_PCID="null"; F_CELL_NR_ARFCN="null"; F_CELL_NR_BAND="null"; F_CELL_NR_TAC="null"
     # Raw (unquoted) PCID + RSRP/RSRQ/SINR straight from NR5G-NSA's own
     # line — not exposed as their own state.sh fields (cell_nr_* stays
@@ -499,8 +499,6 @@ collect_serving_cell() {
             # comment) — same fields follow either way:
             # MCC,MNC,cellID,PCID,EARFCN,band,ul_bw,dl_bw,TAC,...
             _rest=$(printf '%s' "$_line" | sed 's/.*"LTE","[A-Z]*",//')
-            F_CELL_LTE_MCC=$(json_str    "$(printf '%s' "$_rest" | cut -d',' -f1 | tr -d ' \r\n')")
-            F_CELL_LTE_MNC=$(json_str    "$(printf '%s' "$_rest" | cut -d',' -f2 | tr -d ' \r\n')")
             F_CELL_LTE_ID=$(json_str     "$(printf '%s' "$_rest" | cut -d',' -f3 | tr -d ' \r\n')")
             F_CELL_LTE_PCID=$(json_str   "$(printf '%s' "$_rest" | cut -d',' -f4 | tr -d ' \r\n')")
             F_CELL_LTE_EARFCN=$(json_str "$(printf '%s' "$_rest" | cut -d',' -f5 | tr -d ' \r\n')")
@@ -524,8 +522,6 @@ collect_serving_cell() {
             # or just "NR5G-SA","FDD"/"TDD" (see header comment):
             # MCC,MNC,cellID,PCID,TAC,ARFCN,band,dl_bw,rsrp,rsrq,sinr,scs
             _rest=$(printf '%s' "$_line" | sed 's/.*"NR5G-SA","[A-Z]*",//')
-            F_CELL_NR_MCC=$(json_str   "$(printf '%s' "$_rest" | cut -d',' -f1 | tr -d ' \r\n')")
-            F_CELL_NR_MNC=$(json_str   "$(printf '%s' "$_rest" | cut -d',' -f2 | tr -d ' \r\n')")
             F_CELL_NR_ID=$(json_str    "$(printf '%s' "$_rest" | cut -d',' -f3 | tr -d ' \r\n')")
             F_CELL_NR_PCID=$(json_str  "$(printf '%s' "$_rest" | cut -d',' -f4 | tr -d ' \r\n')")
             F_CELL_NR_TAC=$(json_str   "$(printf '%s' "$_rest" | cut -d',' -f5 | tr -d ' \r\n')")
@@ -546,8 +542,6 @@ collect_serving_cell() {
             # MCC,MNC,PCID,rsrp,sinr,rsrq,ARFCN,band,dl_bw,scs
             _rest=$(printf '%s' "$_line" | sed 's/.*"NR5G-NSA",//')
             F_CELL_NR_PCID_RAW=$(printf '%s' "$_rest" | cut -d',' -f3 | tr -d ' \r\n')
-            F_CELL_NR_MCC=$(json_str   "$(printf '%s' "$_rest" | cut -d',' -f1 | tr -d ' \r\n')")
-            F_CELL_NR_MNC=$(json_str   "$(printf '%s' "$_rest" | cut -d',' -f2 | tr -d ' \r\n')")
             F_CELL_NR_PCID=$(json_str  "$F_CELL_NR_PCID_RAW")
             F_CELL_NR_RSRP=$(json_num  "$(printf '%s' "$_rest" | cut -d',' -f4 | tr -d ' \r\n')")
             F_CELL_NR_SINR=$(json_num  "$(printf '%s' "$_rest" | cut -d',' -f5 | tr -d ' \r\n')")
@@ -654,7 +648,7 @@ collect_carrier() {
 # when there's no NR resource to report on, same as QCAINFO/QENG's NR
 # fields going empty rather than an actual failure).
 # Builds "pci,freq,layers|pci,freq,layers|..." across both subcommands'
-# blocks (28 and 32 in ALL_CMD — not adjacent: mode_pref/data_roaming/
+# blocks (26 and 30 in ALL_CMD — not adjacent: mode_pref/data_roaming/
 # CNUM sit between them, see ALL_CMD's block-number comment) for
 # update_mimo_max_cache to fold into its rolling-window per-carrier max
 # cache, keyed against each carrier's own pci/earfcn —
@@ -663,7 +657,7 @@ collect_carrier() {
 # anymore — see update_mimo_max_cache's header comment.
 build_mimo_lookup() {
     _out=""
-    for _blk in 28 32; do
+    for _blk in 26 30; do
         _mi=$(nth_block "$1" "$_blk")
         _mi_lines=$(printf '%s' "$_mi" | grep -E '^\+QNWCFG: "(lte|nr5g)_mimo_info"')
         [ -z "$_mi_lines" ] && continue
@@ -1402,17 +1396,6 @@ compute_ca_throughput() {
     '
 }
 
-collect_band_pref() {
-    F_BAND_PREF_LTE="null"; F_BAND_PREF_NR5G="null"
-    _blob="$1"
-
-    _lte=$(nth_block "$_blob" 19)
-    F_BAND_PREF_LTE=$(json_str "$(printf '%s' "$_lte" | grep '+QNWPREFCFG:' | sed 's/.*"lte_band",//' | tr -d ' \r\n')")
-
-    _nr=$(nth_block "$_blob" 20)
-    F_BAND_PREF_NR5G=$(json_str "$(printf '%s' "$_nr" | grep '+QNWPREFCFG:' | sed 's/.*"nr5g_band",//' | tr -d ' \r\n')")
-}
-
 # Network Mode (AT+QNWPREFCFG="mode_pref") and Data Roaming
 # (AT+QNWCFG="data_roaming") — both confirmed live against this
 # hardware (2026-08-17): mode_pref currently reads "AUTO" and accepts a
@@ -1426,10 +1409,10 @@ collect_network_prefs() {
     F_NET_MODE_PREF="null"; F_NET_DATA_ROAMING="null"
     _blob="$1"
 
-    _mode=$(nth_block "$_blob" 29)
+    _mode=$(nth_block "$_blob" 27)
     F_NET_MODE_PREF=$(json_str "$(printf '%s' "$_mode" | grep '+QNWPREFCFG:' | sed 's/.*"mode_pref",//' | tr -d ' \r\n')")
 
-    _roam=$(nth_block "$_blob" 30)
+    _roam=$(nth_block "$_blob" 28)
     F_NET_DATA_ROAMING=$(json_bool "$(printf '%s' "$_roam" | grep '+QNWCFG:' | sed 's/.*"data_roaming",//' | tr -d ' \r\n')")
 }
 
@@ -1442,23 +1425,23 @@ collect_wan() {
     F_WAN_DATA_TX="null"; F_WAN_DATA_RX="null"
     _blob="$1"
 
-    _dcont=$(nth_block "$_blob" 21)
+    _dcont=$(nth_block "$_blob" 19)
     _dcont_line=$(printf '%s' "$_dcont" | grep '^+CGDCONT: 1,')
     F_WAN_APN=$(json_str "$(printf '%s' "$_dcont_line" | cut -d',' -f3 | tr -d '"\r\n')")
     F_WAN_IP_TYPE=$(json_str "$(printf '%s' "$_dcont_line" | cut -d',' -f2 | tr -d '"\r\n')")
 
-    _addr=$(nth_block "$_blob" 22)
+    _addr=$(nth_block "$_blob" 20)
     _addr_line=$(printf '%s' "$_addr" | grep '^+CGPADDR: 1,')
     F_WAN_IP=$(json_str "$(printf '%s' "$_addr_line" | cut -d',' -f2 | tr -d '"\r\n')")
     F_WAN_IPV6=$(json_str "$(ipv6_from_octets "$(printf '%s' "$_addr_line" | cut -d',' -f3 | tr -d '"\r\n')")")
 
-    _act=$(nth_block "$_blob" 23)
+    _act=$(nth_block "$_blob" 21)
     _stat=$(printf '%s' "$_act" | grep '^+CGACT: 1,' | cut -d',' -f2 | tr -d ' \r\n')
     F_WAN_ACTIVE=$(json_bool "$_stat")
 
     # +QGDCNT: <tx_bytes>,<rx_bytes> — cumulative since last AT+QGDCNT=0
     # reset (or module boot), confirmed live.
-    _gdcnt=$(nth_block "$_blob" 24)
+    _gdcnt=$(nth_block "$_blob" 22)
     _gdcnt_line=$(printf '%s' "$_gdcnt" | grep '^+QGDCNT:' | sed 's/+QGDCNT: //')
     F_WAN_DATA_TX=$(json_num "$(printf '%s' "$_gdcnt_line" | cut -d',' -f1 | tr -d ' \r\n')")
     F_WAN_DATA_RX=$(json_num "$(printf '%s' "$_gdcnt_line" | cut -d',' -f2 | tr -d ' \r\n')")
@@ -1478,7 +1461,7 @@ collect_lan() {
     # the bare form (no ,?), same as MPDN_rule/DHCPV4DNS below, is the
     # actual query. Response: +QMAP: "LANIP",<start>,<end>,<gateway>
     # (no quotes around the IPs, unlike QuecControl's documented example).
-    _lanip=$(nth_block "$_blob" 25)
+    _lanip=$(nth_block "$_blob" 23)
     _lanip_line=$(printf '%s' "$_lanip" | grep '+QMAP: "LANIP"' | head -1 | sed 's/.*"LANIP",//')
     if [ -n "$_lanip_line" ]; then
         F_LAN_DHCP_START=$(json_str "$(printf '%s' "$_lanip_line" | cut -d',' -f1 | tr -d '" \r\n')")
@@ -1487,7 +1470,7 @@ collect_lan() {
     fi
 
     # +QMAP: "MPDN_rule",<rule>,<profile>,<vlan>,<ippt_mode>,<autoconn>[,"<mac>"]
-    _mpdn=$(nth_block "$_blob" 26)
+    _mpdn=$(nth_block "$_blob" 24)
     _mpdn_line=$(printf '%s' "$_mpdn" | grep '^+QMAP: "MPDN_rule",0,' | head -1 | sed 's/.*"MPDN_rule",//')
     _ippt=$(printf '%s' "$_mpdn_line" | cut -d',' -f4 | tr -d ' \r\n')
     case "$_ippt" in
@@ -1496,7 +1479,7 @@ collect_lan() {
         0) F_LAN_MODE=$(json_str "NAT") ;;
     esac
 
-    _dns=$(nth_block "$_blob" 27)
+    _dns=$(nth_block "$_blob" 25)
     _dns_val=$(printf '%s' "$_dns" | grep '+QMAP: "DHCPV4DNS"' | head -1 | sed 's/.*"DHCPV4DNS",//' | tr -d '" \r\n')
     case "$_dns_val" in
         enable)  F_LAN_DNS_MODE=$(json_str "local") ;;
@@ -1554,13 +1537,10 @@ collect_gps() {
 
 write_state() {
     _polled_at="$1"
-    _duration="$2"
 
     _json=$(cat <<EOF
 {
   "_polled_at": ${_polled_at},
-  "_poll_duration_s": ${_duration},
-  "_poll_interval_s": ${POLL_INTERVAL},
   "web_auth_is_default": $(json_bool "$WEB_AUTH_IS_DEFAULT"),
   "device_model": ${F_MODEL},
   "device_imei": ${F_IMEI},
@@ -1583,8 +1563,6 @@ write_state() {
   "signal_nr_sinr": ${F_NR_SINR},
   "cell_lte_active": $(json_bool "$F_CELL_LTE_ACTIVE"),
   "cell_lte_state": ${F_CELL_LTE_STATE},
-  "cell_lte_mcc": ${F_CELL_LTE_MCC},
-  "cell_lte_mnc": ${F_CELL_LTE_MNC},
   "cell_lte_id": ${F_CELL_LTE_ID},
   "cell_lte_pcid": ${F_CELL_LTE_PCID},
   "cell_lte_earfcn": ${F_CELL_LTE_EARFCN},
@@ -1594,8 +1572,6 @@ write_state() {
   "cell_nr_active": $(json_bool "$F_CELL_NR_ACTIVE"),
   "cell_nr_type": ${F_CELL_NR_TYPE},
   "cell_nr_state": ${F_CELL_NR_STATE},
-  "cell_nr_mcc": ${F_CELL_NR_MCC},
-  "cell_nr_mnc": ${F_CELL_NR_MNC},
   "cell_nr_id": ${F_CELL_NR_ID},
   "cell_nr_pcid": ${F_CELL_NR_PCID},
   "cell_nr_arfcn": ${F_CELL_NR_ARFCN},
@@ -1614,8 +1590,6 @@ write_state() {
   "ca_dl_maximum_mbps": ${F_CA_DL_MAX_MBPS},
   "ca_ul_estimated_mbps": ${F_CA_UL_EST_MBPS},
   "ca_ul_maximum_mbps": ${F_CA_UL_MAX_MBPS},
-  "band_pref_lte": ${F_BAND_PREF_LTE},
-  "band_pref_nr5g": ${F_BAND_PREF_NR5G},
   "wan_apn": ${F_WAN_APN},
   "wan_ip": ${F_WAN_IP},
   "wan_ipv6": ${F_WAN_IPV6},
@@ -1692,13 +1666,17 @@ fi
 
 # Every AT round trip costs ~0.25-0.35s of fixed broker/polling overhead
 # regardless of the command's own complexity (confirmed live) — with the
-# 28 commands below issued separately, that overhead alone summed to
-# ~8.2s of a 10s POLL_INTERVAL. Chaining all of them into one "AT+CMD1;
-# +CMD2;..." request (confirmed live: the modem answers the full 28-
-# command chain, in order, in ~0.2-0.3s) collapses that to a single
+# 26 commands below issued separately, that overhead alone would sum to
+# several seconds of a 10s POLL_INTERVAL. Chaining all of them into one
+# "AT+CMD1;+CMD2;..." request (confirmed live: the modem answers a full
+# chain like this, in order, in ~0.2-0.3s) collapses that to a single
 # round trip; nth_block() below then splits the merged response back
 # into each field's own block by fixed position. Block numbers, in
-# order:
+# order (previously 32 commands — QNWPREFCFG=lte_band/nr5g_band, old
+# blocks 19-20, were removed 2026-08-31: parsed into band_pref_lte/
+# band_pref_nr5g state.sh fields nothing in the UI ever read, since the
+# Band Lock card gets current band preference from its own on-demand
+# band_lock.sh query instead — see SCOPE.md):
 #  1 GSN(imei) 2 QGMR(fw) 3 I/ATI(model) 4 QTEMP(temp)
 #  5 CPIN 6 CIMI 7 QCCID 8 QUIMSLOT
 #  9 CEREG 10 C5GREG 11 CREG
@@ -1706,13 +1684,12 @@ fi
 #  15 QENG=servingcell
 #  16 COPS 17 QSPN
 #  18 QCAINFO
-#  19 QNWPREFCFG=lte_band 20 QNWPREFCFG=nr5g_band
-#  21 CGDCONT 22 CGPADDR 23 CGACT 24 QGDCNT
-#  25 QMAP=LANIP 26 QMAP=MPDN_rule 27 QMAP=DHCPV4DNS
-#  28 QNWCFG=lte_mimo_info
-#  29 QNWPREFCFG=mode_pref 30 QNWCFG=data_roaming
-#  31 CNUM
-#  32 QNWCFG=nr5g_mimo_info
+#  19 CGDCONT 20 CGPADDR 21 CGACT 22 QGDCNT
+#  23 QMAP=LANIP 24 QMAP=MPDN_rule 25 QMAP=DHCPV4DNS
+#  26 QNWCFG=lte_mimo_info
+#  27 QNWPREFCFG=mode_pref 28 QNWCFG=data_roaming
+#  29 CNUM
+#  30 QNWCFG=nr5g_mimo_info
 # GPS (AT+QGPSLOC=2) is NOT part of this chain — see collect_gps()'s own
 # header comment for why chaining it (even last) still wasn't safe.
 # Both CNUM and nr5g_mimo_info are documented to legitimately ERROR —
@@ -1731,7 +1708,7 @@ fi
 # (confirmed live 2026-08-17 to always answer OK) are ordered right
 # after lte_mimo_info, ahead of both risky commands, so neither
 # failure can take them out too.
-ALL_CMD='AT+GSN;+QGMR;I;+QTEMP;+CPIN?;+CIMI;+QCCID;+QUIMSLOT?;+CEREG?;+C5GREG?;+CREG?;+QRSRP;+QRSRQ;+QSINR;+QENG="servingcell";+COPS?;+QSPN;+QCAINFO;+QNWPREFCFG="lte_band";+QNWPREFCFG="nr5g_band";+CGDCONT?;+CGPADDR;+CGACT?;+QGDCNT?;+QMAP="LANIP";+QMAP="MPDN_rule";+QMAP="DHCPV4DNS";+QNWCFG="lte_mimo_info";+QNWPREFCFG="mode_pref";+QNWCFG="data_roaming";+CNUM;+QNWCFG="nr5g_mimo_info"'
+ALL_CMD='AT+GSN;+QGMR;I;+QTEMP;+CPIN?;+CIMI;+QCCID;+QUIMSLOT?;+CEREG?;+C5GREG?;+CREG?;+QRSRP;+QRSRQ;+QSINR;+QENG="servingcell";+COPS?;+QSPN;+QCAINFO;+CGDCONT?;+CGPADDR;+CGACT?;+QGDCNT?;+QMAP="LANIP";+QMAP="MPDN_rule";+QMAP="DHCPV4DNS";+QNWCFG="lte_mimo_info";+QNWPREFCFG="mode_pref";+QNWCFG="data_roaming";+CNUM;+QNWCFG="nr5g_mimo_info"'
 
 _cycle=0
 
@@ -1758,7 +1735,6 @@ while true; do
     track_pcid_dwell "$_start"
     collect_carrier "$_blob"
     collect_carrier_aggregation "$_blob" "$_start"
-    collect_band_pref "$_blob"
     collect_network_prefs "$_blob"
     collect_wan "$_blob"
     compute_wan_rate "$_start"
@@ -1766,7 +1742,7 @@ while true; do
     collect_gps
 
     _end=$(date +%s)
-    write_state "$_start" "$(( _end - _start ))"
+    write_state "$_start"
     append_signal_history "$_start"
     append_wan_history "$_start"
     log_dbg "Cycle ${_cycle} done in $(( _end - _start ))s"

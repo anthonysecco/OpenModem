@@ -376,7 +376,6 @@
     return gpsUnitImperial ? (v * 0.621371).toFixed(1) + ' mph' : v + ' km/h';
   }
   function fmtGpsHeading(v) { return (typeof v === 'number') ? v + '°' : null; }
-  function fmtBands(v) { return (typeof v === 'string' && v.length) ? v.split(':').join(', ') : v; }
   function fmtMhz(v) { return (typeof v === 'number') ? v + ' MHz' : null; }
   function fmtTempC(v) {
     if (typeof v !== 'number') return null;
@@ -603,7 +602,6 @@
     cell_lte_pcid_dwell_s: fmtUptime, cell_nr_pcid_dwell_s: fmtUptime,
     wan_active: fmtBool,
     ca_total_bw_mhz: fmtMhz,
-    band_pref_lte: fmtBands, band_pref_nr5g: fmtBands,
     lan_dns_mode: fmtDnsMode,
     wan_data_rx: fmtBytes, wan_data_tx: fmtBytes,
     sim_active_slot: fmtSimSlot,
@@ -1629,8 +1627,8 @@
   /* ── Live "updated Xs ago" timer ────────────────────────────────────
      Anchored to this browser's own clock at the moment new data was
      detected (not the poller's _polled_at, a server timestamp for a
-     cycle that started up to _poll_duration_s before its data was
-     actually written) — set once per genuine refresh by refreshState()
+     cycle that started some seconds before its data was actually
+     written) — set once per genuine refresh by refreshState()
      above via markRefreshedNow(), so the display reliably resets to
      "just now" right when new data lands and then counts up on its own
      independent 1s tick, rather than only changing when a fetch

@@ -99,13 +99,20 @@ web assets.
     timeout), and `at_cmd.sh` (generic `AT+COMMAND` passthrough,
     backing both the AT Terminal and Power's fixed-command buttons — see
     `SCOPE.md`'s Actions section).
-  - `app.js`'s state refresh is self-scheduling, not a fixed interval:
-    each `state.sh` fetch reads `_poll_interval_s` from the response and
-    reschedules its own next fetch using that value, so it tracks
-    `POLL_INTERVAL` in `openmodem.conf` automatically. The "Updated Xs
-    ago" display ticks every second on its own timer, independent of the
-    actual (much slower) fetch cadence — don't conflate the two if
-    touching either.
+  - `app.js`'s state refresh polls `state.sh` on a fixed fast interval
+    (`FAST_POLL_MS`, 1s) and only re-renders when the response's
+    `_polled_at` differs from the last one seen — cheap, since `state.sh`
+    just cats the poller's already-written file with no AT command
+    involved. An earlier design instead rescheduled each fetch exactly
+    `POLL_INTERVAL` (config-driven, via a now-removed `_poll_interval_s`
+    response field) after the last one; that was replaced (2026-08-31)
+    after a live bug where the fetch loop and the poller's write loop
+    phase-locked at whatever arbitrary offset existed when the page
+    loaded, leaving different browser tabs stuck at different stale
+    "Updated Xs ago" floors that never converged. The "Updated Xs ago"
+    display itself still ticks every second on its own independent
+    timer, reset only on a genuine new-data detection — don't conflate
+    that timer with the fetch cadence if touching either.
 - **`installer.sh`** — same shape as QuecControl's installer:
   `curl -fsSL .../installer.sh | sh` first removes any existing
   QuecControl, SimpleAdmin, or OpenModem install (services, systemd
