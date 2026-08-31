@@ -230,13 +230,35 @@ goal).
     reports `gps_enabled: false` until GPS is re-enabled through the UI —
     discovered mid-session when several consecutive diagnostic redeploys
     each silently reset it, requiring a fresh `enable` call every time.
-    Not fixed — `gps_action.sh`'s `enable` already recovers cleanly from
-    this drift (see the idempotency fix above), so it's a one-click
-    annoyance after every update rather than a broken state, but worth
-    fixing properly later: either persist the flag somewhere `/tmp`
-    cleanup doesn't reach (`openmodem.conf`?), or have the poller sync
-    its GPS-enabled belief from a one-time `AT+QGPS?` check at its own
-    startup instead of assuming disabled.
+    Fixed: `at_poller.sh` now does a one-time `AT+QGPS?` check at its own
+    startup, only when `GPS_FLAG` is absent, and recreates the flag if the
+    module reports itself already on — self-healing regardless of how it
+    got left on (reinstall, crash, manual AT testing), without adding a
+    new persisted config value to keep in sync. `gps_action.sh`'s
+    idempotency fix above still covers the interactive path.
+  - **Units toggle (Metric/Imperial)** — a `.om-toggle-group` on the GPS
+    Control card, same segmented pattern as Enable/Disable and SIM1/SIM2.
+    A client-only display preference (`localStorage`, key
+    `om_gps_units`), not device state — `gps_alt_m`/`gps_speed_kmh` always
+    arrive from `state.sh` in metric; `app.js`'s `fmtGpsAlt`/`fmtGpsSpeed`
+    convert to ft/mph at render time when set. Switching re-renders
+    immediately from the last-known poll state rather than waiting for
+    the next tick.
+  - **Colored ring-dot indicators for Satellites and HDOP** — reuses the
+    site's existing 5-tier severity palette/`applyRingDot` mechanism
+    (same as RSRP/RSRQ/SINR). No single rigid industry standard exists
+    for satellite-count color bands specifically (HDOP is the metric the
+    GPS industry actually standardizes on); `GPS_SAT_ZONES` is a reasoned
+    synthesis anchored to two well-established facts — 4 satellites is
+    the hard minimum for any 3D fix, 7-12 is a standard receiver's
+    typical range — giving 0-3 Critical / 4-5 Poor / 6-7 Fair / 8-9 Good /
+    10+ Excellent. `GPS_HDOP_ZONES` uses the classic DOP classification
+    table (<1 Ideal, 1-2 Excellent, 2-5 Good, 5-10 Moderate, 10-20 Fair,
+    >20 Poor), collapsed to this site's 5 tiers since HDOP is lower-is-
+    better, walked via `ascZoneColor` (same direction as
+    `LATENCY_ZONES`/`JITTER_ZONES`) rather than `sigZoneColor`.
+    `applyRingDot()` gained an `ascending` parameter for this — same
+    convention `chartZoneColor()` already used.
   - GPS page itself not yet exercised against a real browser (only its
     JSON-producing backend paths above were verified, via `curl` with
     credentials the user provided directly for this session's debugging —

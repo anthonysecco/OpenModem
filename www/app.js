@@ -251,6 +251,37 @@
     { thresh: 0, bar: '#e0473e', label: 'Critical' }
   ];
 
+  /* GPS satellite-count and HDOP thresholds (2026-08-31) — no single
+     rigid "industry standard" exists for satellite-count color bands
+     specifically (HDOP is the metric the GPS industry actually
+     standardizes on; satellite count is a looser proxy for it), so
+     GPS_SAT_ZONES is a reasoned synthesis anchored to two well-
+     established facts: 4 satellites is the hard mathematical minimum
+     for any 3D fix (need 4 pseudoranges to solve for x/y/z/t), and a
+     standard consumer receiver typically locks 7-12 at once. Same
+     descending, higher-is-better shape as RSRP/SPEED_ZONES, reusing
+     sigZoneColor/applyRingDot directly.
+     GPS_HDOP_ZONES uses the classic, widely-cited DOP classification
+     table (Trimble/u-blox/GIS-reference lineage: <1 Ideal, 1-2
+     Excellent, 2-5 Good, 5-10 Moderate, 10-20 Fair, >20 Poor), collapsed
+     from 6 tiers to this site's 5-tier palette since HDOP is lower-is-
+     better — walked in ASCENDING order via ascZoneColor, same as
+     LATENCY_ZONES/JITTER_ZONES above, not sigZoneColor's direction. */
+  var GPS_SAT_ZONES = [
+    { thresh: 10, bar: '#1e8a4e', label: 'Excellent' },
+    { thresh: 8, bar: '#34c777', label: 'Good' },
+    { thresh: 6, bar: '#f0c64c', label: 'Fair' },
+    { thresh: 4, bar: '#e0873a', label: 'Poor' },
+    { thresh: 0, bar: '#e0473e', label: 'Critical' }
+  ];
+  var GPS_HDOP_ZONES = [
+    { thresh: 1, bar: '#1e8a4e', label: 'Excellent' },
+    { thresh: 2, bar: '#34c777', label: 'Good' },
+    { thresh: 5, bar: '#f0c64c', label: 'Fair' },
+    { thresh: 10, bar: '#e0873a', label: 'Poor' },
+    { thresh: Infinity, bar: '#e0473e', label: 'Critical' }
+  ];
+
   function sigZoneColor(val, zones) {
     for (var i = 0; i < zones.length; i++) {
       if (val >= zones[i].thresh) return zones[i].bar;
@@ -329,8 +360,24 @@
   function fmtEnabled(v) { return v === true ? 'Enabled' : v === false ? 'Disabled' : null; }
   function fmtGpsFixType(v) { return v === 2 ? '2D Fix' : v === 3 ? '3D Fix' : null; }
   function fmtGpsCoord(v) { return (typeof v === 'number') ? v.toFixed(6) + '°' : null; }
-  function fmtGpsAlt(v) { return (typeof v === 'number') ? v + ' m' : null; }
-  function fmtGpsSpeed(v) { return (typeof v === 'number') ? v + ' km/h' : null; }
+
+  /* Metric/imperial display preference for GPS altitude/speed — a
+     per-viewer display choice, not device state, so it lives in
+     localStorage (see initGpsUnitsToggle) rather than round-tripping
+     through the poller/gps_action.sh. gps_alt_m/gps_speed_kmh themselves
+     always arrive from state.sh in metric; conversion happens only here,
+     at render time. */
+  var gpsUnitImperial = false;
+  try { gpsUnitImperial = localStorage.getItem('om_gps_units') === 'imperial'; } catch (e) {}
+
+  function fmtGpsAlt(v) {
+    if (typeof v !== 'number') return null;
+    return gpsUnitImperial ? Math.round(v * 3.28084) + ' ft' : v + ' m';
+  }
+  function fmtGpsSpeed(v) {
+    if (typeof v !== 'number') return null;
+    return gpsUnitImperial ? (v * 0.621371).toFixed(1) + ' mph' : v + ' km/h';
+  }
   function fmtGpsHeading(v) { return (typeof v === 'number') ? v + '°' : null; }
   function fmtBands(v) { return (typeof v === 'string' && v.length) ? v.split(':').join(', ') : v; }
   function fmtMhz(v) { return (typeof v === 'number') ? v + ' MHz' : null; }
@@ -661,11 +708,15 @@
      cycle would either be a near-constant blink (if it kept animating
      regardless of an actual change) or a confusing one-off spike users
      would read as something being wrong. */
-  function applyRingDot(field, zones, state) {
+  // ascending=true for lower-is-better metrics (GPS_HDOP_ZONES, via
+  // ascZoneColor), false/omitted for higher-is-better (RSRP,
+  // GPS_SAT_ZONES, via sigZoneColor) — same convention as chartZoneColor.
+  function applyRingDot(field, zones, state, ascending) {
     var el = document.querySelector('[data-ring="' + field + '"]');
     if (!el) return;
     var val = state[field];
-    setRingDotColor(el, typeof val === 'number' ? sigZoneColor(val, zones) : '#5c5c5e', true);
+    var color = typeof val === 'number' ? (ascending ? ascZoneColor(val, zones) : sigZoneColor(val, zones)) : '#5c5c5e';
+    setRingDotColor(el, color, true);
   }
 
   function applyRegRingDot(field, state) {
@@ -702,6 +753,8 @@
     applyRingDot('signal_nr_sinr', SINR_ZONES, state);
     applyBoolRingDot('wan_active', state);
     applyBoolRingDot('gps_enabled', state);
+    applyRingDot('gps_num_sats', GPS_SAT_ZONES, state);
+    applyRingDot('gps_hdop', GPS_HDOP_ZONES, state, true);
   }
 
   /* ── Connectivity card (Dashboard) ───────────────────────────────────
@@ -3606,6 +3659,29 @@
     }
   }
 
+  /* Units toggle (Metric/Imperial) — a client-only display preference
+     (see gpsUnitImperial above), so this just flips that var, persists
+     it, and re-renders from the last-known state immediately rather than
+     waiting for the next poll tick; no server round trip, unlike
+     initGpsControl's Enable/Disable. */
+  function initGpsUnitsToggle() {
+    var group = document.getElementById('om-gps-units-toggle');
+    if (!group) return; // not on this page
+    setToggleActive('om-gps-units-toggle', 'data-units', gpsUnitImperial ? 'imperial' : 'metric');
+    var buttons = group.querySelectorAll('button');
+    for (var i = 0; i < buttons.length; i++) {
+      (function (btn) {
+        btn.addEventListener('click', function () {
+          var units = btn.getAttribute('data-units');
+          gpsUnitImperial = units === 'imperial';
+          try { localStorage.setItem('om_gps_units', units); } catch (e) {}
+          setToggleActive('om-gps-units-toggle', 'data-units', units);
+          if (lastAtState) safeRender(renderState, lastAtState);
+        });
+      })(buttons[i]);
+    }
+  }
+
   window.OM = { init: initShell };
 
   document.addEventListener('DOMContentLoaded', function () {
@@ -3636,6 +3712,7 @@
     initWanInternet();
     initSimSlotToggle();
     initGpsControl();
+    initGpsUnitsToggle();
     initLanClients();
     initChangePassword();
   });

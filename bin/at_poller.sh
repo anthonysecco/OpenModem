@@ -1531,6 +1531,32 @@ systemd-notify --ready 2>/dev/null
 
 log_op "Starting — interval=${POLL_INTERVAL}s log_level=${LOG_LEVEL}"
 
+# -- Sync GPS_FLAG from live module state at startup -----------------------
+# GPS_FLAG lives under /tmp (see its declaration above), which
+# installer.sh's reinstall cleanup wipes along with the rest of /tmp's
+# runtime state — but the GPS module's own on/off state is independent
+# baseband state that survives a reinstall untouched (confirmed live:
+# AT+QGPS=1 stays session-ongoing across a reinstall). Without this, a
+# reinstall left the poller (and thus the UI) believing GPS was off while
+# the module kept running underneath, until someone happened to hit
+# Disable/Enable again. One AT+QGPS? here, once at process start — not
+# every cycle, that's what GPS_FLAG itself is for, see collect_gps()'s own
+# header comment — makes the flag agree with the module's real state
+# before the main loop ever runs. Only checked when the flag is already
+# absent: if it's present, trust it (it's either accurate or will be
+# corrected the next time gps_action.sh runs), no need to spend a broker
+# round trip confirming what's already believed true.
+if [ ! -f "$GPS_FLAG" ]; then
+    _gps_startup_state=$(run_at "AT+QGPS?" 8 | grep '^+QGPS:')
+    case "$_gps_startup_state" in
+        *'+QGPS: 1'*)
+            mkdir -p "$RUN_DIR"
+            touch "$GPS_FLAG"
+            log_op "GPS was already enabled on the module at startup — recreated $GPS_FLAG"
+            ;;
+    esac
+fi
+
 # Every AT round trip costs ~0.25-0.35s of fixed broker/polling overhead
 # regardless of the command's own complexity (confirmed live) — with the
 # 28 commands below issued separately, that overhead alone summed to
