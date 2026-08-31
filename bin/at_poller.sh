@@ -30,6 +30,7 @@ HISTORY_SCRATCH="$RUN_DIR/history_signal_scratch"
 HISTORY_FILE_WAN="$RUN_DIR/history_wan.json"
 HISTORY_SCRATCH_WAN="$RUN_DIR/history_wan_scratch"
 MIMO_CACHE="$RUN_DIR/mimo_max_cache"
+PCID_DWELL_FILE="$RUN_DIR/pcid_dwell"
 # Presence-only flag, set/cleared by www/cgi-bin/gps_action.sh's
 # enable/disable — see collect_gps() for why this exists instead of a live
 # AT+QGPS? check every cycle.
@@ -556,6 +557,57 @@ collect_serving_cell() {
         fi
     done
     IFS="$_oldifs"
+}
+
+# "Dwell time" — standard RF-engineering term for how long a device stays
+# camped on one cell before handover/reselection — tracked per RAT off
+# F_CELL_LTE_PCID/F_CELL_NR_PCID (set above by collect_serving_cell(),
+# which must run first). Persisted to PCID_DWELL_FILE, not just a shell
+# global, so a poller restart alone doesn't reset the timer — only an
+# actual PCID change does. Same reinstall-wipe caveat as GPS_FLAG
+# (PCID_DWELL_FILE lives under /tmp, wiped on every OpenModem update):
+# unlike GPS there's no AT query that can recover the true historical
+# dwell start after that, since the network doesn't expose "how long
+# has this device been on this cell" — so a reinstall always resets
+# this to 0 even if the modem never actually changed cells. Accepted as
+# a permanent limitation, not something to fix later.
+track_pcid_dwell() {
+    F_CELL_LTE_PCID_DWELL_S="null"
+    F_CELL_NR_PCID_DWELL_S="null"
+    _now="$1"
+    _lte_pcid=$(printf '%s' "$F_CELL_LTE_PCID" | tr -d '"')
+    _nr_pcid=$(printf '%s' "$F_CELL_NR_PCID" | tr -d '"')
+
+    _prev_lte_pcid=""; _prev_lte_since=""
+    _prev_nr_pcid=""; _prev_nr_since=""
+    [ -f "$PCID_DWELL_FILE" ] && . "$PCID_DWELL_FILE"
+
+    if [ "$_lte_pcid" = "null" ] || [ -z "$_lte_pcid" ]; then
+        _lte_since=""
+    elif [ "$_lte_pcid" = "$_prev_lte_pcid" ] && [ -n "$_prev_lte_since" ]; then
+        _lte_since="$_prev_lte_since"
+        F_CELL_LTE_PCID_DWELL_S=$(json_num "$(( _now - _lte_since ))")
+    else
+        _lte_since="$_now"
+        F_CELL_LTE_PCID_DWELL_S="0"
+    fi
+
+    if [ "$_nr_pcid" = "null" ] || [ -z "$_nr_pcid" ]; then
+        _nr_since=""
+    elif [ "$_nr_pcid" = "$_prev_nr_pcid" ] && [ -n "$_prev_nr_since" ]; then
+        _nr_since="$_prev_nr_since"
+        F_CELL_NR_PCID_DWELL_S=$(json_num "$(( _now - _nr_since ))")
+    else
+        _nr_since="$_now"
+        F_CELL_NR_PCID_DWELL_S="0"
+    fi
+
+    {
+        echo "_prev_lte_pcid='$_lte_pcid'"
+        echo "_prev_lte_since='$_lte_since'"
+        echo "_prev_nr_pcid='$_nr_pcid'"
+        echo "_prev_nr_since='$_nr_since'"
+    } > "${PCID_DWELL_FILE}.tmp" && mv "${PCID_DWELL_FILE}.tmp" "$PCID_DWELL_FILE"
 }
 
 collect_carrier() {
@@ -1461,6 +1513,7 @@ write_state() {
   "cell_lte_earfcn": ${F_CELL_LTE_EARFCN},
   "cell_lte_band": ${F_CELL_LTE_BAND},
   "cell_lte_tac": ${F_CELL_LTE_TAC},
+  "cell_lte_pcid_dwell_s": ${F_CELL_LTE_PCID_DWELL_S},
   "cell_nr_active": $(json_bool "$F_CELL_NR_ACTIVE"),
   "cell_nr_type": ${F_CELL_NR_TYPE},
   "cell_nr_state": ${F_CELL_NR_STATE},
@@ -1471,6 +1524,7 @@ write_state() {
   "cell_nr_arfcn": ${F_CELL_NR_ARFCN},
   "cell_nr_band": ${F_CELL_NR_BAND},
   "cell_nr_tac": ${F_CELL_NR_TAC},
+  "cell_nr_pcid_dwell_s": ${F_CELL_NR_PCID_DWELL_S},
   "carrier_name": ${F_CARRIER_NAME},
   "carrier_act": ${F_CARRIER_ACT},
   "carrier_plmn": ${F_CARRIER_PLMN},
@@ -1622,6 +1676,7 @@ while true; do
     collect_registration "$_blob"
     collect_signal "$_blob"
     collect_serving_cell "$_blob"
+    track_pcid_dwell "$_start"
     collect_carrier "$_blob"
     collect_carrier_aggregation "$_blob" "$_start"
     collect_band_pref "$_blob"

@@ -66,6 +66,8 @@
         <div class="om-row"><span class="om-row-label">Registration</span><span class="om-row-value-wrap"><span data-field="reg_lte">—</span><span class="om-ring-dot" data-ring="reg_lte"></span></span></div>
         <div class="om-row"><span class="om-row-label">State</span><span class="om-hint" data-field="cell_lte_state">—</span></div>
         <div class="om-row"><span class="om-row-label">Band</span><span class="om-hint" data-field="cell_lte_band">—</span></div>
+        <div class="om-row"><span class="om-row-label">PCID</span><span data-field="cell_lte_pcid">—</span></div>
+        <div class="om-row"><span class="om-row-label om-hint" title="How long the modem has stayed camped on this PCID before its last handover/reselection.">Dwell Time</span><span data-field="cell_lte_pcid_dwell_s">—</span></div>
         <div class="om-row"><span class="om-row-label om-hint" title="Signal strength — how strong the cell signal is, in dBm. Closer to 0 is stronger.">RSRP</span><span class="om-row-value-wrap"><span data-field="signal_lte_rsrp">—</span><span class="om-ring-dot" data-ring="signal_lte_rsrp"></span></span></div>
         <div class="om-row"><span class="om-row-label om-hint" title="Signal quality — how clean the signal is relative to interference, in dB. Higher (less negative) is better.">RSRQ</span><span class="om-row-value-wrap"><span data-field="signal_lte_rsrq">—</span><span class="om-ring-dot" data-ring="signal_lte_rsrq"></span></span></div>
         <div class="om-row"><span class="om-row-label om-hint" title="Signal-to-noise ratio — how far the signal stands out above background noise, in dB. Higher is better.">SINR</span><span class="om-row-value-wrap"><span data-field="signal_lte_sinr">—</span><span class="om-ring-dot" data-ring="signal_lte_sinr"></span></span></div>
@@ -75,6 +77,8 @@
         <div class="om-row"><span class="om-row-label">Registration</span><span class="om-row-value-wrap"><span data-field="reg_nr">—</span><span class="om-ring-dot" data-ring="reg_nr"></span></span></div>
         <div class="om-row"><span class="om-row-label">State</span><span class="om-hint" data-field="cell_nr_state">—</span></div>
         <div class="om-row"><span class="om-row-label">Band</span><span class="om-hint" data-field="cell_nr_band">—</span></div>
+        <div class="om-row"><span class="om-row-label">PCID</span><span data-field="cell_nr_pcid">—</span></div>
+        <div class="om-row"><span class="om-row-label om-hint" title="How long the modem has stayed camped on this PCID before its last handover/reselection.">Dwell Time</span><span data-field="cell_nr_pcid_dwell_s">—</span></div>
         <div class="om-row"><span class="om-row-label om-hint" title="Signal strength — how strong the cell signal is, in dBm. Closer to 0 is stronger.">RSRP</span><span class="om-row-value-wrap"><span data-field="signal_nr_rsrp">—</span><span class="om-ring-dot" data-ring="signal_nr_rsrp"></span></span></div>
         <div class="om-row"><span class="om-row-label om-hint" title="Signal quality — how clean the signal is relative to interference, in dB. Higher (less negative) is better.">RSRQ</span><span class="om-row-value-wrap"><span data-field="signal_nr_rsrq">—</span><span class="om-ring-dot" data-ring="signal_nr_rsrq"></span></span></div>
         <div class="om-row"><span class="om-row-label om-hint" title="Signal-to-noise ratio — how far the signal stands out above background noise, in dB. Higher is better.">SINR</span><span class="om-row-value-wrap"><span data-field="signal_nr_sinr">—</span><span class="om-ring-dot" data-ring="signal_nr_sinr"></span></span></div>
@@ -104,10 +108,10 @@
         <div class="om-table-wrap">
           <table class="om-table">
             <thead>
-              <tr><th>Carrier</th><th class="om-hint" title="Bandwidth — the width of this carrier's radio channel in MHz.">BW</th><th class="om-hint" title="Multiple-input multiple-output — highest number of antenna streams observed carrying data on this carrier. More streams can mean higher speed.">MIMO</th><th>RSRP</th><th>SINR</th></tr>
+              <tr><th>Carrier</th><th class="om-hint" title="Bandwidth — the width of this carrier's radio channel in MHz.">BW</th><th class="om-hint" title="Multiple-input multiple-output — highest number of antenna streams observed carrying data on this carrier. More streams can mean higher speed.">MIMO</th><th>RSRP</th><th>SINR</th><th class="om-col-desktop">Frequency</th><th class="om-col-desktop">PCID</th></tr>
             </thead>
             <tbody id="om-ca-tbody">
-              <tr><td colspan="5" class="om-note">Loading…</td></tr>
+              <tr><td colspan="7" class="om-note">Loading…</td></tr>
             </tbody>
           </table>
         </div>

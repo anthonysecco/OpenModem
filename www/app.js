@@ -534,7 +534,11 @@
      serve different purposes and are deliberately kept separate.
      Covers the same band universes as LTE_BANDS/NR_BANDS (Band Lock's
      own checkbox lists), dual-block bands (e.g. AWS) shown as
-     "low/high" rather than picking one arbitrarily. */
+     "low/high" rather than picking one arbitrarily. Originally folded
+     into the Band row's own text as "B66 (1700/2100)"; moved to its own
+     desktop-only "Frequency" column on the Carrier Aggregation table
+     instead (fmtCaNominalFreq below) so the Band row itself stays a
+     plain band label. */
   var LTE_BAND_NOMINAL_MHZ = {
     1: '2100', 2: '1900', 3: '1800', 4: '1700/2100', 5: '850', 7: '2600', 8: '900',
     12: '700', 13: '700', 14: '700', 17: '700', 18: '800', 19: '800', 20: '800',
@@ -552,13 +556,11 @@
 
   function fmtLteBandNum(v) {
     if (typeof v !== 'string' || !v) return null;
-    var mhz = LTE_BAND_NOMINAL_MHZ[Number(v)];
-    return 'B' + v + (mhz ? ' (' + mhz + ')' : '');
+    return 'B' + v;
   }
   function fmtNrBandNum(v) {
     if (typeof v !== 'string' || !v) return null;
-    var mhz = NR_BAND_NOMINAL_MHZ[Number(v)];
-    return 'n' + v + (mhz ? ' (' + mhz + ')' : '');
+    return 'n' + v;
   }
   function fmtNrType(v) {
     return v === 'NR5G-SA' ? 'Standalone (SA)' : v === 'NR5G-NSA' ? 'Non-Standalone (NSA)' : null;
@@ -569,6 +571,7 @@
     signal_lte_rsrp: fmtDbm, signal_lte_rsrq: fmtDbm, signal_lte_sinr: fmtDbm,
     signal_nr_rsrp: fmtDbm, signal_nr_rsrq: fmtDbm, signal_nr_sinr: fmtDbm,
     cell_lte_band: fmtLteBandNum, cell_nr_band: fmtNrBandNum, cell_nr_type: fmtNrType,
+    cell_lte_pcid_dwell_s: fmtUptime, cell_nr_pcid_dwell_s: fmtUptime,
     wan_active: fmtBool,
     ca_total_bw_mhz: fmtMhz,
     ca_dl_estimated_mbps: fmtMbps, ca_dl_maximum_mbps: fmtMbps,
@@ -2914,7 +2917,8 @@
      More rows are added freely above this floor; it's a minimum, not a
      cap. */
   var MIN_CA_ROWS = 5;
-  var CA_EMPTY_ROW = '<tr class="om-ca-row-empty"><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>';
+  var CA_EMPTY_ROW = '<tr class="om-ca-row-empty"><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td>' +
+    '<td class="om-col-desktop">—</td><td class="om-col-desktop">—</td></tr>';
 
   function padCaRows(rows) {
     var out = rows.slice();
@@ -2943,6 +2947,17 @@
     return (typeof mimoLayers === 'number' && mimoLayers >= 0) ? mimoLayers + 'x' + mimoLayers : '—';
   }
 
+  // Desktop-only columns (.om-col-desktop, hidden under 768px — see
+  // style.css) — nominal frequency (LTE_BAND_NOMINAL_MHZ/
+  // NR_BAND_NOMINAL_MHZ, same tables the Band row used to fold into its
+  // own text) and raw PCID per carrier row.
+  function fmtCaNominalFreq(c) {
+    var num = bandNumberFromLabel(c.band);
+    if (num === null) return '—';
+    var mhz = /NR5G/i.test(c.band || '') ? NR_BAND_NOMINAL_MHZ[num] : LTE_BAND_NOMINAL_MHZ[num];
+    return mhz ? mhz + ' MHz' : '—';
+  }
+
   function renderCarrierAggregation(state) {
     var bar = document.getElementById('om-ca-bwbar');
     var freqRow = document.getElementById('om-ca-bwbar-freq');
@@ -2953,7 +2968,7 @@
     if (!Array.isArray(carriers) || !carriers.length) {
       bar.innerHTML = '<div class="om-ca-bwbar-empty"></div>';
       freqRow.innerHTML = '';
-      tbody.innerHTML = padCaRows(['<tr><td colspan="5" class="om-note">No carrier aggregation active.</td></tr>']).join('');
+      tbody.innerHTML = padCaRows(['<tr><td colspan="7" class="om-note">No carrier aggregation active.</td></tr>']).join('');
       return;
     }
 
@@ -3028,6 +3043,8 @@
         '<td>' + fmtMimoCell(c.mimo_layers) + '</td>' +
         '<td>' + sigBarCell(c.rsrp, RSRP_ZONES, RSRP_MIN, RSRP_MAX, 'dBm') + '</td>' +
         '<td>' + sigBarCell(c.sinr, SINR_ZONES, SINR_MIN, SINR_MAX, 'dB') + '</td>' +
+        '<td class="om-col-desktop">' + fmtCaNominalFreq(c) + '</td>' +
+        '<td class="om-col-desktop">' + escapeHtml(c.pci || '—') + '</td>' +
         '</tr>';
     });
     tbody.innerHTML = padCaRows(caRows).join('');

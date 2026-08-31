@@ -850,6 +850,20 @@ body {
   border-bottom: none;
 }
 
+/* Columns only worth the width on a wider screen (e.g. the Carrier
+   Aggregation table's Frequency/PCID columns) — hidden by default,
+   shown from the same 768px breakpoint the rest of the site treats as
+   "desktop" (see the Desktop layout section further down). */
+.om-col-desktop {
+  display: none;
+}
+
+@media (min-width: 768px) {
+  .om-col-desktop {
+    display: table-cell;
+  }
+}
+
 /* Placeholder rows padding Carrier Aggregation's table out to its
    minimum row count — same height as a real row, just visually quiet
    so an empty slot doesn't read as an error. */
