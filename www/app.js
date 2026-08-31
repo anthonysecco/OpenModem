@@ -2923,7 +2923,7 @@
   var MIN_CA_ROWS = 5;
   var CA_EMPTY_ROW = '<tr class="om-ca-row-empty"><td>—</td>' +
     '<td class="om-col-desktop">—</td><td class="om-col-desktop">—</td><td class="om-col-desktop">—</td>' +
-    '<td>—</td><td>—</td><td>—</td><td>—</td><td class="om-col-desktop">—</td></tr>';
+    '<td>—</td><td>—</td><td>—</td><td class="om-col-desktop">—</td><td class="om-col-desktop">—</td></tr>';
 
   function padCaRows(rows) {
     var out = rows.slice();
@@ -3060,7 +3060,7 @@
         '<td>' + fmtBwCell(s.bw) + '</td>' +
         '<td>' + fmtMimoCell(c.mimo_layers) + '</td>' +
         '<td>' + sigBarCell(c.rsrp, RSRP_ZONES, RSRP_MIN, RSRP_MAX, 'dBm') + '</td>' +
-        '<td>' + sigBarCell(c.sinr, SINR_ZONES, SINR_MIN, SINR_MAX, 'dB') + '</td>' +
+        '<td class="om-col-desktop">' + sigBarCell(c.sinr, SINR_ZONES, SINR_MIN, SINR_MAX, 'dB') + '</td>' +
         '<td class="om-col-desktop">' + sigBarCell(c.rsrq, RSRQ_ZONES, RSRQ_MIN, RSRQ_MAX, 'dB') + '</td>' +
         '</tr>';
     });
