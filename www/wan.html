@@ -46,8 +46,18 @@
 
       <div class="om-card">
         <h2>Data Usage</h2>
-        <div class="om-row"><span class="om-row-label">Received</span><span data-field="wan_data_rx">—</span></div>
-        <div class="om-row"><span class="om-row-label">Sent</span><span data-field="wan_data_tx">—</span></div>
+        <div class="om-tp-tiles">
+          <div class="om-tp-tile">
+            <span class="om-tp-tile-arrow" style="color:#2f6fed">&darr;</span>
+            <div class="om-tp-tile-value" data-field="wan_data_rx">—</div>
+            <div class="om-tp-tile-label">Received</div>
+          </div>
+          <div class="om-tp-tile">
+            <span class="om-tp-tile-arrow" style="color:#8b5cf6">&uarr;</span>
+            <div class="om-tp-tile-value" data-field="wan_data_tx">—</div>
+            <div class="om-tp-tile-label">Sent</div>
+          </div>
+        </div>
         <p class="om-note">Cumulative since last reset or module boot.</p>
         <button id="om-wan-reset-counter" type="button">Reset</button>
         <p id="om-wan-reset-status" class="om-note"></p>
