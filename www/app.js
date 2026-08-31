@@ -603,7 +603,6 @@
     cell_lte_pcid_dwell_s: fmtUptime, cell_nr_pcid_dwell_s: fmtUptime,
     wan_active: fmtBool,
     ca_total_bw_mhz: fmtMhz,
-    ca_dl_estimated_mbps: fmtMbps, ca_dl_maximum_mbps: fmtMbps,
     band_pref_lte: fmtBands, band_pref_nr5g: fmtBands,
     lan_dns_mode: fmtDnsMode,
     wan_data_rx: fmtBytes, wan_data_tx: fmtBytes,
@@ -1601,6 +1600,7 @@
           safeRender(renderSimSlots, state);
           safeRender(renderGpsCard, state);
           safeRender(renderCarrierAggregation, state);
+          safeRender(renderCaStats, state);
           safeRender(renderNetPrefs, state);
           safeRender(renderNetworkType, state);
           safeRender(renderNetworkRoaming, state);
@@ -2976,6 +2976,24 @@
      text. */
   function fmtMimoCell(mimoLayers) {
     return (typeof mimoLayers === 'number' && mimoLayers >= 0) ? mimoLayers + 'x' + mimoLayers : '—';
+  }
+
+  // CA card's Estimated Downlink/Uplink stats — "<estimated> of <max>
+  // Mbps", combining two separate poller fields (ca_dl_estimated_mbps/
+  // ca_dl_maximum_mbps, ca_ul_estimated_mbps/ca_ul_maximum_mbps) into one
+  // stat tile, so it needs its own render function rather than the
+  // generic single-field data-field binder.
+  function fmtEstOfMax(est, max) {
+    if (typeof est !== 'number' || typeof max !== 'number') return '—';
+    return est + ' of ' + max + ' Mbps';
+  }
+
+  function renderCaStats(state) {
+    var dlEl = document.getElementById('om-ca-est-dl');
+    if (!dlEl) return; // not on this page
+    dlEl.textContent = fmtEstOfMax(state.ca_dl_estimated_mbps, state.ca_dl_maximum_mbps);
+    var ulEl = document.getElementById('om-ca-est-ul');
+    if (ulEl) ulEl.textContent = fmtEstOfMax(state.ca_ul_estimated_mbps, state.ca_ul_maximum_mbps);
   }
 
   // Desktop-only columns (.om-col-desktop, hidden under 768px — see

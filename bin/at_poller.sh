@@ -790,6 +790,8 @@ collect_carrier_aggregation() {
     F_CA_TOTAL_BW_MHZ="0"
     F_CA_DL_EST_MBPS="null"
     F_CA_DL_MAX_MBPS="null"
+    F_CA_UL_EST_MBPS="null"
+    F_CA_UL_MAX_MBPS="null"
 
     _now="$2"
     _ca=$(nth_block "$1" 18)
@@ -919,9 +921,13 @@ collect_carrier_aggregation() {
     F_CA_DL_EST_MBPS=$(printf '%s\n' "$_result" | sed -n '2p')
     F_CA_DL_MAX_MBPS=$(printf '%s\n' "$_result" | sed -n '3p')
     F_CA_TOTAL_BW_MHZ=$(printf '%s\n' "$_result" | sed -n '4p')
+    F_CA_UL_EST_MBPS=$(printf '%s\n' "$_result" | sed -n '5p')
+    F_CA_UL_MAX_MBPS=$(printf '%s\n' "$_result" | sed -n '6p')
     printf '%s' "$F_CA_DL_EST_MBPS" | grep -qE '^[0-9]+$' || F_CA_DL_EST_MBPS="null"
     printf '%s' "$F_CA_DL_MAX_MBPS" | grep -qE '^[0-9]+$' || F_CA_DL_MAX_MBPS="null"
     printf '%s' "$F_CA_TOTAL_BW_MHZ" | grep -qE '^[0-9]+(\.[0-9]+)?$' || F_CA_TOTAL_BW_MHZ="0"
+    printf '%s' "$F_CA_UL_EST_MBPS" | grep -qE '^[0-9]+$' || F_CA_UL_EST_MBPS="null"
+    printf '%s' "$F_CA_UL_MAX_MBPS" | grep -qE '^[0-9]+$' || F_CA_UL_MAX_MBPS="null"
 }
 
 # Estimates per-carrier and aggregate downlink throughput from CA data.
@@ -1161,6 +1167,16 @@ compute_ca_throughput() {
         # drifts from this.
         THROUGHPUT_EFF = 0.75
         TDD_DL    = 0.70
+        # Uplink counterpart to TDD_DL — the UL slot fraction of a TDD
+        # frame, not the DL fraction. Genuinely unverified (no AT command
+        # on this modem reports the live DL:UL slot config for a TDD
+        # carrier — see the n77/dwell investigation in SCOPE.md), so this
+        # is a chosen conservative assumption for a typical DL-heavy
+        # config (e.g. a common 7:2:1-ish split), not a measurement. Only
+        # matters once a TDD carrier (NR n77/n78, or LTE 33-53) actually
+        # reports a live UL grant — this device has only ever seen UL on
+        # its FDD LTE anchor so far, so this is currently inert in practice.
+        TDD_UL    = 0.25
         # THROUGHPUT_EFF above models PHY-layer overhead only (reference
         # signals, PDCCH control region, sync signals) — the ~25% loss
         # that is roughly constant regardless of network conditions and
@@ -1193,7 +1209,26 @@ compute_ca_throughput() {
         # PRB utilization/cell load, so this can only ever be a chosen
         # assumption, not something future signal data could refine.
         SCHED_EFF = 0.55
+        # Uplink counterpart to SCHED_EFF above, deliberately much
+        # higher than 0.55 rather than reused: DL and UL cell contention
+        # are not symmetric. Mobile traffic is heavily DL-skewed (video/
+        # browsing/downloads dominate uploads) — published research puts
+        # the DL:UL traffic ratio around 4:1-9:1, and even at the "less
+        # aggressive" 4:1 end, measured UL utilization comes out under
+        # 40%, i.e. uplink capacity typically sits well over half idle
+        # while DL is what actually gets contended for. 0.85 reflects
+        # that a device requesting uplink usually finds the channel
+        # comparatively free. Loosely cross-checked against one real
+        # speedtest on this project (2026-08-31): a 15MHz/SINR-20dB LTE
+        # PCC UL grant with SCHED_EFF-equivalent backed out from the
+        # observed 46Mbps result implied ~0.90 that specific moment — 0.85
+        # is a slightly more conservative round figure from the general
+        # research rather than fitted exactly to that one sample. Same
+        # caveat as SCHED_EFF: a chosen assumption, not measurable from
+        # any AT command on this modem.
+        UL_SCHED_EFF = 0.85
         total_est = 0; total_max = 0; total_bw = 0
+        total_ul_est = 0; total_ul_max = 0
         out = "["
 
         n_mm = split(mimo_max_lookup, mm_entries, "|")
@@ -1303,6 +1338,35 @@ compute_ca_throughput() {
             total_est += c_est
             total_max += c_max
 
+            # Uplink estimate/max — same se_est/se_max spectral-efficiency
+            # tables as DL, applied to ul_bw instead of bw. Reusable as-is
+            # for the desired UL ceiling on both RATs: the lte_se() table
+            # already tops out at 5.55 bits/s/Hz (CQI 15, 64QAM rate
+            # 948/1024) and never reaches a 256QAM entry, so it already IS
+            # a 64QAM-ceiling table; nr_se() tops out at 7.41 (256QAM near
+            # max code rate), matching the desired NR UL ceiling too. No
+            # separate modulation-cap logic needed for either RAT.
+            #
+            # ul_layers is hardcoded to 1 (SISO), not the DL `layers`
+            # value — real-world LTE/NR uplink is essentially always
+            # single-layer in commercial deployment regardless of DL MIMO
+            # capability (no carrier this project has seen deploys UL-
+            # MIMO), and there is no AT command reporting a live UL layer
+            # count to measure instead. An explicit assumption, like
+            # TDD_UL above, not something a signal reading could refine.
+            ul_est = 0; ul_max = 0
+            if (ul_bw > 0) {
+                ul_layers = 1
+                ul_est = se_est * ul_bw * ul_layers * THROUGHPUT_EFF
+                ul_max = se_max * ul_bw * ul_layers * THROUGHPUT_EFF
+                if (is_tdd) { ul_est = ul_est * TDD_UL; ul_max = ul_max * TDD_UL }
+                ul_est = ul_est * rsrq_penalty(rsrq)
+                ul_est = ul_est * UL_SCHED_EFF
+            }
+            c_ul_est = int(ul_est + 0.5)
+            c_ul_max = int(ul_max + 0.5)
+            if (ul_bw > 0) { total_ul_est += c_ul_est; total_ul_max += c_ul_max }
+
             if (i > 1) out = out ","
             out = out "{\"type\":\"" type_str "\",\"band\":\"" band_str "\""
             out = out ",\"earfcn\":" (earfcn == "" ? "null" : "\"" earfcn "\"")
@@ -1310,6 +1374,8 @@ compute_ca_throughput() {
             out = out ",\"bw_mhz\":" (bw > 0 ? bw : "null")
             out = out ",\"ul_bw_mhz\":" (ul_bw > 0 ? ul_bw : "null")
             out = out ",\"ul_earfcn\":" (ul_earfcn == "" ? "null" : "\"" ul_earfcn "\"")
+            out = out ",\"ul_estimated_mbps\":" (ul_bw > 0 ? c_ul_est : "null")
+            out = out ",\"ul_maximum_mbps\":" (ul_bw > 0 ? c_ul_max : "null")
             out = out ",\"pci\":" (pci == "" ? "null" : "\"" pci "\"")
             out = out ",\"rsrp\":" (rsrp == "" ? "null" : rsrp)
             out = out ",\"rsrq\":" (rsrq_f == "" ? "null" : rsrq_f)
@@ -1325,9 +1391,13 @@ compute_ca_throughput() {
         print out
         if (total_est < 0) total_est = 0
         if (total_max < 0) total_max = 0
+        if (total_ul_est < 0) total_ul_est = 0
+        if (total_ul_max < 0) total_ul_max = 0
         print total_est
         print total_max
         print total_bw
+        print total_ul_est
+        print total_ul_max
     }
     '
 }
@@ -1542,6 +1612,8 @@ write_state() {
   "ca_total_bw_mhz": ${F_CA_TOTAL_BW_MHZ},
   "ca_dl_estimated_mbps": ${F_CA_DL_EST_MBPS},
   "ca_dl_maximum_mbps": ${F_CA_DL_MAX_MBPS},
+  "ca_ul_estimated_mbps": ${F_CA_UL_EST_MBPS},
+  "ca_ul_maximum_mbps": ${F_CA_UL_MAX_MBPS},
   "band_pref_lte": ${F_BAND_PREF_LTE},
   "band_pref_nr5g": ${F_BAND_PREF_NR5G},
   "wan_apn": ${F_WAN_APN},
