@@ -675,6 +675,18 @@
     5: '#e0a63e'  // Roaming -> amber
   };
 
+  // gps_fix_type only has 3 possible values (+QGPSLOC=2's <fix> field via
+  // fmtGpsFixType: null/2/3) — a discrete-state dot like REG_DOT_COLORS
+  // above, not a graduated 5-tier gradient like GPS_SAT_ZONES/
+  // GPS_HDOP_ZONES. Reuses the same green/amber/gray vocabulary: 3D
+  // (position+altitude) is a full reliable fix -> green, 2D (position
+  // only, no reliable altitude) is real but degraded -> amber, no fix
+  // yet -> gray, same "no data" tier as Not Registered/Unknown.
+  var GPS_FIX_DOT_COLORS = {
+    2: '#e0a63e', // 2D fix -> amber
+    3: '#34c777'  // 3D fix -> green
+  };
+
   function hexToRgba(hex, alpha) {
     var h = hex.replace('#', '');
     var r = parseInt(h.substring(0, 2), 16);
@@ -719,10 +731,15 @@
     setRingDotColor(el, color, true);
   }
 
-  function applyRegRingDot(field, state) {
+  // Generic discrete-state dot: looks the raw value up in a colors table
+  // (REG_DOT_COLORS/GPS_FIX_DOT_COLORS), gray for anything not in it
+  // (including null/undefined — "no data yet"). No flash, same as
+  // Registration's dot — these change rarely enough that flashing every
+  // poll cycle would read as noise rather than a "this just updated" cue.
+  function applyLookupRingDot(field, colors, state) {
     var el = document.querySelector('[data-ring="' + field + '"]');
     if (!el) return;
-    setRingDotColor(el, REG_DOT_COLORS[state[field]] || '#5c5c5e', false);
+    setRingDotColor(el, colors[state[field]] || '#5c5c5e', false);
   }
 
   // wan_active is a plain online/offline boolean, not a graduated
@@ -743,8 +760,8 @@
     // their own element's existence and no-op if absent, so this is
     // safe to call on any page — e.g. Dashboard's Network card only has
     // the reg_lte/reg_nr dots, not the full Cellular signal-dot suite.
-    applyRegRingDot('reg_lte', state);
-    applyRegRingDot('reg_nr', state);
+    applyLookupRingDot('reg_lte', REG_DOT_COLORS, state);
+    applyLookupRingDot('reg_nr', REG_DOT_COLORS, state);
     applyRingDot('signal_lte_rsrp', RSRP_ZONES, state);
     applyRingDot('signal_lte_rsrq', RSRQ_ZONES, state);
     applyRingDot('signal_lte_sinr', SINR_ZONES, state);
@@ -755,6 +772,7 @@
     applyBoolRingDot('gps_enabled', state);
     applyRingDot('gps_num_sats', GPS_SAT_ZONES, state);
     applyRingDot('gps_hdop', GPS_HDOP_ZONES, state, true);
+    applyLookupRingDot('gps_fix_type', GPS_FIX_DOT_COLORS, state);
   }
 
   /* ── Connectivity card (Dashboard) ───────────────────────────────────
