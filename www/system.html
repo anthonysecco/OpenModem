@@ -29,15 +29,7 @@
         <div class="om-row"><span class="om-row-label">Uptime</span><span data-field="device_uptime_s">—</span></div>
       </div>
       <div class="om-card">
-        <h2>Power</h2>
-        <div class="om-button-stack">
-          <button type="button" data-power-action="reboot">Reboot</button>
-          <button type="button" data-power-action="radio_off">Radio Off</button>
-          <button type="button" data-power-action="radio_on">Radio On</button>
-        </div>
-      </div>
-      <div class="om-card">
-        <h2>Update</h2>
+        <h2>OpenModem</h2>
         <div class="om-row"><span class="om-row-label om-hint" title="The exact GitHub commit installer.sh deployed to this device — hover for the full SHA.">Version</span><span data-field="commit_sha">—</span></div>
         <div class="om-row"><span class="om-row-label">Deployed</span><span data-field="commit_date">—</span></div>
         <div class="om-row"><span class="om-row-label">Update Available</span><span class="om-row-value-wrap om-row-value-wrap--spaced"><span id="om-update-check-text">Checking…</span><span class="om-ring-dot" id="om-update-check-dot"></span></span></div>
@@ -56,6 +48,14 @@
         </div>
         <button id="om-change-password-btn" type="button">Change Password</button>
         <span id="om-change-password-status" class="om-note"></span>
+      </div>
+      <div class="om-card">
+        <h2>Power</h2>
+        <div class="om-button-stack">
+          <button type="button" data-power-action="reboot">Reboot</button>
+          <button type="button" data-power-action="radio_off">Radio Off</button>
+          <button type="button" data-power-action="radio_on">Radio On</button>
+        </div>
       </div>
 
       <div class="om-card om-card-wide">
