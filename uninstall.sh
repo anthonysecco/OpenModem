@@ -82,7 +82,12 @@ done
 iptables -C INPUT -p tcp --dport 8080 -j DROP 2>/dev/null && \
     iptables -D INPUT -p tcp --dport 8080 -j DROP
 
-if [ "$TTL_VALUE" -gt 0 ] 2>/dev/null; then
+# Every TTL/HL rule, not just the one TTL_VALUE names - a leftover rule
+# would otherwise outlive the uninstall (see bin/ttl.sh). An install from
+# before ttl.sh existed falls back to removing the remembered value.
+if [ -x "$INSTALL_DIR/bin/ttl.sh" ]; then
+    "$INSTALL_DIR/bin/ttl.sh" apply 0
+elif [ "$TTL_VALUE" -gt 0 ] 2>/dev/null; then
     iptables -t mangle -C POSTROUTING -o rmnet+ -j TTL --ttl-set "$TTL_VALUE" 2>/dev/null && \
         iptables -t mangle -D POSTROUTING -o rmnet+ -j TTL --ttl-set "$TTL_VALUE"
     ip6tables -t mangle -C POSTROUTING -o rmnet+ -j HL --hl-set "$TTL_VALUE" 2>/dev/null && \

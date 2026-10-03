@@ -3338,6 +3338,28 @@
      its own button and doesn't touch the apply bar. */
   var wanTtlBaseline = null;
 
+  /* What the modem is actually applying, next to the saved value. They
+     differ when a saved TTL didn't take effect — after a reboot, or with a
+     leftover rule overriding it — and the saved number alone used to stand
+     in for what the modem was doing (found live 2026-10-03: saved 88,
+     sending 65). On a mismatch the apply bar is shown too, so the saved
+     value can be applied again without editing the field. */
+  function showWanTtlApplied(data) {
+    var el = document.getElementById('om-wan-ttl-applied');
+    if (!el) return false;
+    if (data.applied === null || data.applied === undefined) {
+      el.textContent = 'Could not read the TTL in effect.';
+      return false;
+    }
+    if (Number(data.applied) === Number(data.ttl)) {
+      el.textContent = Number(data.ttl) > 0 ? 'In effect: ' + data.ttl + '.' : '';
+      return false;
+    }
+    el.textContent = 'Saved ' + data.ttl + ', but the modem is applying ' +
+      (Number(data.applied) > 0 ? data.applied : 'none') + '. Apply to fix.';
+    return true;
+  }
+
   function loadWanTtl() {
     fetch('/cgi-bin/wan_action.sh?action=get_ttl')
       .then(function (r) { return r.json(); })
@@ -3346,7 +3368,7 @@
         var el = document.getElementById('om-wan-ttl');
         if (el) el.value = data.ttl;
         wanTtlBaseline = String(data.ttl);
-        applyBarToggle(false);
+        applyBarToggle(showWanTtlApplied(data));
       })
       .catch(function () { /* leave field at its default */ });
   }
@@ -3378,6 +3400,8 @@
           wanTtlBaseline = String(n);
           applyBarToggle(false);
         }
+        // Either way, re-read what is in effect rather than assume it.
+        loadWanTtl();
       })
       .catch(function (err) { statusEl.textContent = 'Failed: ' + err; })
       .finally(function () { btn.disabled = false; });

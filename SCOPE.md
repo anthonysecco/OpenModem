@@ -98,13 +98,24 @@ goal).
   software installed on the modem" constraint, so `installer.sh` now
   removes SimpleFirewall entirely instead of depending on it (see
   "Install / update" and "Verified against real hardware" below).
-  `wan_action.sh`'s `set_ttl` deletes the specific old rule by value
-  before inserting the new one — deliberately never a full `-F
+  Both `set_ttl` and the boot-time re-application go through
+  `bin/ttl.sh`, which deletes every TTL/HL rule in POSTROUTING rule by
+  rule, then appends the new one (so it is the last, winning, TTL rule)
+  and confirms it is the one in effect — deliberately never a full `-F
   POSTROUTING` flush, which would also silently wipe two unrelated
   Qualcomm baseband rules (`qcom_qos_reset_POSTROUTING`/
   `qcom_qos_filter_POSTROUTING`) sharing that chain on this hardware;
   confirmed live when an earlier flush-based cleanup step did exactly
-  that. `bin/apply_iptables.sh` also now owns the web-UI port (8080)
+  that. `get_ttl` reports the TTL in effect (`applied`) alongside the
+  saved one, and the WAN page shows a mismatch. Fixed 2026-10-03 after
+  two live failures the saved value hid: `set_ttl` used to delete only
+  the remembered value, so a leftover 65 rule lower in the chain
+  overrode every later setting (TTL is non-terminating; the last rule
+  wins), and a modem saved at 88 sent an unmodified TTL after a reboot.
+  The boot unit now runs after `ql-netd.service` (as iamromulan's
+  `ttl-override.service` does), every `iptables` call waits for the
+  xtables lock (`-w 5`), and `apply_iptables.sh` retries for a minute
+  and fails the unit if the rule never takes effect. `bin/apply_iptables.sh` also now owns the web-UI port (8080)
   protection SimpleFirewall used to provide (allow from
   `bridge0`/`eth0`/`tailscale0`, drop elsewhere) — scoped to just that
   one port, not the three others (80/8088/443) SimpleFirewall blocked,

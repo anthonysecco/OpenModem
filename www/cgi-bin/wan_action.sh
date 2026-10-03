@@ -7,13 +7,18 @@
 #
 # GET ?action=get_ttl
 #     Returns the persisted TTL/hop-limit override value (config/
-#     openmodem.conf's TTL_VALUE key).
+#     openmodem.conf's TTL_VALUE key) as "ttl", and the TTL actually in
+#     effect as "applied" (bin/ttl.sh applied; 0 = no rule). The two
+#     differ when a saved value did not take effect, which the WAN page
+#     shows rather than letting the saved number stand for what the
+#     modem is doing.
 #
 # GET ?action=set_ttl&value=N
-#     N=0 disables spoofing; N=1-255 sets it. Deletes the specific old
-#     rule (by value, not a chain flush — see below) before inserting
-#     the new one, then persists TTL_VALUE so bin/apply_iptables.sh
-#     re-applies it after a reboot.
+#     N=0 disables spoofing; N=1-255 sets it. Applied through bin/ttl.sh,
+#     which removes every TTL rule (by rule, not a chain flush — see
+#     below) before adding the new one and confirms it is in effect. Only
+#     then is TTL_VALUE persisted, so bin/apply_iptables.sh re-applies it
+#     after a reboot.
 #
 # TTL spoofing is OpenModem's own iptables/ip6tables mangle rule now —
 # it was originally a front-end for a pre-existing third-party package
@@ -32,14 +37,15 @@
 # hardware that chain also carries two Qualcomm baseband rules
 # (qcom_qos_reset_POSTROUTING/qcom_qos_filter_POSTROUTING), unrelated to
 # TTL, that a blind flush silently deletes. Confirmed live: flushing to
-# clean up a test rule wiped them too. Uses a targeted delete of just
-# the rule this script itself owns instead.
+# clean up a test rule wiped them too. Uses targeted deletes of the TTL
+# rules instead (bin/ttl.sh).
 
 echo "Content-Type: application/json"
 echo "Cache-Control: no-cache, no-store, must-revalidate"
 echo ""
 
 AT_CMD="/usrdata/openmodem/bin/at_command.sh"
+TTL_SH="/usrdata/openmodem/bin/ttl.sh"
 CONF_FILE="/usrdata/openmodem/config/openmodem.conf"
 
 ACTION=""
@@ -55,6 +61,13 @@ json_esc() { printf '%s' "$1" | tr -d '\r\n' | sed 's/\\/\\\\/g; s/"/\\"/g'; }
 current_ttl() {
     _val=$(grep '^TTL_VALUE=' "$CONF_FILE" 2>/dev/null | tail -1 | cut -d= -f2 | tr -d ' \r\n')
     echo "$_val" | grep -qE '^[0-9]+$' && echo "$_val" || echo "0"
+}
+
+# applied_ttl: the TTL in effect, or null when it can't be read, so the
+# JSON stays valid either way.
+applied_ttl() {
+    _val=$("$TTL_SH" applied 2>/dev/null)
+    echo "$_val" | grep -qE '^[0-9]+$' && echo "$_val" || echo "null"
 }
 
 case "$ACTION" in
@@ -74,7 +87,7 @@ case "$ACTION" in
     ;;
 
   get_ttl)
-    printf '{"success":true,"ttl":%s}\n' "$(current_ttl)"
+    printf '{"success":true,"ttl":%s,"applied":%s}\n' "$(current_ttl)" "$(applied_ttl)"
     ;;
 
   set_ttl)
@@ -82,19 +95,14 @@ case "$ACTION" in
         echo '{"success":false,"error":"TTL must be 0 (disabled) or 1-255"}'
         exit 1
     fi
+    # Persisted as the number ttl.sh applies, without leading zeros.
+    VALUE=$(echo "$VALUE" | sed 's/^0*//')
+    VALUE=${VALUE:-0}
 
-    OLD=$(current_ttl)
-    if [ "$OLD" -gt 0 ]; then
-        iptables  -t mangle -D POSTROUTING -o rmnet+ -j TTL --ttl-set "$OLD" 2>/dev/null
-        ip6tables -t mangle -D POSTROUTING -o rmnet+ -j HL  --hl-set  "$OLD" 2>/dev/null
-    fi
-
-    if [ "$VALUE" -gt 0 ]; then
-        if ! iptables -t mangle -I POSTROUTING -o rmnet+ -j TTL --ttl-set "$VALUE"; then
-            echo '{"success":false,"error":"iptables command failed"}'
-            exit 1
-        fi
-        ip6tables -t mangle -I POSTROUTING -o rmnet+ -j HL --hl-set "$VALUE" 2>/dev/null
+    if ! "$TTL_SH" apply "$VALUE" 2>/dev/null; then
+        printf '{"success":false,"error":"TTL %s did not take effect (in effect: %s); the saved value is unchanged"}\n' \
+            "$(json_esc "$VALUE")" "$(applied_ttl)"
+        exit 1
     fi
 
     mkdir -p "$(dirname "$CONF_FILE")"

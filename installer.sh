@@ -179,7 +179,7 @@ download() {
 FAIL=0
 
 echo "  Downloading bin scripts..."
-for script in at_broker.sh at_command.sh at_poller.sh apply_iptables.sh apply_httpd_auth.sh net_poller.sh; do
+for script in at_broker.sh at_command.sh at_poller.sh apply_iptables.sh apply_httpd_auth.sh net_poller.sh ttl.sh; do
     download "$REPO/bin/$script" "$STAGING_DIR/bin/$script" || FAIL=1
 done
 
@@ -497,10 +497,17 @@ RestartSec=3
 WantedBy=multi-user.target
 EOF
 
+# After ql-netd.service, Quectel's own network daemon, rather than only
+# network.target: it edits the firewall itself while the modem boots. A
+# modem saved at 88 was found sending an unmodified TTL after a restart
+# (2026-10-03); running after ql-netd is the likely fix, and it is how
+# iamromulan's ttl-override.service orders itself. A modem without that
+# unit just ignores the ordering, and apply_iptables.sh retries until the
+# rule is confirmed in any case.
 cat > /tmp/openmodem-iptables.service << 'EOF'
 [Unit]
 Description=OpenModem Firewall/TTL Rules
-After=network.target
+After=network.target ql-netd.service
 DefaultDependencies=no
 
 [Service]
