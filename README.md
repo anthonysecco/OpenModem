@@ -163,3 +163,7 @@ Not built yet, but with groundwork already in place:
 See `SCOPE.md`'s "Future enhancement candidates" for other parked ideas
 (connectivity watchdog/auto-recovery, webhook notifications, config
 backup/restore).
+
+## AI Disclosure
+
+This project was built largely with AI coding tools (Claude). I directed the design and reviewed the changes, but most of the code and documentation was written by AI. Please review the code before relying on it, and open an issue if you find a problem.
