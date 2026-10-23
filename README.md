@@ -1,5 +1,7 @@
 # OpenModem
 
+[![Buy Me a Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-donate-yellow.svg)](https://www.buymeacoffee.com/anthonysecco)
+
 A local web front end for the Quectel RM520N-GL modem. Runs directly on the
 modem's onboard Linux, served over the modem's local network/USB interface.
 
@@ -163,6 +165,10 @@ Not built yet, but with groundwork already in place:
 See `SCOPE.md`'s "Future enhancement candidates" for other parked ideas
 (connectivity watchdog/auto-recovery, webhook notifications, config
 backup/restore).
+
+## 💖 Support
+
+If you found this project useful, consider [buying me a coffee](https://www.buymeacoffee.com/anthonysecco). ☕
 
 ## AI Disclosure
 
