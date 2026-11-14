@@ -534,26 +534,6 @@ RestartSec=3
 WantedBy=multi-user.target
 EOF
 
-cat > /tmp/openmodem-telnet.service << 'EOF'
-[Unit]
-Description=OpenModem Telnet Access (EXPERIMENTAL — passwordless root shell)
-After=network.target
-
-[Service]
-Type=simple
-# Guarded by ENABLE_TELNET in openmodem.conf: when not "1", exit 0 and
-# start nothing. When enabled, run BusyBox telnetd in the foreground
-# (-F, required for Type=simple) serving a passwordless /bin/sh on :23.
-# telnetd may be absent from this firmware's BusyBox build — the guard
-# reports that and exits without failing the whole install (this unit is
-# deliberately NOT part of the installer's health gate).
-ExecStart=/bin/sh -c '. /usrdata/openmodem/config/openmodem.conf 2>/dev/null; [ "$ENABLE_TELNET" = "0" ] && { echo "openmodem-telnet: disabled (ENABLE_TELNET=0)"; exit 0; }; command -v telnetd >/dev/null 2>&1 || { echo "openmodem-telnet: telnetd not available in this BusyBox"; exit 0; }; exec telnetd -F -p 23 -l /bin/sh'
-Restart=on-failure
-RestartSec=5
-
-[Install]
-WantedBy=multi-user.target
-EOF
 
 echo "  Service files created."
 
@@ -567,7 +547,6 @@ cp /tmp/openmodem-poller.service    /lib/systemd/system/
 cp /tmp/openmodem-httpd.service     /lib/systemd/system/
 cp /tmp/openmodem-iptables.service  /lib/systemd/system/
 cp /tmp/openmodem-netpoller.service /lib/systemd/system/
-cp /tmp/openmodem-telnet.service    /lib/systemd/system/
 
 systemctl daemon-reload
 
@@ -577,7 +556,6 @@ ln -sf /lib/systemd/system/openmodem-poller.service    /lib/systemd/system/multi
 ln -sf /lib/systemd/system/openmodem-httpd.service     /lib/systemd/system/multi-user.target.wants/
 ln -sf /lib/systemd/system/openmodem-iptables.service  /lib/systemd/system/multi-user.target.wants/
 ln -sf /lib/systemd/system/openmodem-netpoller.service /lib/systemd/system/multi-user.target.wants/
-ln -sf /lib/systemd/system/openmodem-telnet.service    /lib/systemd/system/multi-user.target.wants/
 
 echo "  Remounting / as read-only..."
 mount -o remount,ro /
@@ -587,7 +565,6 @@ rm -f /tmp/openmodem-poller.service
 rm -f /tmp/openmodem-httpd.service
 rm -f /tmp/openmodem-iptables.service
 rm -f /tmp/openmodem-netpoller.service
-rm -f /tmp/openmodem-telnet.service
 
 # --- Start services ---
 echo "[9/9] Starting services..."
@@ -626,10 +603,6 @@ fi
 
 systemctl start openmodem-httpd.service
 
-# Experimental telnet access — started last and never gated by the health
-# check below (its failure, e.g. no telnetd in BusyBox, must not trigger a
-# rollback of an otherwise-good install).
-systemctl start openmodem-telnet.service 2>/dev/null
 
 echo "  Done."
 
